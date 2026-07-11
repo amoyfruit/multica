@@ -11,6 +11,7 @@ import { hashString } from "../editor/utils/hash-string";
 import { buildScrollBridge } from "../editor/utils/iframe-scroll-bridge";
 import { withFragmentNavShim } from "../editor/utils/iframe-fragment-nav";
 import { withLocationBridge } from "../editor/utils/iframe-location-bridge";
+import { withFindShim } from "../editor/utils/iframe-find";
 
 const htmlText = "<html><body><h1>Report</h1></body></html>";
 
@@ -126,9 +127,10 @@ describe("AttachmentPreviewPage", () => {
       </ScrollRestorationProvider>,
     );
     const iframe = await screen.findByTitle("report.html");
-    // The address bridge and the fragment-nav shim, but no scroll bridge.
+    // The address bridge, the fragment-nav shim and the find shim, but no
+    // scroll bridge.
     expect(iframe.getAttribute("srcdoc")).toBe(
-      withLocationBridge(withFragmentNavShim(htmlText), ""),
+      withFindShim(withLocationBridge(withFragmentNavShim(htmlText), "")),
     );
   });
 
@@ -201,5 +203,58 @@ describe("AttachmentPreviewPage", () => {
         "Couldn't load preview",
       ),
     );
+  });
+});
+
+describe("AttachmentPreviewPage — in-page find (MUL-7551)", () => {
+  it("does not show the find bar until requested", async () => {
+    renderPage(<AttachmentPreviewPage attachmentId="att-1" />);
+    await screen.findByTitle("report.html");
+    expect(screen.queryByPlaceholderText("Find in page")).toBeNull();
+  });
+
+  it("opens the find bar on Ctrl+F and closes it on Escape", async () => {
+    renderPage(<AttachmentPreviewPage attachmentId="att-1" />);
+    await screen.findByTitle("report.html");
+
+    fireEvent.keyDown(window, { key: "f", ctrlKey: true });
+    expect(screen.getByPlaceholderText("Find in page")).toBeTruthy();
+
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByPlaceholderText("Find in page")).toBeNull();
+  });
+
+  it("opens the find bar on Cmd+F (macOS)", async () => {
+    renderPage(<AttachmentPreviewPage attachmentId="att-1" />);
+    await screen.findByTitle("report.html");
+
+    fireEvent.keyDown(window, { key: "f", metaKey: true });
+    expect(screen.getByPlaceholderText("Find in page")).toBeTruthy();
+  });
+
+  it("injects the find shim into the sandboxed iframe", async () => {
+    renderPage(<AttachmentPreviewPage attachmentId="att-1" />);
+    const iframe = await screen.findByTitle("report.html");
+    // Sandbox posture preserved: allow-scripts, never allow-same-origin.
+    expect(iframe.getAttribute("sandbox")).toBe("allow-scripts");
+    expect(iframe.getAttribute("srcdoc")).toContain("multica-find-cmd");
+  });
+
+  // The find shim rides on top of the scroll-restore srcDoc (multica-ai#6405),
+  // so both must survive under the desktop adapter.
+  it("keeps both the scroll bridge and the find shim under the desktop adapter", async () => {
+    const adapter: ScrollRestorationAdapter = {
+      get: () => undefined,
+      registerExternalSource: vi.fn(),
+    };
+    renderPage(
+      <ScrollRestorationProvider adapter={adapter}>
+        <AttachmentPreviewPage attachmentId="att-1" />
+      </ScrollRestorationProvider>,
+    );
+    const iframe = await screen.findByTitle("report.html");
+    const srcdoc = iframe.getAttribute("srcdoc")!;
+    expect(srcdoc).toContain(buildScrollBridge(hashString(htmlText)));
+    expect(srcdoc).toContain("multica-find-cmd");
   });
 });
