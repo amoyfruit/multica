@@ -45,11 +45,20 @@ func testDefaultHermesHome(home string) string {
 
 func writeTestClaudePlugin(t *testing.T, home, id, name string, enabled bool) string {
 	t.Helper()
+	return writeTestClaudePluginWithSkills(t, home, id, name, enabled, `"./skills"`)
+}
+
+// writeTestClaudePluginWithSkills writes a plugin whose manifest carries an
+// arbitrary `skills` value, so tests can cover both shapes Claude Code accepts:
+// a container directory ("./skills") and an array of skill directories
+// (["./why","./gas"]). skillsJSON is spliced in verbatim and must be valid JSON.
+func writeTestClaudePluginWithSkills(t *testing.T, home, id, name string, enabled bool, skillsJSON string) string {
+	t.Helper()
 	installPath := filepath.Join(home, ".claude", "plugins", "cache", name, "1.0.0")
 	if err := os.MkdirAll(filepath.Join(installPath, ".claude-plugin"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	manifest := `{"name":"` + name + `","skills":"./skills","mcpServers":"./mcp.json"}`
+	manifest := `{"name":"` + name + `","skills":` + skillsJSON + `,"mcpServers":"./mcp.json"}`
 	if err := os.WriteFile(filepath.Join(installPath, ".claude-plugin", "plugin.json"), []byte(manifest), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -247,6 +256,127 @@ func TestListRuntimeLocalSkills_ClaudeEnabledPlugin(t *testing.T) {
 	}
 	if bundle.Name != got.Key || bundle.Description != "Turn a design into code" {
 		t.Fatalf("plugin bundle = %#v", bundle)
+	}
+}
+
+// A plugin manifest may list each skill directory individually instead of
+// pointing at a container. ethskills ships exactly this shape:
+//
+//	"skills": ["./why", "./gas", ...]   // each dir holds SKILL.md directly
+//
+// The child-only walk found nothing under such a root, so every skill a plugin
+// declared this way silently failed to appear on a runtime refresh.
+func TestListRuntimeLocalSkills_ClaudePluginSkillsArrayOfSkillDirs(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	installPath := writeTestClaudePluginWithSkills(
+		t, home, "ethskills@ethskills", "ethskills", true, `["./why","./gas"]`,
+	)
+	writeTestLocalSkill(t, installPath, "why", map[string]string{
+		"SKILL.md":            "---\nname: why-ethereum\ndescription: Why build on Ethereum\n---\n# Why\n",
+		"references/eip.md":   "supporting file",
+		"notes/.hidden/x.md":  "ignored dir",
+		"references/SKILL.md": "a nested SKILL.md must not become a second skill",
+	})
+	writeTestLocalSkill(t, installPath, "gas", map[string]string{
+		"SKILL.md": "---\nname: gas\ndescription: Gas costs\n---\n# Gas\n",
+	})
+
+	skills, supported, err := listRuntimeLocalSkills("claude")
+	if err != nil || !supported {
+		t.Fatalf("supported=%v err=%v", supported, err)
+	}
+	if len(skills) != 2 {
+		t.Fatalf("expected 2 plugin skills, got %d: %#v", len(skills), skills)
+	}
+
+	// Sorted by Key: ethskills:gas, then ethskills:why.
+	gas, why := skills[0], skills[1]
+	if gas.Key != "ethskills:gas" || why.Key != "ethskills:why" {
+		t.Fatalf("keys = %q, %q", gas.Key, why.Key)
+	}
+	// The key is derived from the directory name, not the SKILL.md frontmatter,
+	// because loadRuntimeLocalSkillBundle resolves a key back to a path.
+	if why.Name != "ethskills:why" || why.Description != "Why build on Ethereum" {
+		t.Fatalf("why identity = %#v", why)
+	}
+	if why.Root != localSkillRootPlugin || why.Plugin != "ethskills@ethskills" {
+		t.Fatalf("why origin = %#v", why)
+	}
+	// SKILL.md + references/eip.md. The .hidden dir is skipped, and
+	// collectLocalSkillFiles drops every file named SKILL.md at any depth.
+	if why.FileCount != 2 {
+		t.Fatalf("why file count = %d, want 2", why.FileCount)
+	}
+
+	bundle, supported, err := loadRuntimeLocalSkillBundle("claude", "ethskills:why")
+	if err != nil || !supported {
+		t.Fatalf("load bundle: supported=%v err=%v", supported, err)
+	}
+	if bundle.Name != "ethskills:why" || bundle.Description != "Why build on Ethereum" {
+		t.Fatalf("bundle = %#v", bundle)
+	}
+	if bundle.SourcePath != relativizeHomePath(filepath.Join(installPath, "why")) {
+		t.Fatalf("bundle source path = %q", bundle.SourcePath)
+	}
+
+	// A root that is itself a skill serves exactly one key. Anything else under
+	// that prefix must not resolve to the root's own SKILL.md.
+	if _, _, err := loadRuntimeLocalSkillBundle("claude", "ethskills:why/references"); err == nil {
+		t.Fatal("nested key under a skill-dir root should not resolve")
+	}
+	if _, _, err := loadRuntimeLocalSkillBundle("claude", "ethskills:nope"); err == nil {
+		t.Fatal("unknown plugin key should not resolve")
+	}
+}
+
+// Both manifest shapes can appear in one plugin; neither may break the other.
+func TestListRuntimeLocalSkills_ClaudePluginMixedSkillRoots(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	installPath := writeTestClaudePluginWithSkills(
+		t, home, "mixed@mixed", "mixed", true, `["./.claude/skills","./solo"]`,
+	)
+	writeTestLocalSkill(t, filepath.Join(installPath, ".claude", "skills"), "contained", map[string]string{
+		"SKILL.md": "---\nname: Contained\n---\n",
+	})
+	writeTestLocalSkill(t, installPath, "solo", map[string]string{
+		"SKILL.md": "---\nname: Solo\n---\n",
+	})
+
+	skills, supported, err := listRuntimeLocalSkills("claude")
+	if err != nil || !supported {
+		t.Fatalf("supported=%v err=%v", supported, err)
+	}
+	keys := make([]string, 0, len(skills))
+	for _, s := range skills {
+		keys = append(keys, s.Key)
+	}
+	if !reflect.DeepEqual(keys, []string{"mixed:contained", "mixed:solo"}) {
+		t.Fatalf("keys = %#v", keys)
+	}
+}
+
+// Guard the blast radius of the skill-dir-root rule: it must apply to plugin
+// roots only. A stray SKILL.md at the top of ~/.claude/skills must not collapse
+// the whole directory into one skill named "skills" and hide everything below.
+func TestListRuntimeLocalSkills_ProviderRootIsNeverASkillDir(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	skillsRoot := filepath.Join(home, ".claude", "skills")
+	writeTestLocalSkill(t, skillsRoot, "review-helper", map[string]string{
+		"SKILL.md": "---\nname: Review Helper\n---\n",
+	})
+	if err := os.WriteFile(filepath.Join(skillsRoot, "SKILL.md"), []byte("---\nname: Stray\n---\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	skills, supported, err := listRuntimeLocalSkills("claude")
+	if err != nil || !supported {
+		t.Fatalf("supported=%v err=%v", supported, err)
+	}
+	if len(skills) != 1 || skills[0].Key != "review-helper" {
+		t.Fatalf("provider root must stay a container, got %#v", skills)
 	}
 }
 

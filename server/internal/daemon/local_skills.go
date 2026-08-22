@@ -514,8 +514,17 @@ func listRuntimeLocalSkills(provider string) ([]runtimeLocalSkillSummary, bool, 
 		// the resolved real path visited from the first root and silently
 		// drop the legitimate second entry.
 		rootSkills := make([]runtimeLocalSkillSummary, 0)
-		visited := make(map[string]bool)
-		enumerateLocalSkills(provider, root, root.path, root.path, 0, visited, &rootSkills)
+		if rootIsSkillDir(root) {
+			// The root IS the skill (a plugin manifest entry pointing straight
+			// at one skill dir). Enumerating its children would find nothing,
+			// which is exactly how these skills used to go missing.
+			if summary, ok := describeLocalSkillDir(provider, root, root.path, filepath.Base(root.path)); ok {
+				rootSkills = append(rootSkills, summary)
+			}
+		} else {
+			visited := make(map[string]bool)
+			enumerateLocalSkills(provider, root, root.path, root.path, 0, visited, &rootSkills)
+		}
 
 		for _, s := range rootSkills {
 			if seenKeys[s.Key] {
@@ -532,6 +541,87 @@ func listRuntimeLocalSkills(provider string) ([]runtimeLocalSkillSummary, bool, 
 		return skills[i].Key < skills[j].Key
 	})
 	return skills, true, nil
+}
+
+// rootIsSkillDir reports whether a discovery root is itself a skill directory
+// rather than a container of them.
+//
+// Claude Code lets a plugin manifest's `skills` field point either at a
+// directory that HOLDS skill directories:
+//
+//	"skills": "./.claude/skills/"        // ui-ux-pro-max
+//
+// or straight at the skill directories themselves:
+//
+//	"skills": ["./why", "./gas", ...]    // ethskills
+//
+// claudePluginComponentPaths turns both forms into roots, but the child-only
+// walk in enumerateLocalSkills can only see the first: for `./why` the SKILL.md
+// sits at the root, not one level down, so every skill in the second form was
+// silently discovered as nothing.
+//
+// Only plugin roots are eligible. A provider root (~/.claude/skills) or the
+// universal root (~/.agents/skills) is a container by definition — treating a
+// stray SKILL.md at its top level as "the whole directory is one skill" would
+// collapse every real skill underneath it into a single bogus entry named
+// after the folder.
+func rootIsSkillDir(root localSkillRoot) bool {
+	if root.kind != localSkillRootPlugin {
+		return false
+	}
+	_, err := os.Stat(filepath.Join(root.path, "SKILL.md"))
+	return err == nil
+}
+
+// describeLocalSkillDir builds the list summary for a directory already known
+// to contain a SKILL.md. `relKey` is the slash-delimited key relative to the
+// root (or the root's own base name when the root is itself the skill dir).
+// It returns ok=false when the directory turns out not to be a usable skill,
+// in which case the caller skips it.
+func describeLocalSkillDir(
+	provider string,
+	root localSkillRoot,
+	skillDir string,
+	relKey string,
+) (runtimeLocalSkillSummary, bool) {
+	key, err := normalizeLocalSkillKey(relKey)
+	if err != nil {
+		return runtimeLocalSkillSummary{}, false
+	}
+	key = root.keyPrefix + key
+
+	content, err := readLocalSkillMainFile(skillDir)
+	if err != nil {
+		return runtimeLocalSkillSummary{}, false
+	}
+	skillName, description := skill.ParseSkillFrontmatter(content)
+	if root.plugin != "" {
+		skillName = key
+	} else if skillName == "" {
+		skillName = filepath.Base(skillDir)
+	}
+
+	files, err := collectLocalSkillFiles(skillDir, false)
+	if err != nil {
+		return runtimeLocalSkillSummary{}, false
+	}
+
+	return runtimeLocalSkillSummary{
+		Key:         key,
+		Name:        skillName,
+		Description: description,
+		SourcePath:  relativizeHomePath(skillDir),
+		Provider:    provider,
+		Root:        root.kind,
+		Plugin:      root.plugin,
+		CanDisable:  provider == "codex" || provider == "claude",
+		// `files` is the supporting bundle (collectLocalSkillFiles
+		// intentionally excludes SKILL.md so the bundle's `Content`
+		// field can carry it without duplication on import). For the
+		// list summary the user expects the total file count, so add
+		// one back for SKILL.md itself.
+		FileCount: len(files) + 1,
+	}, true
 }
 
 // enumerateLocalSkills walks `currentDir` looking for skill directories
@@ -586,44 +676,9 @@ func enumerateLocalSkills(
 			if err != nil {
 				continue
 			}
-			key, err := normalizeLocalSkillKey(rel)
-			if err != nil {
-				continue
+			if summary, ok := describeLocalSkillDir(provider, root, path, rel); ok {
+				*skills = append(*skills, summary)
 			}
-			key = root.keyPrefix + key
-
-			content, err := readLocalSkillMainFile(path)
-			if err != nil {
-				continue
-			}
-			skillName, description := skill.ParseSkillFrontmatter(content)
-			if root.plugin != "" {
-				skillName = key
-			} else if skillName == "" {
-				skillName = filepath.Base(path)
-			}
-
-			files, err := collectLocalSkillFiles(path, false)
-			if err != nil {
-				continue
-			}
-
-			*skills = append(*skills, runtimeLocalSkillSummary{
-				Key:         key,
-				Name:        skillName,
-				Description: description,
-				SourcePath:  relativizeHomePath(path),
-				Provider:    provider,
-				Root:        root.kind,
-				Plugin:      root.plugin,
-				CanDisable:  provider == "codex" || provider == "claude",
-				// `files` is the supporting bundle (collectLocalSkillFiles
-				// intentionally excludes SKILL.md so the bundle's `Content`
-				// field can carry it without duplication on import). For the
-				// list summary the user expects the total file count, so add
-				// one back for SKILL.md itself.
-				FileCount: len(files) + 1,
-			})
 			continue
 		}
 
@@ -662,6 +717,16 @@ func loadRuntimeLocalSkillBundle(provider, skillKey string) (*runtimeLocalSkillB
 			rootKey = strings.TrimPrefix(key, root.keyPrefix)
 		}
 		skillDir := filepath.Join(root.path, filepath.FromSlash(rootKey))
+		if rootIsSkillDir(root) {
+			// Mirror listRuntimeLocalSkills: a root that is itself a skill dir
+			// serves exactly one key, its own base name. Joining the key onto
+			// the root would look for `.../why/why` and never resolve, so an
+			// import of a listed skill would fail with "local skill not found".
+			if rootKey != filepath.Base(root.path) {
+				continue
+			}
+			skillDir = root.path
+		}
 		info, err := os.Stat(skillDir)
 		if err != nil {
 			// IsNotExist => this root simply lacks the skill, try the next.
