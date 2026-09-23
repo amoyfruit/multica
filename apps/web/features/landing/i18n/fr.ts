@@ -8,6 +8,42 @@ import type { LandingDict } from "./types";
 function frChangelogEntries(): LandingDict["changelog"]["entries"] {
   return [
     {
+      version: "0.5.2",
+      date: "2026-09-23",
+      title:
+        "Guider une exécution en cours, marquer une tâche comme doublon, et des exécutions plus régulières",
+      changes: [],
+      features: [
+        "Ajoutez des consignes à une exécution Claude Code ou Codex pendant qu’elle tourne encore.",
+        "Marquez une tâche comme doublon depuis le sélecteur de statut, revenez à l’originale, et voyez ce lien dans les listes.",
+        "Renseignez les propriétés personnalisées d’une tâche dès sa création en ligne de commande.",
+        "Mentionnez un agent dans un groupe Telegram : il connaît déjà la conversation récente.",
+        "Installez l’outil en ligne de commande sous Windows directement depuis la page de téléchargement.",
+      ],
+      improvements: [
+        "Chaque agent OpenClaw travaille dans le dossier que vous lui avez configuré.",
+        "Les pièces jointes envoyées pendant la création d’une tâche apparaissent dans sa description.",
+        "Un bot Lark qui reste muet vous indique désormais où la livraison est bloquée.",
+        "Les réveils planifiés des tâches s’affichent dans votre fuseau horaire.",
+        "Accéder à la pull request GitHub d’une exécution est plus rapide.",
+        "L’indicateur d’exécution est plus fluide et plus léger pour votre machine.",
+      ],
+      fixes: [
+        "Les nouveaux modèles Codex apparaissent dans le sélecteur dès leur sortie.",
+        "Une connexion en ligne de commande qui n’atteint pas le serveur le dit, au lieu d’attendre indéfiniment.",
+        "Un membre invité peut terminer son inscription sur un serveur auto-hébergé qui restreint les inscriptions.",
+        "Une exécution dont le démarrage n’est pas confirmé est reprise au lieu de rester bloquée.",
+        "L’annulation d’une exécution répond immédiatement, et une réponse dans un fil parvient à l’agent qui en est chargé.",
+        "L’application mobile se reconnecte d’elle-même après une coupure.",
+        "Les boutons de la barre d’outils de l’application de bureau sont de nouveau correctement espacés.",
+        "Le programme d’installation Windows fonctionne sous PowerShell 5.1.",
+        "Les boîtes de dialogue de confirmation en français ne défilent plus horizontalement.",
+        "Une automatisation garde la trace des tâches qu’elle crée.",
+        "Un chef d’escouade invité se réveille et prend le travail en charge.",
+        "Vous pouvez savoir où une réponse WeCom s’est perdue sur le chemin du retour.",
+      ],
+    },
+    {
       version: "0.5.1",
       date: "2026-09-21",
       title:
@@ -3686,6 +3722,9 @@ export function createFrDict(
         title: "Vous préférez le CLI ?",
         sub: "Pour les serveurs, les machines de développement distantes et les installations sans interface. Le même démon que l’application de bureau, installé depuis le terminal.",
         installLabel: "Installer",
+        platformGroup: "Choisissez votre plateforme",
+        platformMacosLinux: "macOS / Linux",
+        platformWindows: "Windows",
         startLabel: "Démarrer le démon",
         sshNote: "Déjà sur un serveur ? Les mêmes commandes fonctionnent en SSH.",
         copyLabel: "Copier",
