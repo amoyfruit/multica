@@ -8,6 +8,36 @@ import type { LandingDict } from "./types";
 function frChangelogEntries(): LandingDict["changelog"]["entries"] {
   return [
     {
+      version: "0.5.3",
+      date: "2026-09-24",
+      title:
+        "Médias dans Telegram, chinois simplifié sur mobile, clôture automatique des tâches par leurs PR, et des chiffres d’usage plus justes",
+      changes: [],
+      features: [
+        "Envoyez photos, vidéos, audio et fichiers à un agent sur Telegram.",
+        "Les pièces jointes produites par un agent vous reviennent dans Telegram.",
+        "Choisissez le chinois simplifié, l’anglais ou la langue du système dans l’application mobile.",
+        "Voyez les pull requests liées à une tâche, et laissez-la se terminer d’elle-même une fois qu’elles sont toutes fusionnées.",
+        "Suivez en direct les étapes d’outil d’un agent Antigravity.",
+        "Ajoutez des consignes à une exécution Grok Build pendant qu’elle tourne encore.",
+        "Parcourez toutes les pièces jointes d’une tâche en plein écran, de l’une à l’autre.",
+        "Lisez toute la documentation en français.",
+        "Retrouvez sur le site les réponses sur la licence, la politique de confidentialité et l’équipe derrière Multica.",
+        "Les administrateurs d’un serveur auto-hébergé peuvent accélérer les titres automatiques et les actions rapides.",
+      ],
+      improvements: [
+        "Les actions sur un commentaire sont regroupées selon ce que vous venez faire, avec Modifier et Résoudre en tête.",
+      ],
+      fixes: [
+        "L’usage d’une session Claude reprise ne compte que cette exécution.",
+        "Les taux de cache affichés sur les tâches et les runtimes ne sont plus surévalués.",
+        "Les réponses d’un agent dans un fil apparaissent dans l’ordre de leur envoi.",
+        "Une exécution sous Windows démarre même quand un fichier est brièvement occupé.",
+        "Un lien de tâche dans DingTalk s’affiche sans caractères parasites.",
+        "Un serveur auto-hébergé explique un certificat non reconnu, et peut faire confiance à votre propre autorité de certification.",
+      ],
+    },
+    {
       version: "0.5.2",
       date: "2026-09-23",
       title:
@@ -3383,7 +3413,7 @@ export function createFrDict(
       headlineLine1: "Vos dix prochaines recrues",
       headlineLine2: "ne seront pas humaines.",
       subheading:
-        "Multica est une plateforme open source qui fait des agents de code de vrais coéquipiers. Assignez des tâches, suivez l’avancement, capitalisez les compétences — pilotez vos effectifs humains et agents au même endroit.",
+        "Multica est une plateforme au code source public qui fait des agents de code de vrais coéquipiers. Assignez des tâches, suivez l’avancement, capitalisez les compétences — pilotez vos effectifs humains et agents au même endroit.",
       cta: "Essai gratuit",
       downloadDesktop: "Télécharger l’application",
       talkToSales: "Parler à un commercial",
@@ -3522,17 +3552,18 @@ export function createFrDict(
     },
 
     openSource: {
-      label: "Open source",
-      headlineLine1: "Open source",
-      headlineLine2: "pour tous.",
+      label: "Code source public",
+      headlineLine1: "Chaque ligne,",
+      headlineLine2: "à vos conditions.",
       description:
-        "Multica est entièrement open source. Inspectez chaque ligne, hébergez la plateforme à vos conditions, et donnez sa forme à la collaboration entre humains et agents.",
+        "Le code source de Multica est public. Inspectez chaque ligne, hébergez la plateforme gratuitement, et donnez sa forme à la collaboration entre humains et agents. Proposer Multica à d’autres sous forme de service hébergé demande une licence commerciale.",
       cta: "Mettre une étoile sur GitHub",
+      licensingCta: "Comprendre la licence →",
       highlights: [
         {
           title: "Hébergez-la où vous voulez",
           description:
-            "Faites tourner Multica sur votre propre infrastructure. Docker Compose, binaire unique ou Kubernetes — vos données ne quittent jamais votre réseau.",
+            "Faites tourner Multica sur votre propre infrastructure. Docker Compose, binaire unique ou Kubernetes — les données de votre espace de travail restent sur des serveurs que vous contrôlez.",
         },
         {
           title: "Aucune dépendance imposée",
@@ -3559,13 +3590,18 @@ export function createFrDict(
         {
           question: "Quels agents de code Multica prend-il en charge ?",
           answer:
-            "Multica prend en charge 26 outils de code dès l’installation : Antigravity, Claude Code, CodeBuddy, CodeArts, Codex, Copilot, Cursor, DeepSeek Harness, DevEco Code, Dim, Grok, Hermes, Kimi, Kiro CLI, MiniMax Code, Oh-My-Pi, OpenClaw, OpenCode, Pi, Qoder, Qoder CN, Qwen Code, QwenPaw, Reasonix, Trae CLI et ZeroClaw. Le démon détecte tout seul ceux que vous avez déjà installés et enregistre un runtime pour chacun. Et comme le projet est open source, vous pouvez ajouter les vôtres.",
+            "Multica prend en charge 26 outils de code dès l’installation : Antigravity, Claude Code, CodeBuddy, CodeArts, Codex, Copilot, Cursor, DeepSeek Harness, DevEco Code, Dim, Grok, Hermes, Kimi, Kiro CLI, MiniMax Code, Oh-My-Pi, OpenClaw, OpenCode, Pi, Qoder, Qoder CN, Qwen Code, QwenPaw, Reasonix, Trae CLI et ZeroClaw. Le démon détecte tout seul ceux que vous avez déjà installés et enregistre un runtime pour chacun. Et comme le code source est public, vous pouvez ajouter les vôtres.",
         },
         {
           question:
             "Dois-je héberger la plateforme moi-même, ou existe-t-il une version cloud ?",
           answer:
             "Les deux. Vous pouvez héberger Multica sur votre propre infrastructure avec Docker Compose ou Kubernetes, ou utiliser notre version cloud. Vos données, votre choix.",
+        },
+        {
+          question: "Puis-je utiliser Multica à des fins commerciales ?",
+          answer:
+            "Oui. Utiliser Multica au sein de votre propre organisation est gratuit, y compris l’héberger vous-même pour toute votre équipe. Une licence commerciale n’est nécessaire que pour proposer Multica à des personnes extérieures à votre organisation — par exemple en le faisant tourner pour elles comme service hébergé ou géré — ou pour l’intégrer à un produit que vous vendez ou distribuez. La [FAQ sur la licence](/licensing) passe en revue les cas les plus courants.",
         },
         {
           question:
@@ -3581,19 +3617,19 @@ export function createFrDict(
         {
           question: "Mon code est-il en sécurité ? Où les agents s’exécutent-ils ?",
           answer:
-            "Les agents s’exécutent sur votre machine (démon local) ou sur votre propre infrastructure cloud. Le code ne transite jamais par les serveurs de Multica. La plateforme se contente de coordonner l’état des tâches et de diffuser les événements.",
+            "Les agents s’exécutent sur votre machine (via le démon local) ou sur les runtimes que vous raccordez, et travaillent directement dans vos dépôts. Ce que vous mettez dans un espace de travail — tâches, commentaires, messages de discussion, pièces jointes et avancement signalé par les agents — est stocké par Multica, et les outils de code de vos agents envoient prompts et code aux fournisseurs de modèles que vous configurez. Pour garder les données de votre espace de travail sur vos propres serveurs, hébergez Multica vous-même. Tous les détails sont dans la [politique de confidentialité](/privacy).",
         },
         {
           question: "Combien d’agents puis-je faire tourner ?",
           answer:
-            "Autant que votre matériel le permet. Chaque agent a ses propres limites de parallélisme, et vous pouvez raccorder plusieurs machines comme runtimes. La version open source n’impose aucun plafond artificiel.",
+            "Autant que votre matériel le permet. Chaque agent a ses propres limites de parallélisme, et vous pouvez raccorder plusieurs machines comme runtimes. En auto-hébergement, aucun plafond artificiel.",
         },
       ],
     },
 
     footer: {
       tagline:
-        "La gestion de projet pour les équipes d’humains et d’agents. Open source, auto-hébergeable, pensée pour le travail de demain.",
+        "La gestion de projet pour les équipes d’humains et d’agents. Code source public, auto-hébergeable, pensée pour le travail de demain.",
       cta: "Commencer",
       groups: {
         product: {
@@ -3619,7 +3655,8 @@ export function createFrDict(
           label: "Entreprise",
           links: [
             { label: "À propos", href: "/about" },
-            { label: "Open source", href: "#open-source" },
+            { label: "Licence", href: "/licensing" },
+            { label: "Confidentialité", href: "/privacy" },
             { label: "Contacter un commercial", href: "/contact-sales" },
             { label: "GitHub", href: githubUrl },
           ],
@@ -3646,9 +3683,228 @@ export function createFrDict(
         "Nous pensons que le même basculement se rejoue aujourd’hui. Pendant des décennies, les équipes logicielles ont travaillé en fil unique — un ingénieur, une tâche, un changement de contexte à la fois. Les agents IA changent l’équation. Multica ramène le temps partagé, mais pour une époque où les « utilisateurs » qui multiplexent le système sont à la fois des humains et des agents autonomes.",
         "Dans Multica, les agents sont des coéquipiers à part entière. On leur assigne des tâches, ils rendent compte de leur avancement, signalent les blocages et livrent du code — comme leurs collègues humains. Le sélecteur d’assignation, l’historique d’activité, le cycle de vie des tâches et l’infrastructure d’exécution ont été conçus autour de cette idée dès le premier jour.",
         "Comme Multics avant elle, la mise porte sur le multiplexage : une petite équipe ne devrait pas se sentir petite. Avec le bon système, deux ingénieurs et une flotte d’agents avancent comme vingt.",
-        "La plateforme est entièrement open source et auto-hébergeable. Vos données restent sur votre infrastructure. Inspectez chaque ligne, étendez l’API, apportez vos propres fournisseurs de modèles, et contribuez en retour à la communauté.",
+        "Le code source est public et vous pouvez héberger Multica gratuitement, en gardant les données de votre espace de travail sur votre propre infrastructure. Inspectez chaque ligne, étendez l’API, apportez vos propres fournisseurs de modèles, et contribuez en retour à la communauté.",
       ],
       cta: "Voir sur GitHub",
+      team: {
+        title: "Qui est derrière Multica",
+        paragraphs: [
+          "Multica est construit par une petite équipe qui travaille ensemble depuis 2021. Avant Multica, nous avons créé devv.ai, un moteur de recherche IA pour les développeurs. En 2025, nous nous sommes attaqués au problème que nous rencontrions sans cesse nous-mêmes : comment une petite équipe avance réellement aux côtés d’agents IA. C’est devenu Multica.",
+          "Le code source est public et vous pouvez l’héberger vous-même : vous pouvez donc lire chaque ligne avant de bâtir sur Multica, et un déploiement auto-hébergé tourne entièrement sur votre propre infrastructure. Les conditions d’usage commercial sont détaillées sur notre [page de licence](/licensing).",
+        ],
+        contacts: [
+          {
+            label: "Licences commerciales et ventes",
+            linkLabel: "Contacter un commercial",
+            href: "/contact-sales",
+          },
+          {
+            label: "Comprendre la licence",
+            linkLabel: "FAQ sur la licence",
+            href: "/licensing",
+          },
+          { label: "Communauté et support", linkLabel: "Discord", href: discordUrl },
+          { label: "Code source et tickets", linkLabel: "GitHub", href: githubUrl },
+        ],
+      },
+    },
+
+    licensing: {
+      title: "Licence",
+      intro: [
+        "Multica est publié sous la [Multica License](https://github.com/multica-ai/multica/blob/main/LICENSE) : la licence Apache 2.0 assortie de quelques conditions supplémentaires. Le code source est public, et utiliser Multica au sein de votre propre organisation est gratuit, y compris l’héberger vous-même pour toute votre équipe.",
+        "La principale condition supplémentaire concerne l’usage hébergé : proposer Multica à des personnes extérieures à votre organisation demande une licence commerciale. Cette page montre où passe cette limite, à partir des questions qu’on nous pose le plus souvent. C’est un guide en langage courant, pas un avis juridique. En cas de différence avec le fichier LICENSE, c’est le LICENSE qui fait foi.",
+      ],
+      rule: {
+        title: "La règle simple",
+        text: "Quelqu’un d’extérieur à votre organisation pilote-t-il l’instance — en créant des tâches, en parlant aux agents ou en déclenchant du travail ? Si oui, quelle que soit l’interface (web, Slack ou API), c’est un service hébergé. S’il ne fait que recevoir des résultats produits par votre équipe avec Multica, c’est un usage interne.",
+      },
+      scenarios: {
+        title: "Cas courants",
+        scenarioColumn: "Cas",
+        licenseColumn: "Licence commerciale",
+        required: "Nécessaire",
+        notRequired: "Pas nécessaire",
+        items: [
+          {
+            scenario: "Votre organisation utilise Multica en interne",
+            example: "Auto-hébergé, sur autant d’espaces de travail que vous voulez.",
+            required: false,
+          },
+          {
+            scenario:
+              "Vous déployez Multica pour un client, qui en est propriétaire et l’utilise en interne",
+            example: "Mise en place, formation, conseil ou personnalisation.",
+            required: false,
+          },
+          {
+            scenario:
+              "Votre équipe utilise Multica pour travailler pour des clients, qui ne reçoivent que les livrables",
+            example:
+              "Une agence qui gère sa production de contenus dans Multica et livre le travail fini.",
+            required: false,
+          },
+          {
+            scenario:
+              "Les agents se contentent d’envoyer des rapports ou des notifications sur le canal Slack d’un client",
+            example:
+              "Le client les lit mais n’interagit jamais avec l’instance.",
+            required: false,
+          },
+          {
+            scenario:
+              "Vous exploitez et gérez des instances Multica pour des clients sur votre propre infrastructure",
+            example: "Un service géré, payant ou non.",
+            required: true,
+          },
+          {
+            scenario: "Des personnes extérieures à votre organisation se connectent à votre instance",
+            example: "Clients, partenaires ou public disposent de leurs propres comptes.",
+            required: true,
+          },
+          {
+            scenario:
+              "Des personnes extérieures à votre organisation pilotent votre instance par un autre point d’entrée",
+            example:
+              "Un site public adossé à Multica, une intégration Slack ou une API — même gratuitement.",
+            required: true,
+          },
+          {
+            scenario: "Vous intégrez Multica à un produit que vous vendez ou distribuez",
+            example: "Multica est livré comme composant d’une autre offre commerciale.",
+            required: true,
+          },
+        ],
+      },
+      sections: [
+        {
+          heading: "Autres conditions",
+          bullets: [
+            "Marque : conservez le logo Multica, le nom du produit, ainsi que les mentions de copyright et d’attribution affichées dans l’interface de Multica, sauf dérogation écrite de notre part.",
+            "Attribution : si vous bâtissez sur le backend, le démon ou le CLI de Multica sans son interface, conservez les mentions de copyright et le fichier NOTICE, et indiquez dans la documentation destinée à vos utilisateurs que votre produit repose sur Multica, avec un lien vers le [dépôt GitHub](https://github.com/multica-ai/multica).",
+            "Forks : publier le code source d’un fork n’est pas un service hébergé et ne demande aucune licence commerciale. Quiconque exploite un service hébergé à partir de ce fork a besoin de la sienne.",
+            "Une licence commerciale et une dérogation de marque sont deux autorisations distinctes. L’une n’inclut pas l’autre.",
+          ],
+        },
+        {
+          heading: "Obtenir une licence commerciale",
+          paragraphs: [
+            "Décrivez-nous votre cas d’usage via [Contacter un commercial](/contact-sales) : nous vous répondons sous trois jours ouvrés. Vous ne savez pas si votre installation demande une licence ? Posez la question sur [Discord](" + discordUrl + ") ou par le même formulaire.",
+          ],
+        },
+      ],
+    },
+
+    privacy: {
+      title: "Politique de confidentialité",
+      lastUpdated: "Dernière mise à jour : 24 septembre 2026",
+      intro: [
+        "Cette politique de confidentialité explique comment Index Labs (Hong Kong) Limited (« Multica », « nous ») collecte, utilise et partage des données personnelles lorsque vous visitez multica.ai, nous contactez ou utilisez Multica Cloud, notre service hébergé, y compris les applications web, de bureau et mobiles.",
+        "Elle ne couvre pas les déploiements de Multica que vous hébergez vous-même. L’exploitant d’un déploiement auto-hébergé contrôle ses données, et les fournisseurs d’IA, intégrations ou outils d’analyse qu’il utilise dépendent de sa configuration. La seule chose qu’un serveur auto-hébergé nous envoie est un relevé d’usage quotidien : un identifiant aléatoire du déploiement, pour relier entre eux les relevés d’un même serveur ; la version du serveur ; le nombre approximatif d’espaces de travail, de membres, d’agents et de démons connectés ; et le nombre d’exécutions d’agents lancées, terminées, échouées et annulées dans la journée. Il ne contient ni nom, ni adresse e-mail, ni contenu. Définir DO_NOT_TRACK=1 désactive ce relevé.",
+      ],
+      sections: [
+        {
+          heading: "Les données que nous collectons",
+          bullets: [
+            "Données de compte : votre nom, votre adresse e-mail et votre photo de profil. Si vous vous connectez avec Google, nous recevons de Google votre nom, votre adresse e-mail et votre photo de profil. Vous pouvez aussi ajouter des informations de profil comme la langue, le fuseau horaire et une courte présentation, et répondre à des questions d’accueil comme votre rôle, votre cas d’usage et la façon dont vous avez connu Multica.",
+            "Contenus que vous créez : espaces de travail, tâches, commentaires, messages de discussion, pièces jointes, consignes d’agents, et tout ce que vous ou vos agents mettez dans Multica Cloud.",
+            "Demandes adressées aux commerciaux : votre nom, votre e-mail professionnel, le nom et la taille de votre entreprise, votre pays ou région, votre cas d’usage, vos objectifs et vos préférences de contact. Pour prévenir les abus, nous enregistrons aussi l’adresse IP et l’agent utilisateur du navigateur depuis lesquels le formulaire a été envoyé.",
+            "Données de facturation : les paiements d’abonnement sont traités par Stripe, sur des pages hébergées par Stripe. Nous ne recevons ni ne conservons jamais les données complètes de votre carte.",
+            "Données d’usage et d’appareil : version de l’application, système d’exploitation, type de client et identifiant d’installation généré aléatoirement ; le nom de chaque machine que vous raccordez comme runtime (son nom d’hôte par défaut) ; et les rapports de plantage et d’erreur. Avant l’envoi d’un rapport, nous retirons du message d’erreur les adresses e-mail et identifiants reconnaissables, mais un rapport peut encore contenir d’autres détails sur ce qui s’est mal passé.",
+            "Retours : quand vous nous envoyez un retour, nous recevons votre message avec la page, la version de l’application, le système d’exploitation et les éventuels détails d’erreur.",
+          ],
+        },
+        {
+          heading: "Comment nous utilisons ces données",
+          bullets: [
+            "Fournir, exploiter et sécuriser Multica Cloud : vous connecter, synchroniser vos espaces de travail, envoyer notifications et invitations.",
+            "Répondre aux demandes adressées aux commerciaux et au support.",
+            "Envoyer des messages de service, comme les codes de connexion et les invitations à un espace de travail. Nous n’envoyons de nouveautés produit ou de messages marketing que si vous l’avez accepté, et vous pouvez vous désabonner à tout moment.",
+            "Comprendre comment Multica est utilisé, corriger les bugs et améliorer le produit.",
+            "Prévenir les abus et respecter nos obligations légales.",
+          ],
+        },
+        {
+          heading: "Bases légales",
+          paragraphs: [
+            "Lorsque la loi exige une base légale pour un traitement, nous nous appuyons sur l’exécution de notre contrat avec vous, pour fournir Multica Cloud ; sur nos intérêts légitimes à sécuriser, soutenir et améliorer Multica et à répondre aux demandes ; sur votre consentement, pour les messages marketing ; et sur le respect de nos obligations légales.",
+          ],
+        },
+        {
+          heading: "Fonctionnalités d’IA",
+          paragraphs: [
+            "Vos agents de code tournent sur vos propres machines ou sur les runtimes que vous raccordez, avec les outils de code et les comptes que vous avez configurés. Qu’un agent tourne sur votre machine ne signifie pas que le modèle y tourne : ces outils envoient prompts, code, fichiers et résultats d’outils à leurs fournisseurs de modèles, selon les conditions de l’outil et du compte utilisés. Multica coordonne leur travail.",
+            "Certaines fonctionnalités de Multica Cloud, comme les titres de discussion et les suggestions de relance, envoient votre premier message ou quelques messages récents à un fournisseur tiers de grands modèles de langage que nous choisissons, pour produire le résultat. Multica n’utilise pas vos contenus pour entraîner des modèles d’IA.",
+          ],
+        },
+        {
+          heading: "Cookies et mesure d’audience",
+          paragraphs: [
+            "Nous utilisons des cookies nécessaires pour vous garder connecté, vous protéger contre la falsification de requêtes intersites et vous donner accès aux fichiers que vous avez envoyés. Nous utilisons aussi un cookie qui mémorise la campagne ou le site qui vous a amené, pendant 30 jours au plus, et des cookies qui mémorisent votre langue et le dernier espace de travail ouvert.",
+            "Nous utilisons PostHog pour comprendre l’usage du produit et collecter les rapports de plantage. Quand vous êtes connecté, PostHog reçoit le nom et l’adresse e-mail de votre compte pour que nous puissions rattacher les rapports à votre compte. Nous n’utilisons aucun cookie publicitaire, et nous ne vendons pas vos données personnelles.",
+          ],
+        },
+        {
+          heading: "Avec qui nous partageons ces données",
+          paragraphs: [
+            "Ce que vous mettez dans un espace de travail est visible par ses autres membres et administrateurs, ainsi que par les agents et intégrations qu’ils autorisent, selon les permissions de l’espace. Si votre espace de travail appartient à une organisation, c’est elle qui gère son contenu et qui peut traiter les demandes qui le concernent.",
+            "Nous communiquons aussi des données lorsque la loi l’exige, et à un acquéreur ou successeur si Multica fait l’objet d’une fusion, d’une acquisition ou d’une cession d’actifs.",
+            "Au-delà, nous ne partageons des données personnelles qu’avec les prestataires qui nous aident à faire tourner Multica et avec les intégrations que vous choisissez de raccorder :",
+          ],
+          bullets: [
+            "Amazon Web Services : hébergement, stockage de fichiers et diffusion de contenu",
+            "Vercel : hébergement du site et de l’application web",
+            "Stripe : paiements et facturation",
+            "Resend : e-mails de connexion et d’invitation",
+            "PostHog : mesure d’usage du produit et rapports de plantage",
+            "Google : connexion, si vous choisissez « Se connecter avec Google »",
+            "Fournisseurs de grands modèles de langage : les fonctionnalités d’IA décrites plus haut",
+            "Les intégrations que vous raccordez, comme Slack, Lark, DingTalk, WeCom, Telegram, GitHub, GitLab ou les applications connectées via Composio : les données que vous choisissez d’échanger avec elles, soumises également à leurs propres conditions",
+          ],
+        },
+        {
+          heading: "Où les données sont stockées",
+          paragraphs: [
+            "Multica Cloud est hébergé sur Amazon Web Services et Vercel. Nos prestataires et nous-mêmes pouvons traiter vos données aux États-Unis et dans d’autres pays. Où qu’elles soient traitées, nous les protégeons comme le décrit cette politique.",
+          ],
+        },
+        {
+          heading: "Combien de temps nous conservons les données",
+          paragraphs: [
+            "Nous conservons les données de compte et le contenu des espaces de travail tant que votre compte ou votre espace de travail existe. Quand le propriétaire d’un espace de travail le supprime, ses tâches, commentaires et autres contenus sont retirés de Multica Cloud, mais les sauvegardes que nous gardons pour la restauration peuvent encore en contenir des copies pendant un certain temps. Pour faire effacer de notre stockage les fichiers envoyés dans un espace de travail supprimé, écrivez à [support@multica.ai](mailto:support@multica.ai). Nous conservons les données de facturation aussi longtemps que les règles comptables et fiscales l’exigent, et la mesure d’usage, les rapports de plantage, les demandes adressées aux commerciaux et les retours tant qu’ils nous servent à vous aider et à améliorer Multica. Nous supprimons les demandes et les retours sur simple demande.",
+          ],
+        },
+        {
+          heading: "Vos choix et vos droits",
+          paragraphs: [
+            "Selon votre lieu de résidence, vous pouvez avoir le droit d’accéder à vos données personnelles, de les rectifier, de les supprimer ou de les exporter ; de vous opposer à certains traitements ou d’en demander la limitation ; de retirer un consentement donné, par exemple pour les messages marketing ; et d’introduire une réclamation auprès de votre autorité locale de protection des données. Vous pouvez modifier votre profil dans Multica à tout moment, et supprimer un espace de travail dont vous êtes propriétaire depuis ses paramètres. Pour toute autre demande, y compris la suppression de votre compte, écrivez à [support@multica.ai](mailto:support@multica.ai). Nous répondons sous 30 jours.",
+          ],
+        },
+        {
+          heading: "Sécurité",
+          paragraphs: [
+            "Nous protégeons vos données par le chiffrement en transit, des contrôles d’accès et le stockage chiffré des identifiants d’intégration. Aucun système n’est parfaitement sûr : contactez-nous sans attendre si vous pensez que votre compte a été compromis.",
+          ],
+        },
+        {
+          heading: "Enfants",
+          paragraphs: [
+            "Multica ne s’adresse pas aux enfants de moins de 16 ans, et nous ne collectons pas sciemment leurs données personnelles.",
+          ],
+        },
+        {
+          heading: "Modifications de cette politique",
+          paragraphs: [
+            "Nous pouvons mettre à jour cette politique de temps à autre. Nous publierons la nouvelle version sur cette page et mettrons à jour la date en haut. Si un changement est important, nous vous préviendrons avant son entrée en vigueur.",
+          ],
+        },
+        {
+          heading: "Nous contacter",
+          paragraphs: [
+            "Multica est exploité par Index Labs (Hong Kong) Limited, responsable du traitement de vos données personnelles. Pour toute question ou demande relative à la confidentialité, écrivez à [support@multica.ai](mailto:support@multica.ai).",
+          ],
+        },
+      ],
     },
 
     changelog: {
@@ -3826,17 +4082,17 @@ export function createFrDict(
       ],
       consent: {
         intro:
-          "Multica, Inc. respecte votre vie privée. Nous n’utiliserons vos données personnelles que pour gérer votre compte et vous fournir les produits ou services demandés. De temps à autre, nous aimerions vous faire part de nouveautés, de bonnes pratiques et d’analyses susceptibles de vous intéresser. Dites-nous ci-dessous si vous souhaitez recevoir ces messages.",
+          "Multica respecte votre vie privée. Nous n’utiliserons vos données personnelles que pour gérer votre compte et vous fournir les produits ou services demandés. De temps à autre, nous aimerions vous faire part de nouveautés, de bonnes pratiques et d’analyses susceptibles de vous intéresser. Dites-nous ci-dessous si vous souhaitez recevoir ces messages.",
         outreach:
-          "Je souhaite recevoir des communications personnelles de Multica, Inc., y compris des informations sur le service, des réponses au support et des suivis commerciaux.",
+          "Je souhaite recevoir des communications personnelles de Multica, y compris des informations sur le service, des réponses au support et des suivis commerciaux.",
         updates:
           "Je souhaite recevoir les nouveautés produit, les analyses et les invitations aux événements de Multica.",
         unsubscribe:
           "Vous pouvez vous désabonner de nos communications à tout moment. Pour en savoir plus sur le traitement de vos données et vos droits, consultez notre",
         submitConsent:
-          "En cliquant sur « Envoyer », vous autorisez Multica, Inc. à conserver et traiter vos informations afin de vous fournir le contenu demandé.",
+          "En cliquant sur « Envoyer », vous autorisez Multica à conserver et traiter vos informations afin de vous fournir le contenu demandé.",
         privacyLinkLabel: "politique de confidentialité.",
-        privacyLinkHref: "/about",
+        privacyLinkHref: "/privacy",
       },
       success: {
         title: "Merci — c’est bien reçu.",
