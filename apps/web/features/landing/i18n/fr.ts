@@ -8,6 +8,50 @@ import type { LandingDict } from "./types";
 function frChangelogEntries(): LandingDict["changelog"]["entries"] {
   return [
     {
+      version: "0.6.0",
+      date: "2026-09-28",
+      title:
+        "Réveils conditionnels, recherche instantanée, aperçu des livrables, et une nouvelle page de paramètres",
+      changes: [],
+      features: [
+        "Une tâche peut réveiller son agent quand un statut change, qu’une sous-tâche se termine ou qu’une pull request évolue.",
+        "Donnez une date d’expiration à un réveil, et consultez chaque vérification qu’il a faite.",
+        "La recherche de tâches et de projets répond instantanément sur le web et l’application de bureau.",
+        "Répondez à un agent en cours d’exécution, et choisissez d’ajouter à cette exécution, d’en mettre une nouvelle en file ou de la relancer.",
+        "Un accusé de réception vous confirme que l’agent en cours d’exécution a bien reçu votre réponse.",
+        "Retrouvez les livrables d’une tâche dans un seul panneau latéral, avec leurs versions et leurs détails.",
+        "Les pièces jointes s’affichent en grille, et les fichiers HTML, Markdown, CSV, JSON et YAML s’ouvrent en aperçu sur place.",
+        "Les diagrammes Mermaid s’affichent en entier, se zooment de près, et les images se copient en un clic.",
+        "Suivez la chronologie d’une exécution sur la tâche, y compris les états d’échec et d’annulation.",
+        "Laissez une tâche avancer d’elle-même comme vous l’avez choisi une fois ses pull requests fusionnées.",
+        "Prévisualisez une tâche à côté de la liste sans la quitter.",
+        "Les notifications WeCom arrivent dans la langue de chaque personne.",
+        "Choisissez Claude Opus 5.5 et GPT-6 Sol/Luna dans la liste des modèles.",
+        "Voyez la description de projet d’un dépôt au moment de le choisir.",
+      ],
+      improvements: [
+        "Les paramètres sont regroupés en personnels, espace de travail et cet appareil, et se recherchent.",
+        "L’historique des tâches d’un agent se parcourt par pages et totalise le temps passé.",
+        "Précédent, Suivant et l’affichage de la barre latérale sont réunis à gauche dans l’application de bureau.",
+        "Voyez à combien d’agents chaque serveur MCP est attribué.",
+      ],
+      fixes: [
+        "Les réglages de modèle enregistrés restent enregistrés.",
+        "Une exécution Hermes tourne avec les réglages que vous avez choisis.",
+        "Les paramètres d’entrée des outils MCP restent entièrement visibles.",
+        "Une pièce jointe citée dans Telegram parvient à l’agent avec votre message.",
+        "WeCom ne répond plus deux fois au même message.",
+        "Des outils de même nom dans des plugins différents ne se remplacent plus.",
+        "Un lien ouvert par identifiant de tâche déplie le commentaire qu’il désigne.",
+        "Ouvrir un projet sur mobile affiche ses tâches immédiatement.",
+        "Tout sélectionner, puis supprimer, supprime bien chaque tâche sélectionnée.",
+        "Le statut d’exécution s’affiche correctement.",
+        "Une vue enregistrée garde le nom que vous avez saisi.",
+        "Le menu des réveils affiche correctement ses options.",
+        "Une ligne de pull request montre tout le diff, et tourne pendant l’exécution des vérifications.",
+      ],
+    },
+    {
       version: "0.5.3",
       date: "2026-09-24",
       title:
