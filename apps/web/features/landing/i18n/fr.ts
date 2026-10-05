@@ -8,6 +8,28 @@ import type { LandingDict } from "./types";
 function frChangelogEntries(): LandingDict["changelog"]["entries"] {
   return [
     {
+      version: "0.6.1",
+      date: "2026-10-01",
+      title:
+        "Courbes de coût cumulé des exécutions, une liste de tâches plus rapide, et des changements d’espace de travail plus fiables",
+      changes: [],
+      features: [
+        "Le graphique des exécutions suit votre pointeur et montre les périodes calmes entre deux exécutions.",
+        "Le panneau latéral d’une tâche montre le coût cumulé de ses exécutions sous forme de courbe.",
+        "Marquez une tâche comme doublon en ligne de commande et gardez le lien vers l’originale.",
+      ],
+      improvements: [
+        "La liste des tâches reste stable pendant que les exécutions vont et viennent, et le filtre des agents au travail répond plus vite.",
+      ],
+      fixes: [
+        "Codex propose GPT-6.1 Sol, et le coût des modèles GPT-6 suit les tarifs actuels.",
+        "Atteindre la limite d’usage d’un fournisseur est présenté comme un quota, et non plus comme un problème d’identifiants.",
+        "Fermer la discussion flottante laisse vos raccourcis clavier fonctionner et conserve votre brouillon.",
+        "Sous Windows, un dépôt se récupère même après le déplacement de votre dossier d’espaces de travail.",
+        "Changer d’espace de travail depuis une discussion ouverte vous y emmène, avec votre session et votre projet toujours sélectionnés.",
+      ],
+    },
+    {
       version: "0.6.0",
       date: "2026-09-28",
       title:
