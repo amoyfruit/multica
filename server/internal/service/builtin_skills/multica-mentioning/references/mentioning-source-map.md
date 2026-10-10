@@ -8,24 +8,28 @@ a pointer.
 
 | Fact | Source |
 | --- | --- |
-| `MentionRe` — the only recognizer of a mention link | `server/internal/util/mention.go:16` |
-| Pattern: `` `\[@?(.+?)\]\(mention://(member\|agent\|squad\|issue\|all)/([0-9a-fA-F-]+\|all)\)` `` | `server/internal/util/mention.go:16` |
-| `<type>` group = `member \| agent \| squad \| issue \| all` | `server/internal/util/mention.go:16` |
-| `<id>` group = `[0-9a-fA-F-]+` (hex + dashes) **or** the literal `all` — so a typical name with non-hex letters never matches | `server/internal/util/mention.go:16` |
-| `ParseMentions` extracts and dedups `{Type, ID}` from `m[2]`/`m[3]` | `server/internal/util/mention.go:24-37` |
-| `Mention.Type` doc enum = "member", "agent", "issue", or "all" (squad added in regex) | `server/internal/util/mention.go:7` |
-| `HasMentionAll` reports whether any parsed mention is `all` | `server/internal/util/mention.go:40-47` |
-| **`project` is NOT in the type group** — `[Label](mention://project/<uuid>)` never parses, so it can enqueue nothing. It is a render-only link every client makes navigable — a chip on web/desktop (`RichLink` in `packages/views/rich-content/rich-content.tsx`), an ordinary enriched link whose tap is routed on mobile (`onLinkPress` in `apps/mobile/lib/markdown/markdown.tsx`, which renders no chip) | `server/internal/util/mention.go:16` |
+| `ParseMentions` is the shared parser. It walks Goldmark `Link` nodes, so code nodes and raw HTML blocks are excluded | `server/internal/util/mention.go` (search `func ParseMentions`) |
+| `parseMentionLink` validates `MentionRe` at the link's source position and requires visible label text. Reference links and other link forms do not count | `server/internal/util/mention.go` (search `func parseMentionLink`) |
+| Canonical source pattern: `` `\[@?(.+?)\]\(mention://(member\|agent\|squad\|issue\|all)/([0-9a-fA-F-]+\|all)\)` ``; `@` is optional | `server/internal/util/mention.go` (search `var MentionRe`) |
+| `<type>` group = `member \| agent \| squad \| issue \| all` | `server/internal/util/mention.go` (`MentionRe`) |
+| `<id>` group = `[0-9a-fA-F-]+` (hex + dashes) **or** the literal `all` — so a typical name with non-hex letters never matches | `server/internal/util/mention.go` (`MentionRe`) |
+| `ParseMentions` deduplicates validated `{Type, ID}` pairs in document order | `server/internal/util/mention.go` (`ParseMentions`, `parseMentionLink`) |
+| `Mention.Type` includes "member", "agent", "squad", "issue", and "all" | `server/internal/util/mention.go` (search `type Mention`) |
+| `HasMentionAll` reports whether any parsed mention is `all` | `server/internal/util/mention.go` (search `func HasMentionAll`) |
+| **`project` is NOT in the type group** — `[Label](mention://project/<uuid>)` never parses, so it can enqueue nothing. It is a render-only link every client makes navigable — a chip on web/desktop (`RichLink` in `packages/views/rich-content/rich-content.tsx`), an ordinary enriched link whose tap is routed on mobile (`onLinkPress` in `apps/mobile/lib/markdown/markdown.tsx`, which renders no chip) | `server/internal/util/mention.go` (`MentionRe`) |
 
 ### Parser behavior tests (pin the example shapes the skill uses)
 
 | Case proven | Source |
 | --- | --- |
-| `mention://member/<real-uuid>` parses to `{member, uuid}` | `server/internal/util/mention_test.go:42-45` |
-| `mention://all/all` parses to `{all, all}` | `server/internal/util/mention_test.go:47-50` |
-| `mention://agent/<uuid>` parses; label may contain `[brackets]` | `server/internal/util/mention_test.go:13-35` |
-| plain text with no `mention://` parses to `nil` | `server/internal/util/mention_test.go:57-60` |
-| Skill eval: a name where a UUID belongs (`mention://member/Alice`) parses to `nil`; a bare `@name` parses to `nil`; a real UUID parses; `@all` → `{all, all}`; a **wrong** type with a real UUID still parses (points at the wrong entity) | `server/internal/service/builtin_skills_test.go:101-157` |
+| Canonical agent, member, issue, and all links parse; labels may contain nested or escaped brackets | `server/internal/util/mention_test.go` (`TestParseMentions`) |
+| Empty, whitespace-only, `@`-only, entity-whitespace, and HTML-only labels are inert | `server/internal/util/mention_test.go` (`TestParseMentions`, label cases) |
+| Full, collapsed, and shortcut reference links, titles, angle destinations, images, escaped openers, and autolinks are inert | `server/internal/util/mention_test.go` (`TestParseMentions`, canonical source cases) |
+| Inline and multiline code spans, indented code, nested fences, longer closers, and four-space pseudo-closers follow Markdown code boundaries | `server/internal/util/mention_test.go` (`TestParseMentions`, code cases) |
+| Fenced diffs inside `<details>` are inert with or without blank lines. Prose after the diff and Markdown prose inside details still parse | `server/internal/util/mention_test.go` (`TestParseMentions`, details cases) |
+| Prose blockquote links still parse; ignored links do not prevent later canonical mentions of the same target | `server/internal/util/mention_test.go` (`TestParseMentions`) |
+| Skill evals pin canonical links, empty-label and reference-link rejection, inert inline code and details diffs, and copied syntax in prose | `server/internal/service/builtin_skills_test.go` (`TestMentioningSkillTeachesTheParserContract`) |
+| Squad roster code examples stay inert; pasted unwrapped syntax parses to its type and UUID | `server/internal/handler/squad_briefing_test.go` (`TestBuildSquadLeaderBriefing_MentionsRoundTrip`) |
 
 ## What each mention type enqueues
 

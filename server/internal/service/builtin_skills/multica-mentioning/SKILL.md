@@ -22,15 +22,28 @@ The backend recognizes a mention only through this Markdown shape:
 
     [@Label](mention://<type>/<id>)
 
-The parser (`util.MentionRe` in `server/internal/util/mention.go`) accepts
+The parser (`util.ParseMentions` in `server/internal/util/mention.go`) accepts
 exactly four `<type>` values plus the `all` sentinel, and the `<id>` group
 accepts only hex characters and dashes, OR the literal string `all`:
 
     (member|agent|squad|issue|all)/([0-9a-fA-F-]+|all)
 
 So the link target is a real entity UUID (or `all`), never a display name. The
-label between the brackets is free text — that is where the human-readable name
-goes.
+label between the brackets must contain visible text. Put the human-readable
+name there. The `@` prefix is optional; issue references commonly omit it:
+
+    [MUL-123](mention://issue/<uuid>)
+
+`ParseMentions` walks Goldmark Markdown link nodes, then validates `MentionRe`
+at each link's source position. Empty or whitespace-only labels, reference
+links, images, autolinks, titles, and angle-bracket destinations are not mention
+triggers. Use the canonical inline shape above.
+
+Code examples are inert as mentions. This includes inline code, multiline code
+spans, indented code, and backtick or tilde fenced blocks inside lists,
+blockquotes, or `<details>`. A fenced `diff` of agent instructions cannot invoke
+its mention targets. Copy the mention syntax out of code and paste it into
+ordinary prose to trigger it. Prose mentions in blockquotes still count.
 
 One `mention://` form deliberately sits OUTSIDE this parser:
 `[Label](mention://project/<uuid>)`. `project` is absent from the type group

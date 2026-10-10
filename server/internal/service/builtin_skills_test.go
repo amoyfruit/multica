@@ -148,7 +148,7 @@ func TestMentioningSkillFollowsContractFrontmatter(t *testing.T) {
 // its value: it proves the skill teaches exactly what util.ParseMentions
 // enforces. The skill's "Incorrect" examples must parse to nothing (the
 // @gpt-boy class of bug: a name where a UUID belongs fails silently), and its
-// "Correct" example must parse. If mention.go:16 drifts, this breaks and the
+// "Correct" example must parse. If ParseMentions drifts, this breaks and the
 // skill's claims must be re-checked.
 func TestMentioningSkillTeachesTheParserContract(t *testing.T) {
 	const uuid = "7f3a1b2c-0000-4000-8000-000000000abc"
@@ -182,6 +182,27 @@ func TestMentioningSkillTeachesTheParserContract(t *testing.T) {
 			name:    "all uses the literal all",
 			content: "[@all](mention://all/all) heads up",
 			want:    []util.Mention{{Type: "all", ID: "all"}},
+		},
+		{
+			name:    "empty label cannot trigger an agent",
+			content: "[](mention://agent/" + uuid + ")",
+		},
+		{
+			name:    "reference link cannot trigger an agent",
+			content: "[@Agent][target]\n\n[target]: mention://agent/" + uuid,
+		},
+		{
+			name:    "inline code example is inert",
+			content: "`[@Agent](mention://agent/" + uuid + ")`",
+		},
+		{
+			name:    "details diff example is inert",
+			content: "<details>\n<summary>Instructions</summary>\n\n```diff\n+ [@Agent](mention://agent/" + uuid + ")\n```\n\n</details>",
+		},
+		{
+			name:    "copied example in prose parses",
+			content: "[@Agent](mention://agent/" + uuid + ") please review",
+			want:    []util.Mention{{Type: "agent", ID: uuid}},
 		},
 		{
 			// Skill: "Using the wrong type for an id points at the wrong

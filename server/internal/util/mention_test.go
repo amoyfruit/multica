@@ -64,6 +64,80 @@ func TestParseMentions(t *testing.T) {
 			want:    []Mention{{Type: "agent", ID: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"}},
 		},
 		{
+			name:    "visible agent label without optional at prefix",
+			content: "[Agent](mention://agent/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa)",
+			want:    []Mention{{Type: "agent", ID: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"}},
+		},
+		{
+			name:    "empty label is ignored",
+			content: "[](mention://agent/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa)",
+		},
+		{
+			name:    "whitespace label is ignored",
+			content: "[  ](mention://agent/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa)",
+		},
+		{
+			name:    "at prefix without a label is ignored",
+			content: "[@](mention://agent/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa)",
+		},
+		{
+			name:    "entity whitespace label is ignored",
+			content: "[&#32;](mention://agent/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa)",
+		},
+		{
+			name:    "HTML only label is ignored",
+			content: "[<span></span>](mention://agent/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa)",
+		},
+		{
+			name:    "full reference link is ignored",
+			content: "[@Agent][target]\n\n[target]: mention://agent/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+		},
+		{
+			name:    "collapsed reference link is ignored",
+			content: "[@Agent][]\n\n[@Agent]: mention://agent/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+		},
+		{
+			name:    "shortcut reference link is ignored",
+			content: "[@Agent]\n\n[@Agent]: mention://agent/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+		},
+		{
+			name:    "angle bracket destination is ignored",
+			content: "[@Agent](<mention://agent/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa>)",
+		},
+		{
+			name:    "link with title is ignored",
+			content: "[@Agent](mention://agent/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa \"title\")",
+		},
+		{
+			name:    "destination whitespace is ignored",
+			content: "[@Agent]( mention://agent/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa )",
+		},
+		{
+			name:    "entity encoded destination is ignored",
+			content: "[@Agent](mention&#58;//agent/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa)",
+		},
+		{
+			name:    "canonical text inside label cannot validate noncanonical outer link",
+			content: "[@Agent `[Example](mention://agent/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa)`](<mention://agent/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa>)",
+		},
+		{
+			name:    "image is ignored",
+			content: "![@Agent](mention://agent/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa)",
+		},
+		{
+			name:    "escaped link opener is ignored",
+			content: `\[@Agent](mention://agent/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa)`,
+		},
+		{
+			name:    "autolink is ignored",
+			content: "<mention://agent/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa>",
+		},
+		{
+			name:    "ignored reference does not hide later canonical mention",
+			content: "[@Agent][target] then [@Agent](mention://agent/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa)\n\n[target]: mention://agent/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+			want:    []Mention{{Type: "agent", ID: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"}},
+		},
+		{
 			name:    "mention inside fenced code block is ignored",
 			content: "```\n[@A](mention://agent/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa)\n```",
 			want:    nil,
@@ -132,6 +206,32 @@ func TestParseMentions(t *testing.T) {
 			name:    "prose mention inside a blockquote is still returned next to quoted code",
 			content: "> [@A](mention://agent/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa)\n>\n> ```\n> [@B](mention://agent/bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb)\n> ```",
 			want:    []Mention{{Type: "agent", ID: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"}},
+		},
+		{
+			name:    "fenced diff inside details is ignored",
+			content: "<details>\n<summary>Agent instructions diff</summary>\n\n```diff\n- [@A](mention://agent/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa)\n+ [@B](mention://agent/bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb)\n```\n\n</details>",
+		},
+		{
+			name:    "details without blank line stays inert",
+			content: "<details>\n<summary>Diff</summary>\n```diff\n+ [@A](mention://agent/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa)\n```\n</details>",
+		},
+		{
+			name:    "prose after details diff still triggers",
+			content: "<details>\n<summary>Diff</summary>\n\n```diff\n+ [@B](mention://agent/bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb)\n```\n\n</details>\n\n[@A](mention://agent/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa)",
+			want:    []Mention{{Type: "agent", ID: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"}},
+		},
+		{
+			name:    "prose inside details with blank line still triggers",
+			content: "<details>\n<summary>Request</summary>\n\n[@A](mention://agent/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa)\n\n</details>",
+			want:    []Mention{{Type: "agent", ID: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"}},
+		},
+		{
+			name:    "fenced diff inside list is ignored",
+			content: "- Instructions:\n\n  ```diff\n  + [@A](mention://agent/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa)\n  ```",
+		},
+		{
+			name:    "indented code is ignored",
+			content: "    [@A](mention://agent/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa)",
 		},
 	}
 
