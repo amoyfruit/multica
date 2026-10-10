@@ -4,10 +4,12 @@ import (
 	"html"
 	"regexp"
 	"strings"
+	"unicode"
 
-	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/ast"
+	"github.com/yuin/goldmark/parser"
 	"github.com/yuin/goldmark/text"
+	goldmarkutil "github.com/yuin/goldmark/util"
 )
 
 // Mention represents a parsed @mention from markdown content.
@@ -23,7 +25,7 @@ type Mention struct {
 // enough to prevent over-matching.
 var MentionRe = regexp.MustCompile(`\[@?(.+?)\]\(mention://(member|agent|squad|issue|all)/([0-9a-fA-F-]+|all)\)`)
 
-var canonicalMentionRe = regexp.MustCompile("^" + MentionRe.String())
+var canonicalMentionRe = regexp.MustCompile("^" + MentionRe.String() + "$")
 
 // IsMentionAll returns true if the mention is an @all mention.
 func (m Mention) IsMentionAll() bool {
@@ -43,18 +45,33 @@ func (m Mention) IsMentionAll() bool {
 // visible label text. Reference links and other Markdown link forms are inert.
 func ParseMentions(content string) []Mention {
 	source := []byte(content)
-	doc := goldmark.New().Parser().Parse(text.NewReader(source))
+	links := &mentionLinkParser{InlineParser: parser.NewLinkParser(), spans: make(map[*ast.Link]text.Segment)}
+	inlineParsers := parser.DefaultInlineParsers()
+	for i := range inlineParsers {
+		if inlineParsers[i].Value == links.InlineParser {
+			inlineParsers[i].Value = links
+		}
+	}
+	markdown := parser.NewParser(
+		parser.WithBlockParsers(parser.DefaultBlockParsers()...),
+		parser.WithInlineParsers(inlineParsers...),
+		parser.WithParagraphTransformers(parser.DefaultParagraphTransformers()...),
+	)
+	doc := markdown.Parse(text.NewReader(source))
 	seen := make(map[string]bool)
 	var result []Mention
 	_ = ast.Walk(doc, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
 		if !entering {
 			return ast.WalkContinue, nil
 		}
+		if _, ok := n.(*ast.Image); ok {
+			return ast.WalkSkipChildren, nil
+		}
 		link, ok := n.(*ast.Link)
 		if !ok {
 			return ast.WalkContinue, nil
 		}
-		mention, ok := parseMentionLink(link, source)
+		mention, ok := parseMentionLink(link, links.spans[link], source)
 		if !ok {
 			return ast.WalkContinue, nil
 		}
@@ -69,38 +86,73 @@ func ParseMentions(content string) []Mention {
 	return result
 }
 
-func parseMentionLink(link *ast.Link, source []byte) (Mention, bool) {
+// Goldmark links expose their start, but not their end. Record the span while
+// its link parser owns the reader, before inline nodes lose that boundary.
+type mentionLinkParser struct {
+	parser.InlineParser
+	spans map[*ast.Link]text.Segment
+}
+
+func (p *mentionLinkParser) Parse(parent ast.Node, reader text.Reader, context parser.Context) ast.Node {
+	n := p.InlineParser.Parse(parent, reader, context)
+	if link, ok := n.(*ast.Link); ok {
+		_, end := reader.Position()
+		p.spans[link] = text.NewSegment(link.Pos(), end.Start)
+	}
+	return n
+}
+
+func (p *mentionLinkParser) CloseBlock(parent ast.Node, reader text.Reader, context parser.Context) {
+	// Preserve the link parser's cleanup of unmatched openers between blocks.
+	p.InlineParser.(parser.CloseBlocker).CloseBlock(parent, reader, context)
+}
+
+func parseMentionLink(link *ast.Link, span text.Segment, source []byte) (Mention, bool) {
 	if link.Reference != nil || len(link.Title) != 0 {
 		return Mention{}, false
 	}
-	start := link.Pos()
-	m := canonicalMentionRe.FindSubmatchIndex(source[start:])
+	raw := span.Value(source)
+	m := canonicalMentionRe.FindSubmatchIndex(raw)
 	if m == nil {
 		return Mention{}, false
 	}
-	mention := Mention{Type: string(source[start+m[4] : start+m[5]]), ID: string(source[start+m[6] : start+m[7]])}
+	mention := Mention{Type: string(raw[m[4]:m[5]]), ID: string(raw[m[6]:m[7]])}
 	if string(link.Destination) != "mention://"+mention.Type+"/"+mention.ID {
 		return Mention{}, false
 	}
 
 	var label strings.Builder
-	canonical := true
 	_ = ast.Walk(link, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
 		if entering {
-			if text, ok := n.(*ast.Text); ok {
-				// A mention-shaped string inside the label must not validate
-				// a different outer link's source form.
-				if text.Segment.Stop > start+m[3] {
-					canonical = false
+			if _, ok := n.(*ast.Image); ok {
+				return ast.WalkSkipChildren, nil
+			}
+			if node, ok := n.(*ast.Text); ok {
+				value := node.Segment.Value(source)
+				if !node.IsRaw() {
+					value = goldmarkutil.UnescapePunctuations(value)
+					label.WriteString(html.UnescapeString(string(value)))
+				} else {
+					label.Write(value)
 				}
-				label.Write(text.Segment.Value(source))
 			}
 		}
 		return ast.WalkContinue, nil
 	})
-	visible := strings.TrimSpace(html.UnescapeString(label.String()))
-	visible = strings.TrimSpace(strings.TrimPrefix(visible, "@"))
-	return mention, canonical && visible != ""
+	firstVisible := true
+	for _, r := range label.String() {
+		if unicode.Is(unicode.Other_Default_Ignorable_Code_Point, r) || r == '\u2800' {
+			continue
+		}
+		if unicode.IsLetter(r) || unicode.IsNumber(r) || unicode.IsPunct(r) || unicode.IsSymbol(r) {
+			if firstVisible && r == '@' {
+				firstVisible = false
+				continue
+			}
+			return mention, true
+		}
+	}
+	return Mention{}, false
 }
 
 // HasMentionAll returns true if any mention in the slice is an @all mention.

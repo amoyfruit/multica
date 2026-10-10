@@ -59,6 +59,15 @@ func TestParseMentions(t *testing.T) {
 			want:    nil,
 		},
 		{
+			name:    "unmatched link opener does not cross paragraph boundary",
+			content: "[\n\n]",
+		},
+		{
+			name:    "unmatched image opener does not cross paragraph boundary",
+			content: "![\n\n]\n\n[@Agent](mention://agent/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa)",
+			want:    []Mention{{Type: "agent", ID: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"}},
+		},
+		{
 			name:    "escaped brackets in label",
 			content: `[@David\[TF\]](mention://agent/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa) hi`,
 			want:    []Mention{{Type: "agent", ID: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"}},
@@ -119,6 +128,69 @@ func TestParseMentions(t *testing.T) {
 		{
 			name:    "canonical text inside label cannot validate noncanonical outer link",
 			content: "[@Agent `[Example](mention://agent/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa)`](<mention://agent/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa>)",
+		},
+		{
+			name:    "mention in HTML comment label cannot validate outer link",
+			content: "[A <!-- [X](mention://agent/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa) -->](<mention://agent/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa>)",
+		},
+		{
+			name:    "mention in image destination cannot validate outer link",
+			content: "[A ![x](\"[X](mention://agent/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa)\")](<mention://agent/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa>)",
+		},
+		{
+			name:    "zero width entity label is ignored",
+			content: "[&#x200B;](mention://agent/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa)",
+		},
+		{
+			name:    "named zero width entity label is ignored",
+			content: "[&ZeroWidthSpace;](mention://agent/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa)",
+		},
+		{
+			name:    "invisible format label is ignored",
+			content: "[\u200b\ufeff](mention://agent/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa)",
+		},
+		{
+			name:    "invisible leading text cannot turn at prefix into a label",
+			content: "[\u200b@](mention://agent/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa) [&#x200B;@](mention://agent/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa) [\u3164@](mention://agent/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa)",
+		},
+		{
+			name:    "Hangul filler label is ignored",
+			content: "[\u115f\u1160\u3164\uffa0](mention://agent/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa)",
+		},
+		{
+			name:    "Hangul filler entities are ignored",
+			content: "[&#x115F;&#x1160;&#x3164;&#xFFA0;](mention://agent/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa)",
+		},
+		{
+			name:    "braille blank label is ignored",
+			content: "[\u2800](mention://agent/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa)",
+		},
+		{
+			name:    "braille blank entity is ignored",
+			content: "[&#x2800;](mention://agent/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa)",
+		},
+		{
+			name:    "visible Unicode label with invisible format still triggers",
+			content: "[@\u200b助手](mention://agent/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa)",
+			want:    []Mention{{Type: "agent", ID: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"}},
+		},
+		{
+			name:    "visible inline code label still triggers",
+			content: "[`Agent`](mention://agent/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa)",
+			want:    []Mention{{Type: "agent", ID: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"}},
+		},
+		{
+			name:    "escaped at prefix without label is ignored",
+			content: `[@](mention://agent/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa) [\@](mention://agent/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa)`,
+		},
+		{
+			name:    "mention inside image alt text is ignored",
+			content: "![[@A](mention://agent/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa)](https://example.com/image.png)",
+		},
+		{
+			name:    "prose next to image alt mention still triggers",
+			content: "![[@B](mention://agent/bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb)](https://example.com/image.png) [@A](mention://agent/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa)",
+			want:    []Mention{{Type: "agent", ID: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"}},
 		},
 		{
 			name:    "image is ignored",
