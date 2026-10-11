@@ -1184,6 +1184,10 @@ var resumeRejectedPhrases = []string{
 	// session found with ID <id>. Run `qwen --resume` without an ID to
 	// choose from existing sessions."
 	"no saved session found",
+	// Verified: ZCode 0.16.9 prints this to stderr and exits 1 when --resume
+	// names a session that does not exist — "Error: Session not found:
+	// <sess_id> (traceId: ...)".
+	"session not found",
 	// Reported verbatim in multica-ai/multica#5704 against Claude Code
 	// 2.1.207 (zh-CN): "400 此 session 已绑定另外的ai账号，请执行 /new 开启新
 	// session". This is the account-switch guardrail this signal exists for.

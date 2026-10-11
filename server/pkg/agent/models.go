@@ -329,6 +329,13 @@ func ListModels(ctx context.Context, providerType string, runtimeCmd Command) (C
 		// ModelSelectionSupported. Return an empty list rather than spawning
 		// an ACP subprocess that can only ever come back empty.
 		return Catalog{Models: []Model{}}, nil
+	case "zcode":
+		// ZCode accepts no model flag: the model lives in the CLI's own
+		// provider config (~/.zcode/v2/provider_config.json) and nothing on
+		// the Multica side can change it — same arrangement as qwenpaw/mcode,
+		// see ModelSelectionSupported. An empty list keeps manual entry off
+		// the picker and avoids spawning a subprocess that has no effect.
+		return Catalog{Models: []Model{}}, nil
 	default:
 		return Catalog{}, fmt.Errorf("unknown agent type: %q", providerType)
 	}
@@ -432,7 +439,7 @@ func QualifyModelID(catalog Catalog, model string) (string, bool) {
 // dropdown plus a silently-ignored manual-entry field.
 func ModelSelectionSupported(providerType string) bool {
 	switch providerType {
-	case "qwenpaw", "mcode", "zeroclaw":
+	case "qwenpaw", "mcode", "zeroclaw", "zcode":
 		// QwenPaw's `session/set_model` persists to agent.json at the agent
 		// scope, not the session scope. Calling it would mutate the user's
 		// shared, persistent agent config. Model override is therefore
@@ -444,7 +451,8 @@ func ModelSelectionSupported(providerType string) bool {
 		// its ACP dispatch table at all (0.8.4 answers -32601) and no handler
 		// reads a model param, so the model comes from the ZeroClaw agent
 		// profile (`agents.<alias>.model_provider`) and nothing Multica sends
-		// can change it.
+		// can change it. ZCode has no model flag at all: the model comes from
+		// the CLI's own provider config and Multica cannot influence it.
 		return false
 	default:
 		return true
