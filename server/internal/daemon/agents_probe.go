@@ -331,6 +331,29 @@ var probeAgentCLIs = func() map[string]AgentEntry {
 	if e, ok := probe("MULTICA_ZEROCLAW_PATH", "zeroclaw", ""); ok {
 		agents["zeroclaw"] = e
 	}
+	// ZCode (`zcode`) runs headlessly with -p and stream-json. It takes no
+	// model env var: the CLI accepts no model flag at all — the model lives in
+	// ZCode's own provider config — so ExecOptions.Model can never be applied,
+	// see ModelSelectionSupported. Reading one here would only advertise a knob
+	// that silently does nothing.
+	if e, ok := probe("MULTICA_ZCODE_PATH", "zcode", ""); ok {
+		agents["zcode"] = e
+	} else if strings.TrimSpace(os.Getenv("MULTICA_ZCODE_PATH")) == "" {
+		// The ZCode CLI ships inside the desktop app bundle as a Node script
+		// (shebang `#!/usr/bin/env node`) and is never installed onto PATH, so
+		// neither exec.LookPath nor the login-shell fallback can find it. The
+		// backend runs a resolved .cjs under `node` (zcode_invocation.go), so
+		// the script only counts while it carries the executable bit — an
+		// entry discovered without it would be advertised as a healthy runtime
+		// and then fail on every spawn. An explicit but invalid
+		// MULTICA_ZCODE_PATH remains a hard miss and never falls back here.
+		for _, p := range zcodeDesktopAppBundlePaths() {
+			if executableCandidate(p) {
+				agents["zcode"] = AgentEntry{Path: p, Command: "zcode"}
+				break
+			}
+		}
+	}
 	return agents
 }
 

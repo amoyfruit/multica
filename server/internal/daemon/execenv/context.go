@@ -428,6 +428,10 @@ func skillsDirPath(workDir, provider string) string {
 		// (and also scans .agents/skills/). Prefer the native .grok tree.
 		// See Grok user-guide skills.md.
 		return filepath.Join(workDir, ".grok", "skills")
+	case "zcode":
+		// ZCode discovers project-level skills from .zcode/skills/ in the
+		// workdir (mirroring its user-level ~/.zcode/skills root).
+		return filepath.Join(workDir, ".zcode", "skills")
 	default:
 		// Fallback: write to .agent_context/skills/ (referenced by meta config).
 		return filepath.Join(workDir, ".agent_context", "skills")

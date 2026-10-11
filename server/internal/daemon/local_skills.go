@@ -244,6 +244,10 @@ func localSkillRootsForProvider(provider string) ([]localSkillRoot, bool, error)
 			// directly below it. Project skills are injected separately under
 			// <workDir>/.minimax/skills.
 			providerRoot = filepath.Join(home, ".minimax", "skills")
+		case "zcode":
+			// ZCode's global skills live in ~/.zcode/skills; project skills are
+			// injected separately under <workDir>/.zcode/skills.
+			providerRoot = filepath.Join(home, ".zcode", "skills")
 		default:
 			return nil, false, nil
 		}
