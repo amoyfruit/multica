@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/multica-ai/multica/server/internal/testutil"
 	"github.com/multica-ai/multica/server/internal/util"
@@ -308,6 +309,122 @@ func TestIssueWakeupRetryKeepsPromptAndSchedulingScope(t *testing.T) {
 		t.Fatal("retry lost wakeup prompt or scope")
 	}
 	f.Cleanup(t, "DELETE FROM agent_task_queue WHERE id=$1", child.ID)
+}
+
+func TestIssueWakeupRetryRequiresCurrentRule(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		mutate func(*testing.T, principalFixture, *IssueWakeupService, pgtype.UUID, db.IssueWakeup)
+	}{
+		{
+			name: "disabled rule",
+			mutate: func(t *testing.T, f principalFixture, s *IssueWakeupService, issue pgtype.UUID, w db.IssueWakeup) {
+				if _, err := s.Disable(context.Background(), issue, w.ID, parseTestUUID(t, f.UserID)); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+		{
+			name: "changed rule revision",
+			mutate: func(t *testing.T, f principalFixture, s *IssueWakeupService, issue pgtype.UUID, w db.IssueWakeup) {
+				_, err := s.Save(context.Background(), issue, parseTestUUID(t, f.UserID), pgtype.UUID{}, w.ID, WakeupInput{
+					AgentID: util.UUIDToString(w.AgentID), Kind: "every", IntervalSeconds: 3600, Instruction: "updated",
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f, s, issue, agent := wakeFixture(t)
+			ctx := context.Background()
+			w := wakeCreate(t, f, s, issue, WakeupInput{AgentID: agent, Kind: "every", IntervalSeconds: 3600, Instruction: "retry"})
+			f.Exec(t, "UPDATE issue_wakeup SET next_fire_at=now()-interval '1 second' WHERE id=$1", w.ID)
+			wakeDispatch(t, s, w)
+			parent, err := f.q.GetAgentTask(ctx, w.LastTaskID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			f.Exec(t, "UPDATE agent_task_queue SET status='running' WHERE id=$1", parent.ID)
+			tc.mutate(t, f, s, issue, w)
+			f.Exec(t, "UPDATE agent_task_queue SET status='failed',failure_reason='runtime_recovery',completed_at=now() WHERE id=$1", parent.ID)
+
+			_, err = f.q.CreateRetryTask(ctx, db.CreateRetryTaskParams{ID: parent.ID})
+			if !errors.Is(err, pgx.ErrNoRows) {
+				t.Fatalf("CreateRetryTask error = %v, want pgx.ErrNoRows", err)
+			}
+			if n := f.Count(t, "SELECT count(*) FROM agent_task_queue WHERE parent_task_id=$1", parent.ID); n != 0 {
+				t.Fatalf("stale wakeup rule created %d retry tasks", n)
+			}
+		})
+	}
+
+	t.Run("unchanged rule remains claimable", func(t *testing.T) {
+		f, s, issue, agent := wakeFixture(t)
+		ctx := context.Background()
+		w := wakeCreate(t, f, s, issue, WakeupInput{AgentID: agent, Kind: "every", IntervalSeconds: 3600, Instruction: "retry"})
+		f.Exec(t, "UPDATE issue_wakeup SET next_fire_at=now()-interval '1 second' WHERE id=$1", w.ID)
+		wakeDispatch(t, s, w)
+		parent, err := f.q.GetAgentTask(ctx, w.LastTaskID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		f.Exec(t, "UPDATE agent_task_queue SET status='failed',failure_reason='runtime_recovery',completed_at=now() WHERE id=$1", parent.ID)
+		child, err := f.q.CreateRetryTask(ctx, db.CreateRetryTaskParams{ID: parent.ID})
+		if err != nil {
+			t.Fatalf("CreateRetryTask: %v", err)
+		}
+
+		var runtimeID pgtype.UUID
+		if err := f.Pool.QueryRow(ctx, "SELECT runtime_id FROM agent WHERE id=$1", agent).Scan(&runtimeID); err != nil {
+			t.Fatal(err)
+		}
+		claimed, err := s.Tasks.ClaimTaskForRuntime(ctx, runtimeID)
+		if err != nil {
+			t.Fatalf("ClaimTaskForRuntime: %v", err)
+		}
+		if claimed == nil || claimed.ID != child.ID {
+			t.Fatalf("claimed task = %v, want retry %s", claimed, util.UUIDToString(child.ID))
+		}
+	})
+
+	t.Run("disable is serialized with retry creation", func(t *testing.T) {
+		f, s, issue, agent := wakeFixture(t)
+		ctx := context.Background()
+		w := wakeCreate(t, f, s, issue, WakeupInput{AgentID: agent, Kind: "every", IntervalSeconds: 3600, Instruction: "retry"})
+		f.Exec(t, "UPDATE issue_wakeup SET next_fire_at=now()-interval '1 second' WHERE id=$1", w.ID)
+		wakeDispatch(t, s, w)
+		parent, err := f.q.GetAgentTask(ctx, w.LastTaskID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		f.Exec(t, "UPDATE agent_task_queue SET status='failed',failure_reason='runtime_recovery',completed_at=now() WHERE id=$1", parent.ID)
+
+		disableTx, err := f.Pool.Begin(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer disableTx.Rollback(ctx)
+		if _, err := disableTx.Exec(ctx, "UPDATE issue_wakeup SET enabled=false,disabled_at=now() WHERE id=$1", w.ID); err != nil {
+			t.Fatal(err)
+		}
+
+		waitCtx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
+		defer cancel()
+		_, err = f.q.CreateRetryTask(waitCtx, db.CreateRetryTaskParams{ID: parent.ID})
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("CreateRetryTask while disable holds the rule row = %v, want context deadline", err)
+		}
+		if err := disableTx.Commit(ctx); err != nil {
+			t.Fatal(err)
+		}
+
+		_, err = f.q.CreateRetryTask(ctx, db.CreateRetryTaskParams{ID: parent.ID})
+		if !errors.Is(err, pgx.ErrNoRows) {
+			t.Fatalf("CreateRetryTask after disable = %v, want pgx.ErrNoRows", err)
+		}
+	})
 }
 
 func TestIssueWakeupConcurrentDispatchIsIdempotent(t *testing.T) {

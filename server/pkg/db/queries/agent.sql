@@ -535,6 +535,24 @@ WHERE id = $1 AND issue_id IS NULL
 -- attempt=3, max_attempts=3 rather than leaking attempt=3, max_attempts=2 to the
 -- task API (MUL-4910). The Go retryAttemptCeiling already refuses to raise a
 -- disabled (max_attempts<=1) task, so this only ever widens, never revives.
+-- Lock task owners before the wakeup row so rule edits serialize with retries
+-- without reversing the owner-lock order.
+WITH retry_parent AS MATERIALIZED (
+    SELECT p.*, lock_task_owner_rows(p.agent_id, p.issue_id, p.runtime_id) AS owner_rows_locked
+    FROM agent_task_queue p
+    WHERE p.id = $1
+), eligible_parent AS MATERIALIZED (
+    SELECT p.*
+    FROM retry_parent p
+    WHERE p.owner_rows_locked
+      AND (p.context->>'wakeup_id' IS NULL OR EXISTS (
+          SELECT 1 FROM issue_wakeup w
+          WHERE w.id = (p.context->>'wakeup_id')::uuid
+            AND w.disabled_at IS NULL
+            AND w.revision = (p.context->>'wakeup_revision')::bigint
+          FOR SHARE OF w
+      ))
+)
 INSERT INTO agent_task_queue (
     agent_id, runtime_id, issue_id, chat_session_id, autopilot_run_id,
     status, priority, trigger_comment_id, coalesced_comment_ids, trigger_summary, context,
@@ -568,9 +586,7 @@ SELECT
     CASE WHEN p.context->>'wakeup_id' IS NOT NULL THEN p.handoff_note END,
     -- Named new_task_id, not id: $1 above is the PARENT task's id.
     COALESCE(sqlc.narg('new_task_id')::uuid, gen_random_uuid())
-FROM agent_task_queue p
-WHERE p.id = $1
-  AND lock_task_owner_rows(p.agent_id, p.issue_id, p.runtime_id)
+FROM eligible_parent p
 ON CONFLICT (issue_id, agent_id, (COALESCE(comment_thread_id, '00000000-0000-0000-0000-000000000000'::uuid))) WHERE status IN ('queued', 'dispatched')
        OR (status = 'deferred' AND context->>'channel_issue_media_pending' = 'true')
 DO NOTHING
