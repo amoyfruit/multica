@@ -376,6 +376,25 @@ function ZeroClawLogo({ className }: { className: string }) {
   );
 }
 
+// ZCode — placeholder mark (a "Z" stroke pair inside an implied terminal
+// block cursor) until official brand art is sourced; same arrangement as
+// ZeroClawLogo above. currentColor keeps it legible in both themes.
+function ZcodeLogo({ className }: { className: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+    >
+      <path d="M6 6h12L6 18h12" />
+    </svg>
+  );
+}
+
 export function ProviderLogo({
   provider,
   className = "h-4 w-4",
@@ -435,6 +454,8 @@ export function ProviderLogo({
       return <DimLogo className={className} />;
     case "zeroclaw":
       return <ZeroClawLogo className={className} />;
+    case "zcode":
+      return <ZcodeLogo className={className} />;
     default:
       return <Monitor className={className} />;
   }
