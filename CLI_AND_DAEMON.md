@@ -371,6 +371,7 @@ Agent-specific overrides:
 | `MULTICA_MCODE_PATH` | Custom path to the `mcode` binary |
 | `MULTICA_DSH_PATH` | Custom path to the `dsh` binary |
 | `MULTICA_DSH_MODEL` | Override the DeepSeek Harness model used (a model id from the dsh catalog, e.g. `deepseek-official/deepseek-chat`) |
+| `MULTICA_ZCODE_PATH` | Custom path to the `zcode` CLI (defaults to PATH lookup, then the ZCode Desktop app bundle on macOS) |
 
 If a previously generated `~/.multica/hooks` wrapper is first on `PATH` and calls the same command name again, the daemon skips that hooks directory during built-in agent discovery and records the real binary path behind it. If your interactive shell still recurses when you run `claude`, `codex`, or `hermes` manually, remove the hooks entry from your shell startup file or replace the wrapper body with an absolute `exec /path/to/real-binary "$@"`.
 
