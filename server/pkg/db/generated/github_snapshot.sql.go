@@ -23,7 +23,7 @@ func (q *Queries) DeleteGitHubPRCheckRuns(ctx context.Context, prID pgtype.UUID)
 }
 
 const getGitHubPullRequestByID = `-- name: GetGitHubPullRequestByID :one
-SELECT id, workspace_id, installation_id, repo_owner, repo_name, pr_number, title, state, html_url, branch, author_login, author_avatar_url, merged_at, closed_at, pr_created_at, pr_updated_at, created_at, updated_at, head_sha, mergeable_state, additions, deletions, changed_files, api_mergeable, api_merge_state_status, checks_rollup_state, snapshot_head_sha, snapshot_fetched_at FROM github_pull_request WHERE id = $1
+SELECT id, workspace_id, installation_id, repo_owner, repo_name, pr_number, title, state, html_url, branch, author_login, author_avatar_url, merged_at, closed_at, pr_created_at, pr_updated_at, created_at, updated_at, head_sha, mergeable_state, additions, deletions, changed_files, api_mergeable, api_merge_state_status, checks_rollup_state, snapshot_head_sha, snapshot_fetched_at, api_merge_queue_state FROM github_pull_request WHERE id = $1
 `
 
 func (q *Queries) GetGitHubPullRequestByID(ctx context.Context, id pgtype.UUID) (GithubPullRequest, error) {
@@ -58,6 +58,7 @@ func (q *Queries) GetGitHubPullRequestByID(ctx context.Context, id pgtype.UUID) 
 		&i.ChecksRollupState,
 		&i.SnapshotHeadSha,
 		&i.SnapshotFetchedAt,
+		&i.ApiMergeQueueState,
 	)
 	return i, err
 }
@@ -210,6 +211,7 @@ WITH candidates AS (
           OR api_mergeable IS NULL
           OR api_mergeable = 'UNKNOWN'
           OR checks_rollup_state IN ('PENDING', 'EXPECTED')
+          OR api_merge_queue_state IS NOT NULL
           OR EXISTS (
               SELECT 1
               FROM github_pull_request_check_run AS cr
@@ -252,6 +254,8 @@ type ListStaleUndecidedGitHubPRsRow struct {
 // TTL / safety-net sweep source. Returns distinct addresses of open/draft PRs
 // whose snapshot is both stale and undecided. A decided snapshot leaves the
 // periodic refresh set; later webhook or view activity can still refresh it.
+// A PR sitting in a merge queue is never decided (see PRSnapshot.Decided): the
+// entry always ends, and a missed dequeue webhook must not pin it as queued.
 // The caller advances an address cursor after each bounded batch. Rows after
 // the cursor sort first, followed by a wrap to the start, so even perpetually
 // failing addresses cannot pin the same first LIMIT rows forever.
@@ -291,16 +295,18 @@ const updateGitHubPRSnapshot = `-- name: UpdateGitHubPRSnapshot :execrows
 UPDATE github_pull_request
 SET api_mergeable          = $1,
     api_merge_state_status = $2,
-    checks_rollup_state    = $3,
-    snapshot_head_sha      = $4,
-    snapshot_fetched_at    = $5,
+    api_merge_queue_state  = $3,
+    checks_rollup_state    = $4,
+    snapshot_head_sha      = $5,
+    snapshot_fetched_at    = $6,
     updated_at             = now()
-WHERE id = $6 AND head_sha = $4
+WHERE id = $7 AND head_sha = $5
 `
 
 type UpdateGitHubPRSnapshotParams struct {
 	ApiMergeable        pgtype.Text        `json:"api_mergeable"`
 	ApiMergeStateStatus pgtype.Text        `json:"api_merge_state_status"`
+	ApiMergeQueueState  pgtype.Text        `json:"api_merge_queue_state"`
 	ChecksRollupState   pgtype.Text        `json:"checks_rollup_state"`
 	HeadSha             string             `json:"head_sha"`
 	FetchedAt           pgtype.Timestamptz `json:"fetched_at"`
@@ -316,6 +322,7 @@ func (q *Queries) UpdateGitHubPRSnapshot(ctx context.Context, arg UpdateGitHubPR
 	result, err := q.db.Exec(ctx, updateGitHubPRSnapshot,
 		arg.ApiMergeable,
 		arg.ApiMergeStateStatus,
+		arg.ApiMergeQueueState,
 		arg.ChecksRollupState,
 		arg.HeadSha,
 		arg.FetchedAt,

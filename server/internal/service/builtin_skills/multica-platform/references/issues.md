@@ -78,12 +78,16 @@ Returns `{"pull_requests": [...], ...}`. Each element of `pull_requests` exposes
 - `mergeable_state` — mirrors GitHub (`clean` / `dirty` surfaced; other values
   round-trip as unknown; retained for compatibility).
 - GitHub API snapshot fields: `snapshot_available`, `mergeable`,
-  `merge_state_status`, `checks_rollup`, `checks_total`, `checks_passed`,
-  `checks_failed`, `checks_running`, `failed_check_names`,
+  `merge_state_status`, `merge_queue_state`, `checks_rollup`, `checks_total`,
+  `checks_passed`, `checks_failed`, `checks_running`, `failed_check_names`,
   `snapshot_fetched_at`, and `snapshot_stale`. `snapshot_available == true`
   means the feature is enabled and the snapshot matches the PR's current head.
   Only then does `checks_rollup == null` mean "no checks"; false means the
   snapshot feature is disabled, has not fetched yet, or only has an old head.
+- `merge_queue_state` — `queued`, `awaiting_checks`, `mergeable`,
+  `unmergeable`, or `locked` while the PR sits in the repository's merge
+  queue; `null` otherwise. It is delivery progress, not a merge: a queued PR
+  is still `state: open` and its `merge_state_status` usually reads `blocked`.
 - `checks_conclusion` — coarse CI compatibility status: `passed`, `failed`,
   `pending`, or `null`. GitHub derives it from the current API snapshot;
   Forgejo/Gitea/GitLab derive it from webhook commit statuses. Backed by the

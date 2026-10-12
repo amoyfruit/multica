@@ -25,6 +25,7 @@ WHERE installation_id = $1 AND repo_owner = $2 AND repo_name = $3 AND pr_number 
 UPDATE github_pull_request
 SET api_mergeable          = sqlc.narg('api_mergeable'),
     api_merge_state_status = sqlc.narg('api_merge_state_status'),
+    api_merge_queue_state  = sqlc.narg('api_merge_queue_state'),
     checks_rollup_state    = sqlc.narg('checks_rollup_state'),
     snapshot_head_sha      = sqlc.arg('head_sha'),
     snapshot_fetched_at    = sqlc.arg('fetched_at'),
@@ -47,6 +48,8 @@ INSERT INTO github_pull_request_check_run (
 -- TTL / safety-net sweep source. Returns distinct addresses of open/draft PRs
 -- whose snapshot is both stale and undecided. A decided snapshot leaves the
 -- periodic refresh set; later webhook or view activity can still refresh it.
+-- A PR sitting in a merge queue is never decided (see PRSnapshot.Decided): the
+-- entry always ends, and a missed dequeue webhook must not pin it as queued.
 -- The caller advances an address cursor after each bounded batch. Rows after
 -- the cursor sort first, followed by a wrap to the start, so even perpetually
 -- failing addresses cannot pin the same first LIMIT rows forever.
@@ -60,6 +63,7 @@ WITH candidates AS (
           OR api_mergeable IS NULL
           OR api_mergeable = 'UNKNOWN'
           OR checks_rollup_state IN ('PENDING', 'EXPECTED')
+          OR api_merge_queue_state IS NOT NULL
           OR EXISTS (
               SELECT 1
               FROM github_pull_request_check_run AS cr
