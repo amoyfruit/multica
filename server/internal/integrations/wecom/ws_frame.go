@@ -130,58 +130,37 @@ type quotedMessage struct {
 	} `json:"mixed"`
 }
 
-// render turns the quoted message into the lines it contributes. A kind this
-// adapter does not know contributes nothing, the same way a mixed run does.
-func (q quotedMessage) render() string {
-	if !strings.EqualFold(q.MsgType, "mixed") {
-		return q.mixedItem.renderQuoted()
-	}
-	var runs []string
-	for _, item := range q.Mixed.MsgItem {
-		if s := item.renderQuoted(); s != "" {
-			runs = append(runs, s)
-		}
-	}
-	return strings.Join(runs, "\n")
+// quoteRun is one line the quoted message contributes: words somebody typed or
+// said, or the marker standing in for an attachment together with the
+// attachment it stands for.
+//
+// The marker and its attachment are one value on purpose. They used to be two
+// lists, rendered by one function and collected by another, and anything that
+// changed the rendered text in between (a sentence that spells the marker out,
+// a cut that removes it) left the second list describing a body the agent never
+// saw. A run that has an attachment cannot be laid out without its marker, and
+// a run that is laid out cannot lose its attachment, so fitQuote below decides
+// what survives once and both follow.
+type quoteRun struct {
+	text  string
+	media *InboundMedia
 }
 
-// media lists the quoted message's downloadable attachments, in the order
-// render lays their markers out, each stamped with the marker it stands for.
-//
-// FETCHING THEM IS THE WHOLE OF THE FIX. "[Image]" is all a quote of a picture
-// could be rendered as — the payload carries no sender, no message id and no
-// timestamp to say WHICH picture — so an agent reading that line cannot tell a
-// screenshot it read a minute ago from one it has never seen, and answers
-// "左下角那块看不清" about a picture it does not have. The url and aeskey on
-// the quote are the only thing that resolves it, and the callback hands them
-// over exactly the way it hands over an attachment the sender just made.
-//
-// The stamp closes the other half. Fetching the bytes puts the picture in the
-// attachment list; the marker's occurrence number is what says WHICH entry of
-// that list the quote's marker is, and without it a message carrying two
-// attachments — one quoted, one just sent — hands the agent two markers and
-// two ids with nothing joining them.
-func (q quotedMessage) media() []InboundMedia {
-	var out []InboundMedia
-	if strings.EqualFold(q.MsgType, "mixed") {
-		for _, item := range q.Mixed.MsgItem {
-			out = append(out, item.media()...)
+// runs lays the quoted message out as the lines it contributes, in order. A
+// kind this adapter does not know contributes nothing, the same way a mixed
+// run does.
+func (q quotedMessage) runs() []quoteRun {
+	if !strings.EqualFold(q.MsgType, "mixed") {
+		if run, ok := q.mixedItem.quoteRun(); ok {
+			return []quoteRun{run}
 		}
-	} else {
-		out = q.mixedItem.media()
+		return nil
 	}
-	// Counted PER MARKER, not over the whole list: "[Image: unavailable]" and
-	// "[File: unavailable]" are different strings, so the second picture in a
-	// quote that also carried a document is still that marker's first
-	// occurrence. Counting them together would send the binder looking for a
-	// second "[Image: unavailable]" that is not there, and leave the picture
-	// unnamed.
-	seen := make(map[string]int, len(out))
-	for i := range out {
-		marker := quotedMediaPlaceholder(out[i].Kind)
-		out[i].InlinePlaceholder = marker
-		out[i].InlineIndex = seen[marker]
-		seen[marker]++
+	var out []quoteRun
+	for _, item := range q.Mixed.MsgItem {
+		if run, ok := item.quoteRun(); ok {
+			out = append(out, run)
+		}
 	}
 	return out
 }
@@ -230,13 +209,7 @@ func (item mixedItem) words() string {
 // render turns one 图文混排 run into the line it contributes to the message
 // body. An item of a kind this adapter does not know contributes nothing
 // rather than a stray placeholder.
-func (item mixedItem) render() string { return item.renderWith(mediaPlaceholder) }
-
-// renderQuoted is the same run inside a QUOTED message, where an attachment
-// renders as a marker with room in it to be named. See quotedMediaPlaceholder.
-func (item mixedItem) renderQuoted() string { return item.renderWith(quotedMediaPlaceholder) }
-
-func (item mixedItem) renderWith(placeholder func(channel.MsgType) string) string {
+func (item mixedItem) render() string {
 	if s := item.words(); s != "" {
 		return s
 	}
@@ -244,19 +217,27 @@ func (item mixedItem) renderWith(placeholder func(channel.MsgType) string) strin
 	if !ok || strings.TrimSpace(body.URL) == "" {
 		return ""
 	}
-	return placeholder(kind)
+	return mediaPlaceholder(kind)
 }
 
-// media is the downloadable attachment behind this run's marker, if it has
-// one. Paired with renderWith on purpose: a run that renders a marker has an
-// attachment here, and one that renders words has none, so the two lists line
-// up by construction rather than by a caller keeping them in step.
-func (item mixedItem) media() []InboundMedia {
+// quoteRun is render for a run inside a QUOTED message: an attachment comes
+// back as a marker with room in it to be named (quotedMediaPlaceholder) along
+// with the attachment that marker stands for.
+func (item mixedItem) quoteRun() (quoteRun, bool) {
+	if s := item.words(); s != "" {
+		return quoteRun{text: s}, true
+	}
 	body, kind, ok := mediaFor(item.MsgType, item.Image, item.File, item.Video)
 	if !ok || strings.TrimSpace(body.URL) == "" {
-		return nil
+		return quoteRun{}, false
 	}
-	return []InboundMedia{{Kind: kind, URL: body.URL, AESKey: body.AESKey}}
+	marker := quotedMediaPlaceholder(kind)
+	return quoteRun{text: marker, media: &InboundMedia{
+		Kind:              kind,
+		URL:               body.URL,
+		AESKey:            body.AESKey,
+		InlinePlaceholder: marker,
+	}}, true
 }
 
 // mediaPlaceholder is the marker that stands in for an attachment in the
@@ -335,7 +316,8 @@ func mediaFor(msgType string, image, file, video mediaBody) (mediaBody, channel.
 // above the sender's own words and the two lists have to agree on order — the
 // engine binds a marker by its occurrence number in the body.
 func (mc aibotMsgCallback) attachments() []InboundMedia {
-	return append(mc.Quote.media(), mc.ownAttachments()...)
+	_, quotedMedia := mc.quotedBlock()
+	return append(quotedMedia, mc.ownAttachments()...)
 }
 
 func (mc aibotMsgCallback) ownAttachments() []InboundMedia {
@@ -433,16 +415,38 @@ const maxQuotedRunes = 500
 // here. Prefixing it would let a quote of somebody else's "/issue …" file an
 // issue nobody asked for.
 func (mc aibotMsgCallback) quotedContext() string {
-	rendered := strings.TrimSpace(mc.Quote.render())
+	block, _ := mc.quotedBlock()
+	return block
+}
+
+// quotedBlock is the quote block and the attachments whose markers are in it.
+//
+// FETCHING THE ATTACHMENTS IS THE WHOLE OF THE FIX. "[Image]" is all a quote
+// of a picture could be rendered as — the payload carries no sender, no
+// message id and no timestamp to say WHICH picture — so an agent reading that
+// line cannot tell a screenshot it read a minute ago from one it has never
+// seen, and answers "左下角那块看不清" about a picture it does not have. The
+// url and aeskey on the quote are the only thing that resolves it, and the
+// callback hands them over exactly the way it hands over an attachment the
+// sender just made.
+//
+// The marker closes the other half. Fetching the bytes puts the picture in the
+// attachment list; the marker's occurrence number is what says WHICH entry of
+// that list the quote's marker is, and without it a message carrying two
+// attachments — one quoted, one just sent — hands the agent two markers and
+// two ids with nothing joining them.
+//
+// The rule the pair obeys: an attachment is returned only if its marker is in
+// the block, and its InlineIndex counts occurrences in the block as returned.
+// The engine binds by searching the stored body for the Nth occurrence of the
+// marker string, so the number has to be taken from the text the agent will
+// read — not from how many attachments came before it — and the text is
+// whatever is left after the cut. Both come out of fitQuote in one pass, so
+// neither can describe a block the other did not produce.
+func (mc aibotMsgCallback) quotedBlock() (string, []InboundMedia) {
+	rendered, media := fitQuote(mc.Quote.runs(), maxQuotedRunes)
 	if rendered == "" {
-		return ""
-	}
-	// A quoted document would otherwise become the body. The sender quoted it
-	// to point at it, not to resend it, and the words that carry their question
-	// are their own — which follow the block and must not be pushed out of the
-	// agent's reach by it.
-	if runes := []rune(rendered); len(runes) > maxQuotedRunes {
-		rendered = strings.TrimRight(string(runes[:maxQuotedRunes]), " \t\n") + "…"
+		return "", nil
 	}
 	var b strings.Builder
 	for i, line := range strings.Split(rendered, "\n") {
@@ -456,7 +460,85 @@ func (mc aibotMsgCallback) quotedContext() string {
 		}
 		b.WriteString(line)
 	}
-	return b.String()
+	return b.String(), media
+}
+
+// fitQuote lays the quote's runs out within maxRunes and returns the text with
+// the attachments that survived in it, each stamped with which occurrence of
+// its marker it is.
+//
+// A quoted document would otherwise become the body. The sender quoted it to
+// point at it, not to resend it, and the words that carry their question are
+// their own — which follow the block and must not be pushed out of the agent's
+// reach by it. So TEXT is cut at maxRunes, markers counting toward that budget
+// while they fall inside it, and the cut is marked with "…".
+//
+// A marker is never cut, and never dropped. Past the budget, runs of words are
+// dropped and runs that carry an attachment are still laid out whole, one line
+// each; a marker that starts inside the budget and ends past it is kept to the
+// end. So the block can run past maxRunes by at most the markers it carries
+// (about twenty runes each), and every attachment the caller will fetch is
+// one the agent can find in the text. #7980 left the same constraint in its
+// discussion: a truncated block must not drop a placeholder it still counts.
+//
+// InlineIndex is counted on the text as laid out, markers and words alike. A
+// quoted sentence that spells "[Image: unavailable]" out is an occurrence of
+// that marker as far as the engine's search is concerned, so it moves the real
+// marker's number up by one.
+func fitQuote(runs []quoteRun, maxRunes int) (string, []InboundMedia) {
+	var (
+		lines  []string
+		owners []*InboundMedia // owners[i] is the attachment lines[i] is the marker of, or nil
+		used   int
+		cut    bool
+	)
+	for _, run := range runs {
+		width := utf8.RuneCountInString(run.text)
+		if len(lines) > 0 {
+			width++ // the newline ahead of it
+		}
+		switch {
+		case run.media != nil:
+			lines = append(lines, run.text)
+			owners = append(owners, run.media)
+			used += width
+		case cut:
+			// The budget ran out earlier; only markers still get through.
+		case used+width <= maxRunes:
+			lines = append(lines, run.text)
+			owners = append(owners, nil)
+			used += width
+		default:
+			cut = true
+			room := maxRunes - used
+			if len(lines) > 0 {
+				room-- // the newline ahead of it
+			}
+			if room > 0 {
+				kept := strings.TrimRight(string([]rune(run.text)[:room]), " \t\n")
+				if kept != "" {
+					lines = append(lines, kept)
+					owners = append(owners, nil)
+				}
+			}
+			if len(lines) == 0 {
+				lines = append(lines, "")
+				owners = append(owners, nil)
+			}
+			lines[len(lines)-1] = strings.TrimRight(lines[len(lines)-1], " \t\n") + "…"
+		}
+	}
+
+	var media []InboundMedia
+	for i, owner := range owners {
+		if owner == nil {
+			continue
+		}
+		m := *owner
+		m.InlineIndex = strings.Count(strings.Join(lines[:i], "\n"), m.InlinePlaceholder)
+		media = append(media, m)
+	}
+	return strings.Join(lines, "\n"), media
 }
 
 // ownCommandSource is what the slash-command parsers read: the sender's own
