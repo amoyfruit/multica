@@ -24,10 +24,57 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/multica-ai/multica/server/internal/integrations/channel/engine"
+	dbfx "github.com/multica-ai/multica/server/internal/testutil"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 )
+
+// quotedBindWorld is what the wecom ResolverSet resolves against: an
+// installation keyed by bot id and a user binding keyed by the anonymized
+// aibot userid, in one workspace.
+type quotedBindWorld struct {
+	workspaceID string
+	botID       string
+	senderID    string
+}
+
+// seedQuotedBindWorld builds the same rows seedMediaBindFixture does, through
+// the shared testutil fixture so its teardown runs in reverse creation order.
+func seedQuotedBindWorld(t *testing.T, pool *pgxpool.Pool) quotedBindWorld {
+	t.Helper()
+	tag := fmt.Sprintf("%d", time.Now().UnixNano())
+	w := quotedBindWorld{botID: "wb-qbind-" + tag, senderID: "T-qbind-" + tag}
+
+	f := dbfx.New(pool, "", "")
+	f.UserID = f.User(t, "wecom quoted bind", "wecom-quoted-bind-"+tag+"@multica.test")
+	f.WorkspaceID = f.Workspace(t, "wecom quoted bind", "wecom-quoted-bind-"+tag)
+	w.workspaceID = f.WorkspaceID
+	f.Member(t, f.WorkspaceID, f.UserID, "owner")
+	runtimeID := f.Runtime(t, "wecom-qbind-runtime-"+tag, dbfx.Cols{"runtime_mode": "local", "provider": "multica_daemon"})
+	agentID := f.Agent(t, "wecom-qbind-agent-"+tag, runtimeID, dbfx.Cols{"runtime_mode": "local"})
+	installationID := f.Insert(t, "channel_installation", dbfx.Cols{
+		"workspace_id":      f.WorkspaceID,
+		"agent_id":          agentID,
+		"channel_type":      "wecom",
+		"config":            fmt.Sprintf(`{"app_id":%q,"bot_id":%q,"app_secret_encrypted":""}`, w.botID, w.botID),
+		"installer_user_id": f.UserID,
+		"status":            "active",
+	})
+	f.Insert(t, "channel_user_binding", dbfx.Cols{
+		"workspace_id":    f.WorkspaceID,
+		"multica_user_id": f.UserID,
+		"installation_id": installationID,
+		"channel_type":    "wecom",
+		"channel_user_id": w.senderID,
+	})
+	// Rows the router and resolver write on their own: they reference the
+	// workspace and the installation, so they go before either.
+	f.Cleanup(t, `DELETE FROM channel_media_pending_object WHERE workspace_id = $1`, f.WorkspaceID)
+	f.Cleanup(t, `DELETE FROM channel_inbound_message_dedup WHERE installation_id = $1`, installationID)
+	return w
+}
 
 // countingStreamStorage is a backend that can stream, and says how often it was
 // asked to. The buffered half is the embedded fake's Upload, which must stay
@@ -166,7 +213,7 @@ func TestAQuotedPictureIsNamedInTheStoredBody(t *testing.T) {
 
 func runQuotedBindScenario(t *testing.T, sc quotedBindScenario, streaming bool, makeStorage func() (mediaStorage, func() (int, int))) {
 	pool := mediaBindTestDB(t)
-	fixture := seedMediaBindFixture(t, pool)
+	fixture := seedQuotedBindWorld(t, pool)
 	ctx := context.Background()
 	queries := db.New(pool)
 
