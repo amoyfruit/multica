@@ -8,7 +8,8 @@
  * as the "no assignee" column.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, screen } from "@testing-library/react";
+import { act, cleanup, screen } from "@testing-library/react";
+import type { DragStartEvent } from "@dnd-kit/core";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ViewStoreProvider } from "@multica/core/issues/stores/view-store-context";
 import { getIssueSurfaceViewStore } from "@multica/core/issues/stores/surface-view-store";
@@ -17,6 +18,24 @@ import { renderWithI18n } from "../../test/i18n";
 import { IssueContextMenuProvider } from "../actions/issue-actions-context-menu";
 import type { IssueGroupBranches } from "../surface/use-issue-group-branches";
 import { BoardView } from "./board-view";
+
+const dragHarness = vi.hoisted(() => ({
+  start: undefined as ((event: DragStartEvent) => void) | undefined,
+}));
+
+vi.mock("@dnd-kit/core", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@dnd-kit/core")>();
+  return {
+    ...actual,
+    DndContext: (props: React.ComponentProps<typeof actual.DndContext>) => {
+      dragHarness.start = props.onDragStart;
+      return <actual.DndContext {...props} />;
+    },
+    DragOverlay: ({ children }: { children: React.ReactNode }) => (
+      <div data-testid="drag-preview">{children}</div>
+    ),
+  };
+});
 
 vi.mock("@multica/core/hooks", () => ({ useWorkspaceId: () => "ws-1" }));
 
@@ -58,7 +77,7 @@ vi.mock("@multica/core/paths", async (importOriginal) => {
 });
 
 vi.mock("../../navigation", () => ({
-  AppLink: ({ children, ...props }: React.ComponentProps<"a">) => (
+  AppLink: ({ children, newTabTitle: _newTabTitle, ...props }: React.ComponentProps<"a"> & { newTabTitle?: string }) => (
     <a {...props}>{children}</a>
   ),
   useNavigation: () => ({
@@ -227,7 +246,35 @@ describe("Board grouped by project", () => {
         </ViewStoreProvider>
       </QueryClientProvider>,
     );
+    return store;
   }
+
+  it.each([
+    [200, false, 176, null],
+    [200, false, 176, 256],
+    [280, true, 193, null],
+  ] as const)("keeps the drag preview at the card's current width (%s px columns, fit=%s)",
+    (columnWidth, fit, cardWidth, cachedWidth) => {
+      const store = render();
+      act(() => {
+        store.getState().setBoardColumnWidth(columnWidth);
+        store.getState().setBoardFitToScreen(fit);
+      });
+      const card = screen.getByText("MUL-acme").closest<HTMLElement>("[data-board-card]")!;
+      vi.spyOn(card, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, cardWidth, 100));
+      const activatorEvent = new MouseEvent("pointerdown");
+      Object.defineProperty(activatorEvent, "target", { value: card.querySelector("a") });
+      act(() => dragHarness.start?.({
+        activatorEvent,
+        active: {
+          id: ISSUES.find((issue) => issue.project_id === ACME_ID)!.id,
+          data: { current: undefined },
+          rect: { current: { initial: cachedWidth === null ? null : new DOMRect(0, 0, cachedWidth, 100), translated: null } },
+        },
+      }));
+      expect(screen.getByTestId("drag-preview").firstElementChild).toHaveStyle({ width: `${cardWidth}px` });
+    },
+  );
 
   it("titles each column with its project, never with its id", () => {
     render();

@@ -3,7 +3,7 @@
 import { useIssueStatuses } from "@multica/core/issue-statuses/hooks";
 import { cn } from "@multica/ui/lib/utils";
 
-import { useState, useCallback, useMemo, useEffect, useRef, memo } from "react";
+import { useState, useCallback, useMemo, useEffect, useRef, memo, type CSSProperties } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   DndContext,
@@ -25,14 +25,14 @@ import type {
   IssueProperty,
 } from "@multica/core/types";
 import { useViewStore } from "@multica/core/issues/stores/view-store-context";
-import { propertyIdFromViewKey } from "@multica/core/issues/stores/view-store";
+import { propertyIdFromViewKey, BOARD_COLUMN_MIN_WIDTH, BOARD_COLUMN_MAX_WIDTH } from "@multica/core/issues/stores/view-store";
 import { propertyListOptions, useSetIssueProperty, useUnsetIssueProperty } from "@multica/core/properties";
 import { useWorkspaceId } from "@multica/core/hooks";
 import type { IssueGrouping } from "@multica/core/issues/stores/view-store";
 import { useActorName } from "@multica/core/workspace/hooks";
 import { BoardColumn, BOARD_CARD_WIDTH, type BoardColumnGroup } from "./board-column";
 import { BoardCardContent } from "./board-card";
-import { HiddenColumnsPanel, HiddenColumnRow } from "./hidden-columns-panel";
+import { HiddenColumnsPanel, HiddenColumnRow, HIDDEN_COLUMNS_PANEL_WIDTH } from "./hidden-columns-panel";
 import { InfiniteScrollSentinel } from "./infinite-scroll-sentinel";
 import { ListLoadMoreFooter } from "./list-load-more-footer";
 import type { ChildProgress } from "./list-row";
@@ -272,6 +272,8 @@ function BoardViewImpl({
 }) {
   const { t } = useT("issues");
   const storeGrouping = useViewStore((s) => s.grouping);
+  const boardColumnWidth = useViewStore((s) => s.boardColumnWidth);
+  const boardFitToScreen = useViewStore((s) => s.boardFitToScreen);
   const sortBy = useViewStore((s) => s.sortBy);
   const boardWsId = useWorkspaceId();
   const catalog = useIssueStatuses(boardWsId);
@@ -457,6 +459,20 @@ function BoardViewImpl({
     },
     [hydratedAssigneeGroups, hydratedProjectGroups, issues, visibleStatuses, grouping, getActorName, groupingProperty, projectMap, projectColumnLabels, groupPagination, t],
   );
+  // Percentage widths follow the scroller's content box, so fitting responds
+  // to window/sidebar changes without measuring or persisting viewport size.
+  const columnGap = 16;
+  const hasHiddenPanel = grouping === "status" && hiddenStatuses.length > 0;
+  const extraColumnCount = Number(hasHiddenPanel) + Number(!!groupBranches?.hasMoreGroups);
+  const reservedWidth = (hasHiddenPanel ? HIDDEN_COLUMNS_PANEL_WIDTH : 0)
+    + (groupBranches?.hasMoreGroups ? 32 : 0)
+    + Math.max(0, groups.length + extraColumnCount - 1) * columnGap;
+  const boardStyle = {
+    gap: columnGap,
+    "--board-column-width": boardFitToScreen && groups.length > 0
+      ? `clamp(${BOARD_COLUMN_MIN_WIDTH}px, calc((100% - ${reservedWidth}px) / ${groups.length}), ${BOARD_COLUMN_MAX_WIDTH}px)`
+      : `${boardColumnWidth}px`,
+  } as CSSProperties;
   const groupIds = useMemo(
     () => new Set(groups.map((group) => group.id)),
     [groups],
@@ -472,6 +488,7 @@ function BoardViewImpl({
 
   // --- Drag state ---
   const [activeIssue, setActiveIssue] = useState<Issue | null>(null);
+  const [activeCardWidth, setActiveCardWidth] = useState(BOARD_CARD_WIDTH);
   // Shared drag/settle primitive: owns the local column mirror, the
   // dragging/settling locks, the post-move animation-frame throttle, and the
   // settle callback. Shared with list-view (and swimlane) so the surfaces
@@ -529,6 +546,13 @@ function BoardViewImpl({
     (event: DragStartEvent) => {
       isDraggingRef.current = true;
       const issue = issueMapRef.current.get(event.active.id as string) ?? null;
+      // dnd-kit populates active.rect after onDragStart. Read the source card
+      // now, so a missing or previous drag's cached rect cannot set the width.
+      const target = event.activatorEvent.target;
+      const card = target instanceof Element
+        ? target.closest<HTMLElement>("[data-board-card]")
+        : null;
+      setActiveCardWidth(card?.getBoundingClientRect().width ?? BOARD_CARD_WIDTH);
       setActiveIssue(issue);
     },
     [isDraggingRef],
@@ -718,8 +742,9 @@ function BoardViewImpl({
         onPointerCancel={pan.onPointerCancel}
         onLostPointerCapture={pan.onLostPointerCapture}
         data-board-scroller=""
+        style={boardStyle}
         className={cn(
-          "flex flex-1 min-h-0 gap-4 overflow-x-auto p-2",
+          "flex flex-1 min-h-0 overflow-x-auto p-2",
           // While a side peek is open, a trailing spacer as wide as the panel
           // lets every column scroll clear of it (IssuePeekHost).
           "group-data-[peek-open]/peek:after:w-(--issue-peek-width) group-data-[peek-open]/peek:after:shrink-0 group-data-[peek-open]/peek:after:content-['']",
@@ -805,7 +830,7 @@ function BoardViewImpl({
 
       <DragOverlay dropAnimation={null}>
         {activeIssue ? (
-          <div style={{ width: BOARD_CARD_WIDTH }} className="rotate-1 cursor-grabbing opacity-90 shadow-lg shadow-black/10">
+          <div style={{ width: activeCardWidth }} className="rotate-1 cursor-grabbing opacity-90 shadow-lg shadow-black/10">
             <BoardCardContent
               issue={activeIssue}
               childProgress={childProgressMap.get(activeIssue.id)}
