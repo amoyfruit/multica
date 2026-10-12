@@ -24,6 +24,7 @@ type prConditionTx struct {
 	queryErr  error
 	lastError pgtype.Text
 	next      pgtype.Timestamptz
+	writes    int
 }
 
 func (tx *prConditionTx) Query(_ context.Context, sql string, args ...any) (pgx.Rows, error) {
@@ -40,6 +41,7 @@ func (tx *prConditionTx) Exec(_ context.Context, sql string, args ...any) (pgcon
 	switch {
 	case strings.Contains(sql, "NoteWakeupFailure"):
 		tx.lastError = args[0].(pgtype.Text)
+		tx.writes++
 	case strings.Contains(sql, "SetWakeupConditionState"):
 		tx.next = args[1].(pgtype.Timestamptz)
 	default:
@@ -92,8 +94,13 @@ func TestWakeupConditionPRDiagnosticPolling(t *testing.T) {
 	tx := &prConditionTx{issue: w.IssueID}
 	q := db.New(tx)
 	now := time.Now()
-	if err := s.baselineCondition(ctx, tx, q, w, now); err != nil || tx.lastError.String != errPRSnapshotsUnavailable.Error() {
+	wantUnavailable := conditionDiagnosticPrefix + errPRSnapshotsUnavailable.Error()
+	if err := s.baselineCondition(ctx, tx, q, w, now); err != nil || tx.lastError.String != wantUnavailable {
 		t.Fatalf("registration must retain diagnostic without rejecting: %v, %+v", err, tx.lastError)
+	}
+	w.LastError = tx.lastError
+	if err := s.baselineCondition(ctx, tx, q, w, now); err != nil || tx.writes != 1 {
+		t.Fatalf("unchanged diagnostic must not be rewritten: err=%v writes=%d", err, tx.writes)
 	}
 	s.Tasks.PRSnapshotsEnabled = true
 	for _, step := range []struct {
@@ -105,6 +112,7 @@ func TestWakeupConditionPRDiagnosticPolling(t *testing.T) {
 		{[][]any{{int32(1), "open", "head", "PENDING"}}, nil},
 	} {
 		tx.prs = step.prs
+		w.LastError = tx.lastError
 		next, err := s.pollCondition(ctx, tx, q, w, now)
 		if err != nil || !next.Valid || !next.Time.Equal(now.Add(conditionPollInterval)) {
 			t.Fatalf("poll must remain scheduled: next=%+v err=%v", next, err)
@@ -113,7 +121,7 @@ func TestWakeupConditionPRDiagnosticPolling(t *testing.T) {
 			if tx.lastError.Valid {
 				t.Fatalf("recovery retained diagnostic: %+v", tx.lastError)
 			}
-		} else if tx.lastError.String != step.want.Error() {
+		} else if tx.lastError.String != conditionDiagnosticPrefix+step.want.Error() {
 			t.Fatalf("diagnostic=%+v, want %v", tx.lastError, step.want)
 		}
 	}
@@ -121,5 +129,38 @@ func TestWakeupConditionPRDiagnosticPolling(t *testing.T) {
 	tx.queryErr = errors.New("database offline")
 	if _, err := s.pollCondition(ctx, tx, q, w, now); !errors.Is(err, tx.queryErr) {
 		t.Fatalf("database error swallowed: %v", err)
+	}
+}
+
+func TestSaveConditionDiagnosticPreservesDispatchErrors(t *testing.T) {
+	ctx := context.Background()
+	tx := &prConditionTx{}
+	q := db.New(tx)
+	realFailure := pgtype.Text{String: "dispatch failed", Valid: true}
+	w := db.IssueWakeup{ID: dbid.NewV7(), LastError: realFailure}
+
+	if err := saveConditionDiagnostic(ctx, q, w, errPRNotLinked); err != nil {
+		t.Fatal(err)
+	}
+	if err := saveConditionDiagnostic(ctx, q, w, nil); err != nil {
+		t.Fatal(err)
+	}
+	if tx.writes != 0 || tx.lastError.Valid {
+		t.Fatalf("condition evaluation changed an unrelated error: writes=%d error=%+v", tx.writes, tx.lastError)
+	}
+
+	w.LastError = pgtype.Text{String: conditionDiagnosticPrefix + errPRNotLinked.Error(), Valid: true}
+	if err := saveConditionDiagnostic(ctx, q, w, errPRSnapshotPending); err != nil {
+		t.Fatal(err)
+	}
+	if tx.writes != 1 || tx.lastError.String != conditionDiagnosticPrefix+errPRSnapshotPending.Error() {
+		t.Fatalf("owned diagnostic was not updated: writes=%d error=%+v", tx.writes, tx.lastError)
+	}
+	w.LastError = tx.lastError
+	if err := saveConditionDiagnostic(ctx, q, w, nil); err != nil {
+		t.Fatal(err)
+	}
+	if tx.writes != 2 || tx.lastError.Valid {
+		t.Fatalf("owned diagnostic was not cleared: writes=%d error=%+v", tx.writes, tx.lastError)
 	}
 }

@@ -22,7 +22,10 @@ import (
 // conditionPollInterval bounds how long a platform-evaluated condition can
 // stay satisfied before its rule notices. Same-issue field conditions also
 // subscribe to the matching event, so they usually react on the next tick.
-const conditionPollInterval = 30 * time.Second
+const (
+	conditionPollInterval     = 30 * time.Second
+	conditionDiagnosticPrefix = "Condition pending: "
+)
 
 // WakeupCondition is a structured predicate the platform evaluates itself, so
 // a rule only wakes its agent when the predicate becomes true. It compares
@@ -391,7 +394,7 @@ func (s *IssueWakeupService) pollCondition(ctx context.Context, tx pgx.Tx, q *db
 	if err != nil && !conditionDiagnostic(err) {
 		return w.NextFireAt, err
 	}
-	if err = saveConditionDiagnostic(ctx, q, w.ID, err); err != nil {
+	if err = saveConditionDiagnostic(ctx, q, w, err); err != nil {
 		return w.NextFireAt, err
 	}
 	// condition_state dedups a satisfied predicate; each new satisfaction
@@ -426,7 +429,7 @@ func (s *IssueWakeupService) baselineCondition(ctx context.Context, tx pgx.Tx, q
 	if err != nil && !conditionDiagnostic(err) {
 		return err
 	}
-	if err = saveConditionDiagnostic(ctx, q, w.ID, err); err != nil {
+	if err = saveConditionDiagnostic(ctx, q, w, err); err != nil {
 		return err
 	}
 	if !met {
@@ -435,13 +438,26 @@ func (s *IssueWakeupService) baselineCondition(ctx context.Context, tx pgx.Tx, q
 	return q.SetWakeupConditionState(ctx, db.SetWakeupConditionStateParams{ID: w.ID, ConditionState: fingerprint, NextFireAt: pgtype.Timestamptz{Time: now.Add(conditionPollInterval), Valid: true}})
 }
 
-// saveConditionDiagnostic clears a previous diagnostic once evaluation recovers.
-func saveConditionDiagnostic(ctx context.Context, q *db.Queries, id pgtype.UUID, diagnostic error) error {
+// saveConditionDiagnostic owns only last_error values carrying its prefix.
+// Dispatch failures share the column and must survive a condition poll. Avoid
+// rewriting an unchanged diagnostic on every polling interval as well.
+func saveConditionDiagnostic(ctx context.Context, q *db.Queries, w db.IssueWakeup, diagnostic error) error {
+	owned := w.LastError.Valid && strings.HasPrefix(w.LastError.String, conditionDiagnosticPrefix)
 	var lastError pgtype.Text
 	if diagnostic != nil {
-		lastError = pgtype.Text{String: diagnostic.Error(), Valid: true}
+		lastError = pgtype.Text{String: conditionDiagnosticPrefix + diagnostic.Error(), Valid: true}
+		if w.LastError.Valid {
+			if w.LastError.String == lastError.String {
+				return nil
+			}
+			if !owned {
+				return nil
+			}
+		}
+	} else if !owned {
+		return nil
 	}
-	return q.NoteWakeupFailure(ctx, db.NoteWakeupFailureParams{ID: id, LastError: lastError})
+	return q.NoteWakeupFailure(ctx, db.NoteWakeupFailureParams{ID: w.ID, LastError: lastError})
 }
 
 // subIssue is one sub-issue as the children_done condition reads it. Closed

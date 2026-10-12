@@ -236,7 +236,7 @@ func TestWakeupConditionPRDiagnosticsRecover(t *testing.T) {
 				Condition: condition(t, map[string]any{"type": "pull_request", "event": event})})
 			assertWaiting := func(w db.IssueWakeup, diagnostic error) {
 				t.Helper()
-				if !w.Enabled || !w.LastError.Valid || w.LastError.String != diagnostic.Error() || w.FireCount != 0 || wakeRuns(t, f, w.ID) != 0 {
+				if !w.Enabled || !w.LastError.Valid || w.LastError.String != conditionDiagnosticPrefix+diagnostic.Error() || w.FireCount != 0 || wakeRuns(t, f, w.ID) != 0 {
 					t.Fatalf("expected enabled, unfired rule with %q; got enabled=%t fires=%d error=%+v", diagnostic, w.Enabled, w.FireCount, w.LastError)
 				}
 				if !w.NextFireAt.Valid {
