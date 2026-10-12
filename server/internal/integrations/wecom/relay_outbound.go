@@ -849,9 +849,36 @@ func (r *RelayOutbound) Wait() {
 	}
 }
 
-// publish hands a delivery to the other replicas and reports what that
-// produced. See relayPublish for why the answer is not a bool.
+// publish hands a delivery to the other replicas and reports what the bus did
+// with it. See relayPublish for why the answer is not a bool.
+//
+// It NEVER waits: every caller of this one either has no second route to take
+// when nobody holds the target bot, or is not in a position to take one. The
+// single caller that is (an inbox push with the recipient-wide bot behind it)
+// asks through publishAwaitingHolder instead, and pays the wait only there.
 func (r *RelayOutbound) publish(f relayFrame, eventID string) relayPublish {
+	return r.publishFrame(context.Background(), f, eventID, false)
+}
+
+// publishAwaitingHolder is publish plus the acceptance wait: it answers whether
+// a replica owning the target bot's socket actually took the delivery, which is
+// what an inbox push needs before it may put a second card in the member's chat
+// through another bot. The wait is bounded by ctx, and by the acceptance window
+// it configures -- see confirmInbox.
+//
+// WHY IT IS A SEPARATE ENTRY POINT. Bus delivery is synchronous on the caller's
+// goroutine, and the publisher of an inbox:new is the HTTP request that created
+// the comment; only one replica holds a given bot's socket, so this wait is the
+// common path in a multi-replica deployment. Spending it where the answer is
+// then discarded -- a member-authored push, which has no second route to try,
+// or the fallback attempt itself, which has nothing behind it -- holds the
+// request open for a verdict nobody can act on. Those callers keep publish.
+func (r *RelayOutbound) publishAwaitingHolder(ctx context.Context, f relayFrame, eventID string) relayPublish {
+	return r.publishFrame(ctx, f, eventID, true)
+}
+
+// publishFrame is the one implementation behind the two entry points.
+func (r *RelayOutbound) publishFrame(ctx context.Context, f relayFrame, eventID string, awaitHolder bool) relayPublish {
 	if r == nil || r.publisher == nil {
 		return relayNotWired
 	}
@@ -876,8 +903,8 @@ func (r *RelayOutbound) publish(f relayFrame, eventID string) relayPublish {
 	// the bus take it", and counting a routed reply twice is what the outcome
 	// watch exists to prevent. Only the inbox push asks whether a replica
 	// actually took the delivery, because only it has a second route to fall
-	// back to.
-	if f.Kind != relayKindInbox {
+	// back to -- and only when the caller asked to wait.
+	if !awaitHolder || f.Kind != relayKindInbox {
 		return relayAccepted
 	}
 	if r.dedupe == nil {
@@ -885,7 +912,7 @@ func (r *RelayOutbound) publish(f relayFrame, eventID string) relayPublish {
 		// bus call is the only signal available, so take it.
 		return relayAccepted
 	}
-	return r.confirmInbox(eventID)
+	return r.confirmInbox(ctx, eventID)
 }
 
 // confirmInbox answers whether a replica took the delivery claim for an inbox
@@ -908,27 +935,43 @@ func (r *RelayOutbound) publish(f relayFrame, eventID string) relayPublish {
 // See fenceTokenFor.
 //
 // A claim store that cannot answer is relayUncertain: the delivery might be
-// happening, and the caller must not route a second copy on that.
-func (r *RelayOutbound) confirmInbox(eventID string) relayPublish {
+// happening, and the caller must not route a second copy on that. So is a
+// caller whose own budget ran out mid-wait -- the wait is bounded by ctx as
+// well as by the window, because this runs on a request's goroutine.
+func (r *RelayOutbound) confirmInbox(ctx context.Context, eventID string) relayPublish {
 	window := r.cfg.AcceptanceWindow
-	// The poll's OWN deadline ends the wait; the context is only the backstop
-	// that keeps a claim store which ignores its deadline from outlasting the
-	// window, so it gets a little more room than the loop. Were the two equal,
-	// the context would fire in the same instant the last poll lands and the
-	// verdict would rest on which select case won: reporting "uncertain" for a
-	// bot nobody holds, and silently giving up the fallback.
-	ctx, cancel := context.WithTimeout(context.Background(), window+window/8+time.Millisecond)
+	// THE CALLER'S BUDGET IS THE OUTER BOUND. This wait runs on the goroutine
+	// that is serving an HTTP request (see publishAwaitingHolder), so a caller
+	// that runs out of time must take the wait with it rather than be held for
+	// a window it configured elsewhere. A tighter caller deadline shortens the
+	// window; with no deadline the window stands.
+	deadline := time.Now().Add(window)
+	if d, ok := ctx.Deadline(); ok && d.Before(deadline) {
+		deadline = d
+	}
+	// The poll's OWN deadline ends the wait; the context is the backstop that
+	// keeps a claim store which ignores its deadline from outlasting it, so it
+	// gets a little more room than the loop. Were the two equal, the context
+	// could fire in the same instant the last poll lands and the verdict would
+	// rest on which select case won: reporting "uncertain" for a bot nobody
+	// holds, and silently giving up the fallback.
+	pollCtx, cancel := context.WithTimeout(ctx, time.Until(deadline)+window/8+time.Millisecond)
 	defer cancel()
 	key := dedupeKey(eventID)
-	deadline := time.Now().Add(window)
+	// Eight polls over whatever window actually applies, so a caller that
+	// shortened the wait still samples it evenly rather than once at the start
+	// and once past its own deadline.
 	step := window / 8
+	if effective := time.Until(deadline); effective < window {
+		step = effective / 8
+	}
 	if step < time.Millisecond {
 		step = time.Millisecond
 	}
 	for {
-		state, err := r.dedupe.ClaimState(ctx, key)
+		state, err := r.dedupe.ClaimState(pollCtx, key)
 		if err != nil {
-			r.logger.WarnContext(ctx, "wecom relay: inbox claim state unreadable; the push is not re-routed",
+			r.logger.WarnContext(pollCtx, "wecom relay: inbox claim state unreadable; the push is not re-routed",
 				"error", err, "event_id", eventID)
 			return relayUncertain
 		}
@@ -941,14 +984,24 @@ func (r *RelayOutbound) confirmInbox(eventID string) relayPublish {
 		timer := time.NewTimer(step)
 		select {
 		case <-timer.C:
-		case <-ctx.Done():
+		case <-pollCtx.Done():
 			timer.Stop()
 			return relayUncertain
 		}
 	}
-	won, err := r.dedupe.Claim(ctx, key, r.fenceTokenFor(eventID), r.dedupeTTL)
+	// A caller that ran out of time has nothing left to re-route WITH: its own
+	// local send would see the same expired context, so the honest answer is
+	// that the delivery is unknown -- nothing sent, nothing re-routed. In a
+	// production request the 5s budget leaves the 2s window plenty of room, so
+	// this is the backstop rather than the common exit.
+	if err := ctx.Err(); err != nil {
+		r.logger.WarnContext(ctx, "wecom relay: the caller's budget ran out before an inbox push's bot could be confirmed; not re-routing",
+			"error", err, "event_id", eventID)
+		return relayUncertain
+	}
+	won, err := r.dedupe.Claim(pollCtx, key, r.fenceTokenFor(eventID), r.dedupeTTL)
 	if err != nil {
-		r.logger.WarnContext(ctx, "wecom relay: could not fence an unclaimed inbox delivery; the push is not re-routed",
+		r.logger.WarnContext(pollCtx, "wecom relay: could not fence an unclaimed inbox delivery; the push is not re-routed",
 			"error", err, "event_id", eventID)
 		return relayUncertain
 	}
@@ -956,7 +1009,7 @@ func (r *RelayOutbound) confirmInbox(eventID string) relayPublish {
 		// A replica took the claim between the last read and the fence.
 		return relayAccepted
 	}
-	r.logger.InfoContext(ctx, "wecom relay: no replica holds the inbox push's bot; its sender may route it elsewhere",
+	r.logger.InfoContext(pollCtx, "wecom relay: no replica holds the inbox push's bot; its sender may route it elsewhere",
 		"event_id", eventID)
 	return relayNoHolder
 }

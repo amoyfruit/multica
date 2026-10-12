@@ -734,6 +734,11 @@ func retryPending(e events.Event) bool {
 // satisfies it; nil leaves the single-replica behaviour unchanged.
 type noticeRouter interface {
 	publish(f relayFrame, eventID string) relayPublish
+	// publishAwaitingHolder is publish plus the acceptance wait: it answers
+	// relayNoHolder when no replica took the frame, which only a caller with a
+	// second route to try can act on. The wait is bounded by ctx. See
+	// RelayOutbound.publishAwaitingHolder for why the two are separate.
+	publishAwaitingHolder(ctx context.Context, f relayFrame, eventID string) relayPublish
 }
 
 // WithRelay lets a run's ending reach the asker from a replica that does not

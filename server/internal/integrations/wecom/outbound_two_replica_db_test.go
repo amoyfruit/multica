@@ -360,6 +360,9 @@ type sharedDedupe struct {
 	values map[string]string
 	fail   bool
 	calls  int
+	// stateReads counts the non-fencing reads the acceptance poll makes, which
+	// is how a test can see how many windows were paid for.
+	stateReads int
 
 	// releaseFails makes Release report failure and keep the key: a DEL that
 	// never reached the server.
@@ -421,6 +424,15 @@ func (d *sharedDedupe) claimCount() int {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	return d.calls
+}
+
+// claimStateCount is how many acceptance polls this store answered. One window
+// of a W-wide wait is roughly W/(W/8)+1 of them; two windows are roughly twice
+// that, which is the arithmetic a fallback that waits again would show.
+func (d *sharedDedupe) claimStateCount() int {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.stateReads
 }
 
 func (d *sharedDedupe) Release(_ context.Context, key, token string) (bool, error) {
@@ -499,6 +511,7 @@ func (d *sharedDedupe) Resolve(_ context.Context, key string) (claimState, error
 func (d *sharedDedupe) ClaimState(_ context.Context, key string) (claimState, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	d.stateReads++
 	if d.fail {
 		return claimAbsent, errors.New("dedupe unavailable")
 	}

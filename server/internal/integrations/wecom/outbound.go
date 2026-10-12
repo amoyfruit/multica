@@ -550,6 +550,18 @@ func (o *Outbound) routeFrame(f relayFrame, eventID string) relayPublish {
 	return o.relay.publish(f, eventID)
 }
 
+// routeFrameAwaiting is routeFrame plus the acceptance wait: it asks the relay
+// whether a replica actually took the frame, bounded by ctx. Only the inbox
+// push asks, and only for the attempt that has a second route behind it -- see
+// RelayOutbound.publishAwaitingHolder for why that distinction is worth a
+// second entry point.
+func (o *Outbound) routeFrameAwaiting(ctx context.Context, f relayFrame, eventID string) relayPublish {
+	if o.relay == nil {
+		return relayNotWired
+	}
+	return o.relay.publishAwaitingHolder(ctx, f, eventID)
+}
+
 // relaySeal asks whichever replica holds this round to close it. Routed by
 // round ownership, so it needs no address — see deliverRelayed.
 func (o *Outbound) relaySeal(e events.Event, taskID pgtype.UUID, reason string, carriesFiles bool) {
@@ -858,7 +870,13 @@ func (o *Outbound) tryDeliverInbox(ctx context.Context, item map[string]any, rec
 		return false
 	}
 
-	delivered, provenMiss := o.pushInbox(ctx, item, binding, recipientIDStr, content)
+	// awaitHolder is actingAgentBot and nothing else: only the agent-attributed
+	// attempt has a second route behind it, so only that one may wait to hear
+	// whether nobody took the frame. A member-authored notification has no
+	// fallback at all, and the fallback below has nothing behind it, so both
+	// keep the relay's non-blocking publish -- the wait happens on the request's
+	// own goroutine, and a verdict nobody can act on is not worth holding it for.
+	delivered, provenMiss := o.pushInbox(ctx, item, binding, recipientIDStr, content, actingAgentBot)
 	if delivered {
 		return true
 	}
@@ -894,7 +912,7 @@ func (o *Outbound) tryDeliverInbox(ctx context.Context, item map[string]any, rec
 	o.logger.DebugContext(ctx, "wecom outbound: inbox push falls back to the recipient-wide bot",
 		"agent_installation_id", uuidStringPub(binding.InstallationID),
 		"installation_id", uuidStringPub(fallback.InstallationID))
-	delivered, _ = o.pushInbox(ctx, item, fallback, recipientIDStr, content)
+	delivered, _ = o.pushInbox(ctx, item, fallback, recipientIDStr, content, false)
 	return delivered
 }
 
@@ -904,20 +922,32 @@ func (o *Outbound) tryDeliverInbox(ctx context.Context, item map[string]any, rec
 // a send that failed before a byte could leave — which is the one case another
 // binding may be tried. A partial or uncertain send answers false, because the
 // card may already be in the member's chat and a retry would duplicate it.
-func (o *Outbound) pushInbox(ctx context.Context, item map[string]any, binding db.ChannelUserBinding, recipientIDStr, content string) (delivered, provenMiss bool) {
+// awaitHolder asks the relay to report relayNoHolder, which costs the
+// acceptance window and is only worth paying where the caller has a second
+// route to try (see tryDeliverInbox). Everything else about the attempt is the
+// same either way.
+func (o *Outbound) pushInbox(ctx context.Context, item map[string]any, binding db.ChannelUserBinding, recipientIDStr, content string, awaitHolder bool) (delivered, provenMiss bool) {
 	sender := o.senders.get(binding.InstallationID)
 	if sender == nil {
 		// No socket here. Same shape as the reply path: hand it to the replica
 		// that holds one. An inbox push is as user-visible as an answer, and
 		// leaving it local was the reason the single-replica constraint had to
 		// stay even with replies routed.
-		switch o.routeFrame(relayFrame{
+		frame := relayFrame{
 			Kind:           relayKindInbox,
 			InstallationID: util.UUIDToString(binding.InstallationID),
 			ChatID:         binding.ChannelUserID,
 			ChatType:       chatTypeSingleInt,
 			Content:        content,
-		}, relayInboxEventID(itemIDOf(item), recipientIDStr, util.UUIDToString(binding.InstallationID))) {
+		}
+		eventID := relayInboxEventID(itemIDOf(item), recipientIDStr, util.UUIDToString(binding.InstallationID))
+		var verdict relayPublish
+		if awaitHolder {
+			verdict = o.routeFrameAwaiting(ctx, frame, eventID)
+		} else {
+			verdict = o.routeFrame(frame, eventID)
+		}
+		switch verdict {
 		case relayAccepted:
 			o.logger.DebugContext(ctx, "wecom outbound: routed an inbox push to the replica holding the socket",
 				"installation_id", uuidStringPub(binding.InstallationID))

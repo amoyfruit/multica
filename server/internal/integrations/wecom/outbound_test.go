@@ -779,15 +779,77 @@ func TestTryDeliverInbox_TriStateRelayMapping(t *testing.T) {
 	}
 }
 
+// TestTryDeliverInbox_OnlyTheAttemptWithASecondRouteWaits pins the split the
+// latency tests are about: the relay is asked to WAIT for a verdict only on the
+// agent-attributed attempt, because only that one has the recipient-wide bot
+// behind it. A member-authored push has no fallback at all, and the fallback
+// attempt has nothing behind it, so neither may hold the request's goroutine.
+func TestTryDeliverInbox_OnlyTheAttemptWithASecondRouteWaits(t *testing.T) {
+	t.Parallel()
+	agentInstID := mustUUID("aaaaaaaa-1111-1111-1111-111111111111")
+	fallbackInstID := mustUUID("bbbbbbbb-2222-2222-2222-222222222222")
+	const agentID = "55555555-5555-5555-5555-555555555555"
+
+	// Agent-authored, neither bot reachable here: the agent attempt waits (and
+	// misses), then the fallback attempt runs -- and must not wait again.
+	t.Run("agent attributed", func(t *testing.T) {
+		t.Parallel()
+		q := &fakeOutboundQueries{workspace: db.Workspace{Slug: "acme"}}
+		relay := &scriptedRelay{state: relayNoHolder}
+		o := NewOutbound(q, newSendersRegistry(), nil, slog.Default(), WithRelay(relay))
+		q.agentMemberBinding = db.ChannelUserBinding{ChannelUserID: "T_AGENT_BOT", InstallationID: agentInstID}
+		q.memberBinding = db.ChannelUserBinding{ChannelUserID: "T_LATEST_BOT", InstallationID: fallbackInstID}
+
+		if o.tryDeliverInbox(context.Background(), agentInboxItem("new_comment", agentID),
+			"33333333-3333-3333-3333-333333333333", "44444444-4444-4444-4444-444444444444") {
+			t.Error("tryDeliverInbox = true; neither bot is reachable and no verdict was a delivery")
+		}
+		if len(relay.awaited) != 2 || !relay.awaited[0] || relay.awaited[1] {
+			t.Errorf("awaited = %v, want the agent attempt to wait and the fallback attempt not to", relay.awaited)
+		}
+	})
+
+	// Member-authored: the recipient-wide binding is the only route, so the one
+	// attempt must not wait for a verdict nothing could act on.
+	t.Run("member authored", func(t *testing.T) {
+		t.Parallel()
+		q := &fakeOutboundQueries{workspace: db.Workspace{Slug: "acme"}}
+		relay := &scriptedRelay{state: relayNoHolder}
+		o := NewOutbound(q, newSendersRegistry(), nil, slog.Default(), WithRelay(relay))
+		q.memberBinding = db.ChannelUserBinding{ChannelUserID: "T_LATEST_BOT", InstallationID: fallbackInstID}
+
+		item := agentInboxItem("new_comment", agentID)
+		item["actor_type"] = util.TextToPtr(pgtype.Text{String: "member", Valid: true})
+		if o.tryDeliverInbox(context.Background(), item,
+			"33333333-3333-3333-3333-333333333333", "44444444-4444-4444-4444-444444444444") {
+			t.Error("tryDeliverInbox = true; the only bot is unreachable")
+		}
+		if len(relay.awaited) != 1 || relay.awaited[0] {
+			t.Errorf("awaited = %v, want the single member-authored attempt not to wait", relay.awaited)
+		}
+	})
+}
+
 // scriptedRelay is the router seam with a canned verdict, so the tri-state
 // mapping in pushInbox can be pinned without a bus or a claim store.
 type scriptedRelay struct {
-	state  relayPublish
-	frames []relayFrame
+	state relayPublish
+	// awaited records whether the attempt that produced the verdict asked the
+	// relay to WAIT for it. Only the agent-attributed attempt may, which is the
+	// distinction the latency tests are about.
+	awaited []bool
+	frames  []relayFrame
 }
 
 func (r *scriptedRelay) publish(f relayFrame, _ string) relayPublish {
 	r.frames = append(r.frames, f)
+	r.awaited = append(r.awaited, false)
+	return r.state
+}
+
+func (r *scriptedRelay) publishAwaitingHolder(_ context.Context, f relayFrame, _ string) relayPublish {
+	r.frames = append(r.frames, f)
+	r.awaited = append(r.awaited, true)
 	return r.state
 }
 

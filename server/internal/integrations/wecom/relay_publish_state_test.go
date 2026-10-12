@@ -42,7 +42,7 @@ func TestRelayPublish_InboxWithNoHolderIsNoHolder(t *testing.T) {
 
 	instID := util.UUIDToString(mustTestUUID(t))
 	eventID := relayInboxEventID("item-1", "recipient-1", instID)
-	got := router.publish(relayFrame{
+	got := router.publishAwaitingHolder(context.Background(), relayFrame{
 		Kind: relayKindInbox, InstallationID: instID,
 		ChatID: "T_USER", ChatType: chatTypeSingleInt, Content: "card",
 	}, eventID)
@@ -68,7 +68,7 @@ func TestRelayPublish_InboxWithAHolderIsAccepted(t *testing.T) {
 		NewOutbound(nil, reg, nil, slog.Default()))
 
 	eventID := relayInboxEventID("item-2", "recipient-1", util.UUIDToString(instID))
-	got := router.publish(relayFrame{
+	got := router.publishAwaitingHolder(context.Background(), relayFrame{
 		Kind: relayKindInbox, InstallationID: util.UUIDToString(instID),
 		ChatID: "T_USER", ChatType: chatTypeSingleInt, Content: "card",
 	}, eventID)
@@ -88,7 +88,7 @@ func TestRelayPublish_FailedPublishIsUncertain(t *testing.T) {
 	instID := util.UUIDToString(mustTestUUID(t))
 	eventID := relayInboxEventID("item-3", "recipient-1", instID)
 	relay.failAfterFanout = true
-	got := router.publish(relayFrame{
+	got := router.publishAwaitingHolder(context.Background(), relayFrame{
 		Kind: relayKindInbox, InstallationID: instID,
 		ChatID: "T_USER", ChatType: chatTypeSingleInt, Content: "card",
 	}, eventID)
@@ -110,7 +110,7 @@ func TestRelayPublish_UnreadableClaimStoreIsUncertain(t *testing.T) {
 
 	instID := util.UUIDToString(mustTestUUID(t))
 	eventID := relayInboxEventID("item-4", "recipient-1", instID)
-	got := router.publish(relayFrame{
+	got := router.publishAwaitingHolder(context.Background(), relayFrame{
 		Kind: relayKindInbox, InstallationID: instID,
 		ChatID: "T_USER", ChatType: chatTypeSingleInt, Content: "card",
 	}, eventID)
@@ -160,7 +160,7 @@ func TestRelayPublish_FenceHoldsAgainstThePublishingReplica(t *testing.T) {
 
 	// The bot is offline here, so nobody claims and the publisher fences the
 	// key -- the miss the fallback is owed for.
-	if got := router.publish(frame, eventID); got != relayNoHolder {
+	if got := router.publishAwaitingHolder(context.Background(), frame, eventID); got != relayNoHolder {
 		t.Fatalf("publish = %v, want relayNoHolder", got)
 	}
 	body, err := json.Marshal(frame)
@@ -194,5 +194,37 @@ func TestRelayPublish_FenceHoldsAgainstThePublishingReplica(t *testing.T) {
 	time.Sleep(60 * time.Millisecond)
 	if n := otherConn.frameCount(); n != 0 {
 		t.Fatalf("another replica delivered %d cards through the fence", n)
+	}
+}
+
+// TestRelayPublish_PlainPublishNeverWaits pins the split between the two entry
+// points: an inbox frame handed to publish answers as soon as the bus took it,
+// even with a 2s window configured and no holder anywhere. Every caller that
+// cannot act on a no-holder answer -- reply and seal frames, a member-authored
+// push, the fallback attempt -- goes through here, and none of them may hold
+// the request's goroutine for a verdict it will discard.
+func TestRelayPublish_PlainPublishNeverWaits(t *testing.T) {
+	t.Parallel()
+	relay, dedupe := &fanoutRelay{}, newSharedDedupe()
+	router := inboxPublishRouter(t, relay, dedupe,
+		RelayConfig{AcceptanceWindow: 2 * time.Second},
+		&Outbound{senders: newSendersRegistry(), logger: slog.Default()})
+
+	instID := util.UUIDToString(mustTestUUID(t))
+	start := time.Now()
+	got := router.publish(relayFrame{
+		Kind: relayKindInbox, InstallationID: instID,
+		ChatID: "T_USER", ChatType: chatTypeSingleInt, Content: "card",
+	}, relayInboxEventID("item-7", "recipient-1", instID))
+	elapsed := time.Since(start)
+
+	if got != relayAccepted {
+		t.Fatalf("publish = %v, want relayAccepted", got)
+	}
+	if elapsed > 200*time.Millisecond {
+		t.Fatalf("publish waited %v; the non-awaiting path must not spend the acceptance window", elapsed)
+	}
+	if n := dedupe.claimStateCount(); n != 0 {
+		t.Fatalf("publish polled the claim %d times; the non-awaiting path must not poll at all", n)
 	}
 }

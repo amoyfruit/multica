@@ -462,6 +462,14 @@ func (r *recordingRelay) publish(f relayFrame, _ string) relayPublish {
 	return relayAccepted
 }
 
+// publishAwaitingHolder is the seam's waiting half. The routes that use it are
+// the inbox push's, and this seam is used by the typing indicator's, so it
+// answers the same way publish does: the bus took it.
+func (r *recordingRelay) publishAwaitingHolder(_ context.Context, f relayFrame, _ string) relayPublish {
+	r.frames = append(r.frames, f)
+	return relayAccepted
+}
+
 // ---- the answer path's gate has to hand the bubble back too ----
 
 // The failure path releases a round a first-party run took; the answer path
