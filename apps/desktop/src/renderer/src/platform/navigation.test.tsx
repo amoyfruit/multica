@@ -202,6 +202,27 @@ describe("push", () => {
   });
 });
 
+describe("replace", () => {
+  // NoAccessPage recovers with replace(resolvePostAuthDestination(...)),
+  // which is another workspace's Issues root — the same "resume where you
+  // left off" target the switchers push.
+  it("restores the target workspace's last active tab when replacing to its Issues root", () => {
+    const store = useTabStore.getState();
+    store.switchWorkspace("butter", "/butter/projects");
+    store.switchWorkspace("acme");
+    const getAdapter = renderProvider();
+
+    getAdapter().replace("/butter/issues");
+
+    const s = useTabStore.getState();
+    expect(s.activeWorkspaceSlug).toBe("butter");
+    expect(getActiveTab(s)?.url).toBe("/butter/projects");
+    expect(s.byWorkspace.butter.tabs.map((t) => t.url)).toEqual([
+      "/butter/projects",
+    ]);
+  });
+});
+
 describe("push with pinned active tab", () => {
   function pinActive() {
     const store = useTabStore.getState();
