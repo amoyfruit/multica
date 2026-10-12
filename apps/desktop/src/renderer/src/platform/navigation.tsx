@@ -5,7 +5,7 @@ import {
   type NavigationAdapter,
 } from "@multica/views/navigation";
 import { useAuthStore } from "@multica/core/auth";
-import { isReservedSlug } from "@multica/core/paths";
+import { isReservedSlug, paths } from "@multica/core/paths";
 import {
   useTabStore,
   getActiveTab,
@@ -86,13 +86,22 @@ function tryRouteToOverlay(path: string): boolean {
  * invite-accept flow — they all call `useNavigation().push(path)` with a
  * full workspace URL, and on desktop we translate "target slug differs
  * from active" into "switch the tab-group that's visible in the TabBar".
+ *
+ * A push to the target's bare Issues root is what the workspace switchers
+ * send — it is where web lands — so on desktop it resumes the workspace's
+ * last active tab instead (switchWorkspace seeds Issues for a workspace with
+ * no tabs yet). Any deeper path still opens exactly that path.
  */
 function tryRouteToOtherWorkspace(path: string): boolean {
   const targetSlug = extractWorkspaceSlug(path);
   if (!targetSlug) return false;
   const { activeWorkspaceSlug, switchWorkspace } = useTabStore.getState();
   if (targetSlug === activeWorkspaceSlug) return false;
-  switchWorkspace(targetSlug, path);
+  if (path === paths.workspace(targetSlug).issues()) {
+    switchWorkspace(targetSlug);
+  } else {
+    switchWorkspace(targetSlug, path);
+  }
   return true;
 }
 
