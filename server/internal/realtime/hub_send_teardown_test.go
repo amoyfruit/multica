@@ -1,39 +1,45 @@
 package realtime
 
-import (
-	"testing"
-	"time"
-)
+import "testing"
 
-// TestSendOnSendChannelAfterClose reproduces the panic reported when a client
-// disconnects concurrently with an inbound frame or broadcast fanout.
-//
-// Sequence (Hub.Run serializes removeClient, but sendJSON and
-// BroadcastToScopeDedup do not hold h.mu while sending):
-//  1. readPump delivers an inbound frame (e.g. "ping") to handleFrame.
-//  2. A concurrent read error makes readPump hand the client to unregister.
-//  3. Hub.Run's removeClient closes c.send under h.mu.
-//  4. handleFrame's sendJSON, running with no lock shared with removeClient,
-//     sends on the closed channel and panics the whole server.
-//
-// The panic kills the process; writePump draining the channel cannot help a
-// send that has not happened yet.
+// TestSendOnSendChannelAfterClose verifies that a late inbound reply cannot
+// panic the server after a broadcast evicts a slow client and closes its send
+// channel. The broadcast returns only after eviction completes, so the test
+// does not depend on goroutine scheduling to reach the closed-channel case.
 func TestSendOnSendChannelAfterClose(t *testing.T) {
 	hub := NewHub()
-	go hub.Run()
-
+	key := sk(ScopeWorkspace, "scan-ws")
 	client := &Client{
-		hub:         hub,
-		send:        make(chan []byte, 256),
-		userID:      "scan-user",
-		workspaceID: "scan-ws",
+		hub:           hub,
+		send:          make(chan []byte, 1),
+		userID:        "scan-user",
+		workspaceID:   key.ID,
+		subscriptions: map[scopeKey]bool{key: true},
 	}
-	hub.register <- client
-	// Give Hub.Run a moment to register the client.
-	time.Sleep(50 * time.Millisecond)
+	hub.clients[client] = true
+	hub.rooms[key] = map[*Client]bool{client: true}
+	client.send <- []byte(`{"type":"queued"}`)
 
-	// A read error and a "pong" reply race: removeClient closes c.send
-	// under h.mu while sendJSON sends on it without that lock.
-	hub.unregister <- client
-	client.sendJSON(map[string]string{"type": "pong"})
+	hub.BroadcastToScope(key.Type, key.ID, []byte(`{"type":"broadcast"}`))
+	if hub.clients[client] {
+		t.Fatal("full send buffer did not evict client")
+	}
+	select {
+	case _, open := <-client.send: // Drain the message queued before eviction.
+		if !open {
+			t.Fatal("queued message missing after eviction")
+		}
+	default:
+		t.Fatal("queued message missing after eviction")
+	}
+	select {
+	case _, open := <-client.send:
+		if open {
+			t.Fatal("evicted client's send channel remained open")
+		}
+	default:
+		t.Fatal("evicted client's send channel remained open")
+	}
+
+	client.handleFrame([]byte(`{"type":"ping"}`))
 }
