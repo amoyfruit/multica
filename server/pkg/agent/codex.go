@@ -193,12 +193,14 @@ const CodexHandshakeTimeoutMarker = "codex app-server handshake timeout"
 const CodexGuardianRateLimitMarker = "codex Guardian approval rate-limit circuit open"
 
 const codexGuardianRateLimitThreshold = 2
-const codexGuardianRateLimitError = CodexGuardianRateLimitMarker + ": two consecutive Guardian approval reviews failed with 429 Too Many Requests"
+const codexGuardianReviewDedupWindow = 32
+const codexGuardianRateLimitError = CodexGuardianRateLimitMarker + ": two consecutive Guardian approval reviews failed with 429 Too Many Requests; check completed work before continuing after the provider limit clears"
 
 type codexGuardianRateLimitCircuit struct {
-	consecutive  int
-	lastReviewID string
-	tripped      bool
+	consecutive      int
+	recentReviewIDs  [codexGuardianReviewDedupWindow]string
+	nextReviewIDSlot int
+	tripped          bool
 }
 
 // observeReview consumes the Guardian-specific app-server notification. A
@@ -207,21 +209,26 @@ type codexGuardianRateLimitCircuit struct {
 func (c *codexGuardianRateLimitCircuit) observeReview(params map[string]any) bool {
 	reviewID, _ := params["reviewId"].(string)
 	review, _ := params["review"].(map[string]any)
-	if reviewID == "" || reviewID == c.lastReviewID || review == nil {
+	if reviewID == "" || review == nil {
 		return false
 	}
 	status, _ := review["status"].(string)
 	if status == "" || status == "inProgress" {
 		return false
 	}
-	c.lastReviewID = reviewID
+	for _, recentID := range c.recentReviewIDs {
+		if reviewID == recentID {
+			return false
+		}
+	}
+	c.recentReviewIDs[c.nextReviewIDSlot] = reviewID
+	c.nextReviewIDSlot = (c.nextReviewIDSlot + 1) % len(c.recentReviewIDs)
 	rationale, _ := review["rationale"].(string)
 	lower := strings.ToLower(rationale)
-	if status != "denied" && status != "timedOut" && status != "aborted" {
-		c.consecutive = 0
-		return false
-	}
-	if !strings.Contains(lower, "automatic approval review failed") ||
+	// A policy denial carries a risk level; a reviewer failure does not. Keep
+	// the 429 signal as a narrow gate, without depending on Codex's English
+	// failure prefix (the review notification schema is unstable).
+	if status != "denied" || review["riskLevel"] != nil ||
 		(!strings.Contains(lower, "429") && !strings.Contains(lower, "too many requests")) {
 		c.consecutive = 0
 		return false
@@ -3627,7 +3634,10 @@ func (c *codexClient) handleRawNotification(method string, params map[string]any
 		// Status changes are informational. Only turn/completed carries the
 		// authoritative terminal state for a raw-protocol turn.
 
-	case "item/guardianApprovalReviewCompleted":
+	case "item/autoApprovalReview/completed":
+		// This item notification also signals semantic progress. Preserve the
+		// existing watchdog behavior when handling it specially below.
+		c.handleItemNotification(method, params)
 		if c.guardianRateLimitCircuit != nil &&
 			c.guardianRateLimitCircuit.observeReview(params) &&
 			c.onGuardianRateLimit != nil {
