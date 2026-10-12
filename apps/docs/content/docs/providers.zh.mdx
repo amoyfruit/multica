@@ -36,7 +36,7 @@ Multica 不会替代你使用的 AI 编程工具。运行时会调用电脑上�
 | MiniMax Code | `mcode` | — | ✓ | `.minimax/skills/` |
 | OpenClaw | `openclaw` | ✓ | ✓ | `skills/` |
 | OpenCode | `opencode` | ✓ | ✓ | `.opencode/skills/` |
-| Pi | `pi` | ✓ | — | `.pi/skills/` |
+| Pi | `pi` | ✓ | ✓ | `.pi/skills/` |
 | Oh-My-Pi | `omp` | ✓ | ✓ | `.omp/skills/` |
 | Prime Agent | `prime-agent` | — | — | `.prime/agent/skills/` |
 | Qoder CLI | `qodercli` | ✓ | ✓ | `.qoder/skills/` |
@@ -75,7 +75,9 @@ Prime Agent 是例外：它每次执行只维护一个会话，完全没有恢�
 
 ## MCP 配置
 
-Antigravity、GitHub Copilot CLI、DevEco Code、Pi 和 Prime Agent 暂不读取智能体中的 MCP 配置，因此创建智能体时不会显示这一项。
+Antigravity、GitHub Copilot CLI、DevEco Code 和 Prime Agent 暂不读取智能体中的 MCP 配置，因此创建智能体时不会显示这一项。
+
+向 Pi 下发受管 MCP 配置需要 Pi 0.99.0 或更高版本。旧版 Pi 仍可运行未配置 MCP 的智能体。
 
 <Callout type="warning">
 MCP server 的命令、参数和环境变量会随智能体配置保存在服务器端。不要把不需要共享的本地凭据直接写入配置。

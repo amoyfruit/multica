@@ -133,6 +133,9 @@ type ExecOptions struct {
 	// through Claude Code's --settings flag. It currently carries restrictive
 	// runtime-skill overrides only; other providers ignore it.
 	ClaudeSettingsPath string
+	// piMcpExtensionPath is set by piBackend.Execute after it writes the
+	// temporary MCP extension. The daemon does not fill it.
+	piMcpExtensionPath string
 }
 
 // runContext derives the execution context for an agent subprocess from the
@@ -352,7 +355,7 @@ type Config struct {
 // migration 242 to add qoderclicn, migration 253 to add qwenpaw,
 // migration 254 to add reasonix, migration 313 to add dsh, migration 342 to
 // add mcode, migration 370 to add dim, migration 403 to add zeroclaw,
-// migration 441 to add codearts, and migration 535 to add prime): a custom
+// migration 441 to add codearts, and migration 576 to add prime): a custom
 // runtime profile may only be based on a backend Multica officially supports.
 // qoder and qoderclicn share the same ACP backend; keeping both provider keys
 // lets the daemon auto-detect and register the international and China-region
