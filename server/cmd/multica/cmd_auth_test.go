@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -10,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/multica-ai/multica/server/internal/testutil"
 	"github.com/spf13/cobra"
 )
 
@@ -26,39 +28,25 @@ func TestMain(m *testing.M) {
 		os.Unsetenv(key)
 	}
 
-	// Redirect both home variables to one scratch directory for the whole
-	// binary. On Windows os.UserHomeDir reads USERPROFILE, not HOME, so a
-	// test that redirects only HOME still resolves ~/.multica against the
-	// real home — which is how a full-suite run once wrote SaveCLIConfig
-	// fixtures over a real default-profile config.json. Process-wide
-	// redirection isolates tests that forget their own redirect on every
-	// platform; per-test t.Setenv overrides still take precedence.
-	var scratchHome string
-	if home, err := os.MkdirTemp("", "multica-cli-tests-home-"); err == nil {
-		scratchHome = home
-		os.Setenv("HOME", home)
-		os.Setenv("USERPROFILE", home)
+	// Redirect both home environment variables to one scratch directory for the
+	// whole binary. On Windows os.UserHomeDir reads USERPROFILE, not HOME, so a
+	// test that redirects only HOME still resolves ~/.multica against the real
+	// home — which is how a full-suite run wrote SaveCLIConfig fixtures over a
+	// real default-profile config.json. Process-wide redirection isolates tests
+	// that forget their own redirect on every platform; per-test t.Setenv
+	// overrides still take precedence.
+	scratchHome, err := testutil.IsolateUserHome("multica-cli-tests-home-")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "isolate cmd/multica test home: %v\n", err)
+		os.Exit(1)
 	}
 
 	code := m.Run()
-	if scratchHome != "" {
-		os.RemoveAll(scratchHome)
-	}
+	_ = os.RemoveAll(scratchHome)
 	os.Exit(code)
 }
 
-// redirectTestHome points BOTH home environment variables at dir. Production
-// resolves the config directory through os.UserHomeDir, which reads HOME on
-// unix and USERPROFILE on Windows: redirecting only HOME splits the write
-// path (tests creating fixtures under HOME) from the read path (code
-// resolving ~/.multica through USERPROFILE), so on Windows the fixture lands
-// where the code never looks — or, before the TestMain scratch home existed,
-// in the real ~/.multica.
-func redirectTestHome(t *testing.T, dir string) {
-	t.Helper()
-	t.Setenv("HOME", dir)
-	t.Setenv("USERPROFILE", dir)
-}
+var redirectTestHome = testutil.RedirectUserHome
 
 // testCmd returns a minimal cobra.Command with the --profile persistent flag
 // registered, matching the rootCmd setup used in production.
