@@ -262,7 +262,7 @@ func TestQuotedMarkerIndexFollowsTheRenderedText(t *testing.T) {
 			indices: []int{1, 3},
 		},
 		{
-			name:    "a literal of another kind does not move an image",
+			name:    "a literal of one kind moves only that kind's index",
 			quoted:  []wire{qWords("see " + fileMarker), qImage(urlA, "A"), qFile(urlB, "B")},
 			indices: []int{0, 1},
 		},
