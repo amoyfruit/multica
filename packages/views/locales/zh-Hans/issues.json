@@ -417,10 +417,14 @@
     "pull_request_checks_failed_count": "{{failed}}/{{total}} 失败",
     "pull_request_checks_more": "+{{count}} 个",
     "pull_request_merge_conflicting": "存在合并冲突",
+    "pull_request_merge_queued": "在合并队列中",
+    "pull_request_merge_queued_unmergeable": "合并队列中被阻塞",
     "pull_request_merge_ready": "可以合入",
     "pull_request_merge_blocked": "被阻止",
     "pull_request_merge_behind": "落后于基础分支",
     "pull_request_verdict_conflicting": "有冲突",
+    "pull_request_verdict_queued": "排队中",
+    "pull_request_verdict_queue_blocked": "队列受阻",
     "pull_request_verdict_ready": "可合入",
     "pull_request_verdict_passed": "检查通过",
     "pull_request_snapshot_stale": "更新于 {{time}}",
@@ -787,6 +791,8 @@
     "cancel": "取消"
   },
   "card": {
+    "merge_queue": "排队中",
+    "merge_queue_blocked": "队列受阻",
     "update_failed": "更新任务失败",
     "updated_ago": "更新于 {{time}}"
   },

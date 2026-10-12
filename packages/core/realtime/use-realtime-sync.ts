@@ -937,6 +937,11 @@ export function useRealtimeSync(
         // PR list is keyed by issue id, not workspace, so we invalidate all
         // PR queries — the open issue detail page will refetch its own list.
         qc.invalidateQueries({ queryKey: ["github", "pull-requests"] });
+        // The board's merge-queue read is workspace-keyed, so the prefix above
+        // does not reach it. A snapshot that enters or leaves a queue arrives
+        // as pull_request:updated.
+        const wsId = getCurrentWsId();
+        if (wsId) qc.invalidateQueries({ queryKey: githubKeys.queuedPullRequests(wsId) });
       },
       // Powers the agent presence cache: any task lifecycle change
       // (dispatch / completed / failed / cancelled) refreshes the

@@ -421,10 +421,14 @@
     "pull_request_checks_failed_count": "{{failed}}/{{total}} en échec",
     "pull_request_checks_more": "+{{count}} de plus",
     "pull_request_merge_conflicting": "Conflits de fusion",
+    "pull_request_merge_queued": "Dans la file de fusion",
+    "pull_request_merge_queued_unmergeable": "File de fusion bloquée",
     "pull_request_merge_ready": "Prête à fusionner",
     "pull_request_merge_blocked": "Bloquée",
     "pull_request_merge_behind": "En retard sur la base",
     "pull_request_verdict_conflicting": "Conflits",
+    "pull_request_verdict_queued": "En file",
+    "pull_request_verdict_queue_blocked": "File bloquée",
     "pull_request_verdict_ready": "Prête",
     "pull_request_verdict_passed": "Vérifications OK",
     "pull_request_snapshot_stale": "Mis à jour {{time}}",
@@ -826,6 +830,8 @@
     "cancel": "Annuler"
   },
   "card": {
+  "merge_queue": "En file",
+  "merge_queue_blocked": "File bloquée",
     "update_failed": "Échec de la mise à jour de la tâche",
     "updated_ago": "Mis à jour {{time}}"
   },
