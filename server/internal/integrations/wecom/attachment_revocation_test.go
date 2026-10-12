@@ -37,9 +37,16 @@ type revocableQueries struct {
 	id         pgtype.UUID
 	revoked    atomic.Bool
 	unreadable atomic.Bool
+	// stalled makes the read hang until its context ends, the way a database
+	// that has stopped answering does.
+	stalled atomic.Bool
 }
 
-func (r *revocableQueries) GetChannelInstallation(_ context.Context, arg db.GetChannelInstallationParams) (db.ChannelInstallation, error) {
+func (r *revocableQueries) GetChannelInstallation(ctx context.Context, arg db.GetChannelInstallationParams) (db.ChannelInstallation, error) {
+	if r.stalled.Load() {
+		<-ctx.Done()
+		return db.ChannelInstallation{}, ctx.Err()
+	}
 	if arg.ID != r.id || arg.ChannelType != channelTypeWecom {
 		return db.ChannelInstallation{}, pgx.ErrNoRows
 	}
@@ -287,12 +294,11 @@ func TestSendAttachments_EveryNoticeToTheUserNeedsThePermission(t *testing.T) {
 				perm.lose(r.q)
 				r.mustFinish(t, r.runCtx(t, ctx))
 
-				notices := 0
-				for _, s := range markdownSends(t, r.conn) {
-					if s == mediaSendFailedText || s == mediaLookupFailedText {
-						notices++
-					}
-				}
+				// Every markdown push in this rig is a notice: the file itself
+				// is a media frame, and no answer text is sent. Counted by
+				// frame rather than by wording, so it holds in whatever
+				// language the notice is written.
+				notices := len(markdownSends(t, r.conn))
 				if notices != perm.notice {
 					t.Errorf("%d notices to the user, want %d", notices, perm.notice)
 				}
@@ -332,5 +338,27 @@ func TestDeliverAttachments_TheSpawnedWorkerIsGuarded(t *testing.T) {
 	}
 	if got := r.mx.get("attachment_dropped"); got != 1 {
 		t.Errorf("attachment_dropped = %d, want 1 — the worker must have run for this test to mean anything", got)
+	}
+}
+
+// The guard runs while the socket's writer is held, so a permission read that
+// never answers must end by itself and refuse the frame. Without the bound the
+// read would sit on the writer for as long as the caller's context lasts —
+// minutes, here — and the ping loop and every other send on this socket would
+// queue behind it.
+func TestAttachmentWriteGuard_AReadThatNeverAnswersEndsAndRefuses(t *testing.T) {
+	t.Parallel()
+	r := newRevocationRig(t, []byte("DATA"))
+	r.q.stalled.Store(true)
+
+	got := make(chan error, 1)
+	go func() { got <- r.o.attachmentWriteGuard(r.q.id)(context.Background()) }() // no deadline of its own
+	select {
+	case err := <-got:
+		if !errors.Is(err, errMediaPermissionWithdrawn) {
+			t.Fatalf("guard = %v, want a refusal", err)
+		}
+	case <-time.After(permissionReadBudget + 2*time.Second):
+		t.Fatalf("the permission read was still waiting after %s; the writer it runs under would be held that long", permissionReadBudget+2*time.Second)
 	}
 }
