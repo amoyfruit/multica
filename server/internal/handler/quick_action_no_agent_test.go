@@ -7,6 +7,42 @@ import (
 	"github.com/multica-ai/multica/server/internal/testutil"
 )
 
+func TestQuickActionClearsExistingAgentTarget(t *testing.T) {
+	const prompt = "Please check the latest changes when you pick this up."
+	agentID := dbfx.Agent(t, "Quick action target", testRuntimeID)
+	var action QuickActionResponse
+	testutil.Call(t, testHandler.CreateQuickAction, newRequest(http.MethodPost, "/api/quick-actions", map[string]any{
+		"name": "Check changes", "prompt": prompt, "visibility": "private",
+		"assignee_type": "agent", "assignee_id": agentID,
+	})).Want(http.StatusCreated).JSON(&action)
+	dbfx.Cleanup(t, `DELETE FROM quick_action WHERE id = $1`, action.ID)
+	if action.AssigneeType != "agent" || action.AssigneeID != agentID {
+		t.Fatalf("expected an existing agent target, got %+v", action)
+	}
+
+	var updated QuickActionResponse
+	testutil.Call(t, testHandler.UpdateQuickAction, testutil.WithURLParams(
+		newRequest(http.MethodPatch, "/api/quick-actions/"+action.ID, map[string]any{
+			"assignee_type": "", "assignee_id": "",
+		}), "id", action.ID,
+	)).Want(http.StatusOK).JSON(&updated)
+	if updated.AssigneeType != "" || updated.AssigneeID != "" {
+		t.Fatalf("clearing the target must empty both fields, got type %q and id %q", updated.AssigneeType, updated.AssigneeID)
+	}
+
+	issueID := dbfx.Issue(t, "Quick action cleared target", nil)
+	var preview struct {
+		Content string `json:"content"`
+	}
+	path := "/api/issues/" + issueID + "/quick-actions/" + action.ID + "/render"
+	testutil.Call(t, testHandler.RenderQuickAction, testutil.WithURLParams(
+		newRequest(http.MethodPost, path, nil), "id", issueID, "quickActionId", action.ID,
+	)).Want(http.StatusOK).JSON(&preview)
+	if preview.Content != prompt {
+		t.Fatalf("preview after clearing target = %q, want the prompt without mention markup %q", preview.Content, prompt)
+	}
+}
+
 func TestQuickActionWithoutAgentPostsPromptWithoutMentions(t *testing.T) {
 	const prompt = "Please check the latest changes when you pick this up."
 	var action QuickActionResponse
