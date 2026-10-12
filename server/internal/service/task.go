@@ -4402,6 +4402,46 @@ func (s *TaskService) CompleteTask(ctx context.Context, taskID pgtype.UUID, resu
 	return task, err
 }
 
+// NoDeliverableCompletion reports whether a completion callback for an ISSUE
+// task delivered nothing the platform can verify: the final output is empty
+// AND no agent comment was posted on the issue during the run (MULT-22).
+//
+// The /complete handler reroutes such a completion to FailTask with
+// ReasonNoDeliverable. The shape is what a small local model leaves behind
+// when its generation dies at the output limit (stop_reason "length") on the
+// very turn that would have posted the deliverable, or degenerates to a
+// single token: the process exits 0, the runtime reports a clean success,
+// and the task would complete with the work invisible. Before this guard the
+// only trace was an empty result row on the execution log.
+//
+// Deliberate empty completions are excluded, because for them the absence of
+// a comment IS the answer: squad-leader no_action evaluations and scheduled
+// wakeup check-ins. Chat tasks are out of scope — they already own a visible
+// no_response outcome for empty output — and so is anything that posted a
+// comment or produced output, and any task that is no longer running (an
+// already-finalized task takes the normal idempotent completion path).
+func (s *TaskService) NoDeliverableCompletion(ctx context.Context, taskID pgtype.UUID, output string) bool {
+	if strings.TrimSpace(util.UnescapeBackslashEscapes(output)) != "" {
+		return false
+	}
+	t, err := s.Queries.GetAgentTask(ctx, taskID)
+	if err != nil || t.Status != "running" || !t.IssueID.Valid {
+		return false
+	}
+	if noAction, _ := HasSquadLeaderNoActionEvaluationForTask(ctx, s.Queries, t); noAction {
+		return false
+	}
+	if HasWakeupCheckin(t) {
+		return false
+	}
+	commented, err := s.Queries.HasAgentCommentedSince(ctx, db.HasAgentCommentedSinceParams{
+		IssueID:  t.IssueID,
+		AuthorID: t.AgentID,
+		Since:    t.StartedAt,
+	})
+	return err == nil && !commented
+}
+
 // CompleteTaskWithTransition reports whether this call won the running ->
 // completed compare-and-swap. Callers with transaction-external side effects
 // must only run them when transitioned is true; a replay against an already
@@ -5251,6 +5291,15 @@ func (s *TaskService) FailTaskWithTransition(ctx context.Context, taskID pgtype.
 // never started, so there is nothing to be idempotent about, and every bundle
 // that did download is already cached on disk — a retry resumes from there
 // instead of re-fetching the whole set (MUL-5370).
+// no_deliverable (MULT-22) is a completion the server rerouted to a failure:
+// the run ended with no output and no comment posted. Nothing it did is
+// harmful to repeat — no deliverable landed — and the session is unpoisoned,
+// so resuming it continues exactly where the truncated or degenerate turn
+// stopped. The attempt budget is what makes a permanently broken model stop
+// retrying and surface a visible, labelled failure.
+// agent_error.output_truncated (MULT-22) is the daemon-side witness of the
+// same shape: the final turn died at the output limit with no text. Same
+// retry semantics as no_deliverable.
 var retryableReasons = map[string]bool{
 	string(taskfailure.ReasonRuntimeOffline):         true,
 	string(taskfailure.ReasonRuntimeRecovery):        true,
@@ -5258,6 +5307,8 @@ var retryableReasons = map[string]bool{
 	"codex_semantic_inactivity":                      true,
 	string(taskfailure.ReasonAgentProviderNetwork):   true,
 	string(taskfailure.ReasonSkillBundleUnavailable): true,
+	string(taskfailure.ReasonNoDeliverable):          true,
+	string(taskfailure.ReasonAgentOutputTruncated):   true,
 }
 
 // runtime_offline retries start deferred, not queued: their positive fire_at

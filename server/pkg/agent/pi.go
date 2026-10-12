@@ -539,6 +539,12 @@ func (b *piBackend) Execute(ctx context.Context, prompt string, opts ExecOptions
 		var output strings.Builder
 		finalStatus := "completed"
 		var finalError string
+		// finalTurnTruncated holds the LAST turn_end's stop reason: true when
+		// that turn was cut at the model's output-token limit. Every earlier
+		// turn's state is superseded by the next turn (Pi auto-retries and
+		// the agent loop continues between turns), so finalization only ever
+		// looks at the final turn's outcome.
+		finalTurnTruncated := false
 		usage := make(map[string]TokenUsage)
 
 		// Pi message_update events can be large (they embed the full message
@@ -635,6 +641,12 @@ func (b *piBackend) Execute(ctx context.Context, prompt string, opts ExecOptions
 					// if a future Pi version omits the expected turn_start.
 					turnErrors.clear()
 				}
+				// stop_reason "length" means the model hit its output cap MID-
+				// GENERATION: the text — and any tool call — it was still writing
+				// simply does not exist. Record it for finalization, which fails
+				// a run whose FINAL turn ended this way with no output (MULT-22)
+				// instead of reporting a "successful" run that delivered nothing.
+				finalTurnTruncated = msg.StopReason == "length"
 
 			case "agent_end":
 				// agent_end closes the run, and its last assistant message holds
@@ -768,6 +780,25 @@ func (b *piBackend) Execute(ctx context.Context, prompt string, opts ExecOptions
 			// this the run reports success with no output.
 			finalStatus = "failed"
 			finalError = lastTurnError
+		} else if finalStatus == "completed" && finalTurnTruncated &&
+			strings.TrimSpace(output.String()) == "" {
+			authoritativeTerminal = true
+			// The final turn was cut at the model's output limit and not one
+			// text character survived it: the deliverable that turn was
+			// generating — typically the tool call that would have posted it —
+			// was truncated in flight. Completing here would record a
+			// "successful" run that delivered nothing (MULT-22). Fail with the
+			// classifier's marker instead: the platform's auto-retry resumes
+			// THIS session so the agent continues the truncated turn, and a
+			// model whose output cap is degenerate small exhausts its attempt
+			// budget and fails visibly instead of silently.
+			//
+			// Gated on empty output on purpose: a truncated turn that DID
+			// emit text is delivering that text (the completion path publishes
+			// it as the reply / fallback comment), so the partial result stays
+			// visible rather than being burned into a retry.
+			finalStatus = "failed"
+			finalError = label + " final turn truncated: stop_reason length with no output"
 		} else if runCtx.Err() == nil {
 			authoritativeTerminal = true
 		}

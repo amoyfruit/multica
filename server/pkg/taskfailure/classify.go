@@ -272,6 +272,16 @@ func Classify(rawError string) Reason {
 	):
 		return ReasonAgentEmptyOrUnparseableOutput
 
+	// 9b. The run's final turn died at the model's output-token limit
+	//     (stop_reason "length") without a single text character surviving
+	//     — the deliverable the turn was generating was cut off in flight
+	//     (MULT-22). Both halves must be present: this is the marker
+	//     pkg/agent/pi.go composes when it downgrades a completed run, and
+	//     no provider emits that sentence on its own.
+	case strings.Contains(lower, "final turn truncated") &&
+		strings.Contains(lower, "stop_reason length"):
+		return ReasonAgentOutputTruncated
+
 	// 10. Agent subprocess hard timeout (per-task wall clock).
 	case strings.Contains(lower, "timed out after"):
 		return ReasonAgentTimeout
@@ -376,6 +386,16 @@ var contextWindowExceededWitnesses = []string{
 	"context window limit",
 	"model_context_window_exceeded",
 	TerminalReasonPromptTooLong,
+	// LiteLLM's request-side rejection of an over-full prompt (MULT-22):
+	// `400 invalid_request_error: prompt (132412 tokens) leaves no room to
+	// answer in the context (131072)`. LiteLLM-specific wording — no other
+	// layer of the stack phrases it this way — so the phrase alone is as
+	// unambiguous as the structured enum values above. Without this the
+	// overflow lands in agent_error.unknown (or api_invalid_request on the
+	// daemon's poisoned-400 path), which at least keeps the session
+	// off the resume pointer but buries the real cause — an oversized
+	// resumed prompt — in a generic bucket.
+	"no room to answer in the context",
 }
 
 // legacySkillBundlePrefix is the exact wrapper a pre-MUL-5370 daemon put on a
@@ -410,6 +430,16 @@ var legacySkillBundleReasons = map[string]bool{
 var legacyContextOverflowReasons = map[string]bool{
 	string(ReasonAgentUnknown): true,
 	"agent_error":              true,
+	// The daemon's poisoned-400 path (classifyPoisonedError) fires on the
+	// combined "400" + "invalid_request_error" text before Classify ever
+	// runs, so a LiteLLM prompt-too-long rejection reaches the server
+	// labelled api_invalid_request even on a CURRENT daemon. That label is
+	// behaviourally right — both are on the resume blacklist — but it files
+	// an oversized-prompt failure under request-shape corruption. Every
+	// witness in contextWindowExceededWitnesses is an unambiguous
+	// overflow statement, so upgrading witness-gated rows names the real
+	// cause the moment the server deploys.
+	"api_invalid_request": true,
 }
 
 // legacyOpenclawCLITimeoutWitnesses identify an OpenClaw config-discovery

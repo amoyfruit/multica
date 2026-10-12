@@ -143,6 +143,11 @@ func TestClassifyRules(t *testing.T) {
 		{"returned empty output", "openclaw returned empty output", ReasonAgentEmptyOrUnparseableOutput},
 		{"returned no parseable output", "kimi returned no parseable output", ReasonAgentEmptyOrUnparseableOutput},
 
+		// 9b. Final turn cut at the output limit with no text (MULT-22).
+		{"final turn truncated marker", "pi final turn truncated: stop_reason length with no output", ReasonAgentOutputTruncated},
+		{"final turn truncated with provider label", "omp final turn truncated: stop_reason length with no output", ReasonAgentOutputTruncated},
+		{"truncated without stop reason is not the marker", "the model output was truncated by the reviewer", ReasonAgentUnknown},
+
 		// 10. Agent timeout.
 		{"timed out after", "claude timed out after 2h0m0s", ReasonAgentTimeout},
 
@@ -239,6 +244,11 @@ func TestClassifyOrderingPriorities(t *testing.T) {
 		// Both "429" and "rate limit" present — should still land in
 		// the capacity bucket, not the quota bucket.
 		{"429 rate limit", "API Error: 429 rate limit reached", ReasonAgentProviderCapacityOrRateLimit},
+
+		// LiteLLM rejects an over-full prompt with a 400 whose only
+		// overflow witness is its distinctive "no room to answer" phrasing —
+		// neither "prompt is too long" nor any other rule-1 phrase (MULT-22).
+		{"litellm no room to answer beats catchall", "400 invalid_request_error: prompt (132412 tokens) leaves no room to answer in the context (131072)", ReasonAgentContextOverflow},
 
 		// "exit status" co-occurring with a stronger upstream marker
 		// — the upstream classification should win because the
@@ -495,6 +505,22 @@ func TestNormalizeDaemonReason(t *testing.T) {
 			reason: string(ReasonAgentUnknown),
 			raw:    "API Error: the model is overloaded",
 			want:   ReasonAgentUnknown,
+		},
+		{
+			// The daemon's poisoned-400 path labels a LiteLLM prompt-too-long
+			// rejection api_invalid_request (the "400" + "invalid_request_error"
+			// combo fires before Classify); the witness upgrades it to the
+			// precise bucket (MULT-22).
+			name:   "api_invalid_request with litellm overflow witness upgrades",
+			reason: "api_invalid_request",
+			raw:    "400 invalid_request_error: prompt (132412 tokens) leaves no room to answer in the context (131072)",
+			want:   ReasonAgentContextOverflow,
+		},
+		{
+			name:   "api_invalid_request without overflow witness is left alone",
+			reason: "api_invalid_request",
+			raw:    "400 invalid_request_error: messages.3: content must not be empty",
+			want:   ReasonAPIInvalidRequest,
 		},
 	}
 

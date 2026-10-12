@@ -169,6 +169,27 @@ const (
 	// session was touched.
 	ReasonEnvironmentPrepareFailed Reason = "environment_prepare_failed"
 
+	// ReasonNoDeliverable: an issue run the runtime reported as a clean
+	// completion produced no platform-visible deliverable — the final output
+	// is empty AND no agent comment was posted on the issue during the run.
+	// The usual causes are small local models whose generation dies at the
+	// output limit (stop_reason "length") on the very turn that would have
+	// posted the deliverable, or degenerate single-token generations; both
+	// end the process with exit 0, so nothing below the platform can tell
+	// them apart from success. Before this reason existed the task simply
+	// completed — status completed, error null, nothing delivered — and the
+	// work was invisible (MULT-22).
+	//
+	// Platform-side rather than agent_error.*: the agent process genuinely
+	// succeeded from its own point of view; it is the DELIVERY contract that
+	// the platform can verify and is broken. Written by the
+	// CompleteTaskWithTransition no-deliverable guard, which reroutes the
+	// completion to FailTask. Retryable: the session is not poisoned, so the
+	// auto-retry child resumes the same conversation and continues from where
+	// the truncated turn left off. After the attempt budget the failure is
+	// visible and labelled instead of a phantom success.
+	ReasonNoDeliverable Reason = "no_deliverable"
+
 	// ReasonInvalidTaskIdentity: the daemon refused a claimed task because
 	// the task row's authoritative agent_id was absent or disagreed with the
 	// nested agent payload. The agent process is never launched. This is
@@ -230,6 +251,22 @@ const (
 	// protocol. Wrapper / protocol robustness issue.
 	ReasonAgentEmptyOrUnparseableOutput Reason = "agent_error.empty_or_unparseable_output"
 
+	// ReasonAgentOutputTruncated: the model's final turn ended at the
+	// output-token limit (stop_reason "length") with no text at all, so the
+	// deliverable the turn was generating — the tool call that would have
+	// posted it, the final answer — was cut off before a single character
+	// survived. Reported by backends that read the provider's stop reason
+	// (today Pi: the marker in pkg/agent/pi.go); the classifier maps that
+	// marker here so in-flight and historical rows share the bucket.
+	//
+	// Retryable and resume-safe: nothing about the session is poisoned, and
+	// resuming it lets the agent continue the truncated turn (ideally
+	// posting the deliverable in smaller chunks). A model whose output cap
+	// is degenerate small will exhaust the attempt budget and then fail
+	// VISIBLY with this label — the pre-fix behaviour was a "completed"
+	// task with empty output (MULT-22).
+	ReasonAgentOutputTruncated Reason = "agent_error.output_truncated"
+
 	// ReasonAgentTimeout: the agent subprocess hit its hard timeout
 	// (e.g. 2h) — distinct from ReasonTimeout, which is a
 	// platform-side sweeper timeout.
@@ -267,7 +304,7 @@ const (
 	ReasonAgentUnknown Reason = "agent_error.unknown"
 )
 
-// allReasons is the canonical ordered list of the 27 reasons. Order is
+// allReasons is the canonical ordered list of the 29 reasons. Order is
 // stable so callers (e.g. Prometheus collectors that pre-warm series via
 // AllReasons) can build deterministic label sets across restarts.
 //
@@ -289,6 +326,7 @@ var allReasons = []Reason{
 	ReasonSkillBundleUnavailable,
 	ReasonRuntimeCLITimeout,
 	ReasonEnvironmentPrepareFailed,
+	ReasonNoDeliverable,
 	ReasonInvalidTaskIdentity,
 	ReasonRuntimeAccessDenied,
 
@@ -302,6 +340,7 @@ var allReasons = []Reason{
 	// Agent process side: agent / runner errors.
 	ReasonAgentProcessFailure,
 	ReasonAgentEmptyOrUnparseableOutput,
+	ReasonAgentOutputTruncated,
 	ReasonAgentTimeout,
 	ReasonAgentContextOverflow,
 	ReasonAgentMissingConfig,

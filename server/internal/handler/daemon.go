@@ -4269,6 +4269,15 @@ func sanitizeTaskFailRequest(req *TaskFailRequest) {
 	req.RetiredSessionID = util.SanitizeTextForPostgres(req.RetiredSessionID)
 }
 
+// noDeliverableFailureMessage is the surfaced error for a completion rerouted
+// by the no-deliverable guard. It doubles as the instruction the retried run
+// receives on its resumed session: the failure names what was missing and
+// tells the agent how to deliver it. It deliberately avoids classifier
+// shapes (no 400 / invalid_request_error / token-limit wording) — the reason
+// is set directly, and if any future path re-classifies the text it should
+// not land in a poisoned-session bucket.
+const noDeliverableFailureMessage = "the run completed without delivering anything: the final output is empty and no comment was posted on the issue. If your last reply was cut short at the output limit, continue from where it stopped and post the deliverable in smaller chunks."
+
 func (h *Handler) CompleteTask(w http.ResponseWriter, r *http.Request) {
 	taskID := chi.URLParam(r, "taskId")
 
@@ -4318,6 +4327,39 @@ func (h *Handler) CompleteTask(w http.ResponseWriter, r *http.Request) {
 			// Carry the branch across the reroute. The run still delivered one:
 			// it ran out of context, it did not fail to produce anything, and
 			// dropping the name here would hide the work it did commit.
+			BranchName:            req.BranchName,
+			SessionRolloutMissing: req.SessionRolloutMissing,
+			RetiredSessionID:      req.RetiredSessionID,
+		})
+		return
+	}
+
+	// No-deliverable reroute (MULT-22): a clean completion that produced no
+	// final output AND posted no comment on its issue delivered nothing the
+	// user can see. That is the silent-failure shape of small local models —
+	// the generation dies at the output limit (stop_reason "length") on the
+	// very turn that would have posted the deliverable, or degenerates to a
+	// single token — and before this reroute the task simply completed, with
+	// the work lost and no trace but an empty result row.
+	//
+	// Server-side by design, like the context-exhaustion reroute above: the
+	// check is a read the server can make at the /complete boundary for ANY
+	// daemon version, and it needs no new wire field. The failure carries
+	// ReasonNoDeliverable, which is on the auto-retry allowlist: the retry
+	// child resumes the same unpoisoned session and continues the truncated
+	// turn, and once the attempt budget exhausts the failure is visible and
+	// labelled instead of a phantom success.
+	if h.TaskService.NoDeliverableCompletion(r.Context(), parseUUID(taskID), req.Output) {
+		slog.Warn("complete task: no deliverable (empty output, no agent comment), recording as failed",
+			"task_id", taskID,
+			"failure_reason", taskfailure.ReasonNoDeliverable,
+		)
+		h.failTask(w, r, taskID, workspaceID, TaskFailRequest{
+			Error:                 noDeliverableFailureMessage,
+			FailureReason:         string(taskfailure.ReasonNoDeliverable),
+			SessionID:             req.SessionID,
+			WorkDir:               req.WorkDir,
+			DurableWorkDir:        req.DurableWorkDir,
 			BranchName:            req.BranchName,
 			SessionRolloutMissing: req.SessionRolloutMissing,
 			RetiredSessionID:      req.RetiredSessionID,

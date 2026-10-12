@@ -102,6 +102,7 @@ The failure reasons shown in the execution log and usage stats fall into two gro
 | `iteration_limit` | Hit the iteration cap for a run | Narrow the issue scope |
 | `agent_blocked` | The agent reported it cannot proceed | Provide what its comment asked for |
 | `api_invalid_request` | The platform API rejected an invalid request | Retry; report the problem if it recurs |
+| `no_deliverable` | The run finished but delivered nothing visible — no final output and no comment on the issue | Retries automatically on the same session; if it persists, the model is likely hitting its output limit — see small-model rules below |
 | `codex_semantic_inactivity` | Codex produced no meaningful output for too long and was judged stalled | Retry, or adjust the Codex inactivity timeout |
 
 **Tool side (`agent_error.*`, prefix omitted)**
@@ -120,6 +121,7 @@ The failure reasons shown in the execution log and usage stats fall into two gro
 | `runtime_version_unsupported` | The AI coding tool version is too old | Upgrade the tool |
 | `process_failure` | The tool process exited abnormally | Check the run record to locate the cause, then retry |
 | `empty_or_unparseable_output` | The tool produced no output, or output that could not be parsed | Retry; check the tool installation if it recurs |
+| `output_truncated` | The model's final turn was cut off at its output-token limit before producing any text — typical of small models with a low `max_tokens` | Retries automatically on the same session; raise the model's `max_tokens` or use a larger model |
 | `agent_timeout` | The tool was terminated after going unresponsive for too long | Retry or narrow the issue scope |
 | `unknown` | Unclassified failure | Check the raw error in the run record |
 
@@ -143,6 +145,22 @@ This form does not point at a specific past run, so it uses the issue's current 
 
 Whether an issue is done is judged by the actual progress of the work and the issue's status.
 
+## Running small local models
+
+Small local models (low `max_tokens`, small context window) fail in three distinct ways, and all three used to end as `completed` runs with nothing delivered:
+
+1. **Output truncation** — the generation is cut at the output limit (`stop_reason: length`) on the very turn that would have posted the deliverable.
+2. **Context overflow on resume** — re-triggering the agent on the same issue resumes the prior session; on an issue with heavy history the accumulated prompt exceeds the model's window and the request is rejected with a 400.
+3. **Degenerate generations** — the model ends the run with a one- or two-token reply.
+
+The platform now fails and auto-retries the first and third shapes (`no_deliverable`, `output_truncated`), and the second shape retires the oversized session from the resume pointer so the next run starts fresh. To keep small-model agents productive regardless, add these operating rules to the agent's instructions:
+
+- Never emit more than ~3000 characters of new text in a single tool call or a single reply.
+- Build long deliverables in a file across many small steps: a short first `write`, then short append edits of a few KB each. Only append the new chunk; never re-emit the whole file.
+- Post the finished file with a single `multica issue comment add --content-file` call and confirm the post succeeded before ending the turn.
+- When a resumed run fails with `context_overflow` or `api_invalid_request`, dispatch the work as a fresh sub-issue (new session) instead of re-triggering the same issue.
+- Raise the inference server's `max_tokens` for the model where possible — a degenerate cap (a few dozen tokens) makes every retry reproduce the same truncation until the attempt budget runs out.
+
 ## State and timeout quick reference
 
 The numbers below reflect the server's default configuration, for quick cross-checking while troubleshooting.
@@ -164,6 +182,8 @@ Automatic retry covers only the transient faults below, and only applies to runs
 | Platform-judged execution timeout | 2 by default |
 | Codex stalled with no meaningful output | 2 by default |
 | Skill bundle download failure | 2 by default (the agent process has not started at this point; already-downloaded bundles come from the local cache) |
+| No visible deliverable at completion | 2 by default (the retry resumes the same session and continues the truncated turn) |
+| Final turn truncated at the output limit | 2 by default (same retry semantics as no visible deliverable) |
 | Tool network interruption | Up to 3; the final attempt starts after a delay of about 5 seconds |
 
 All other failure reasons (auth, quota, configuration, model, and so on) never retry automatically; fix the cause first, then retry manually.
