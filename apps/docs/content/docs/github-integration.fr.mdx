@@ -134,6 +134,8 @@ Abonnez-vous à ces événements :
 
 Si vous n'avez pas besoin d'afficher la CI dans Multica, vous pouvez vous passer des permissions Checks et Commit statuses ainsi que de leurs événements. Contents reste obligatoire : sans elle, la requête d'instantané échoue complètement et la carte de PR perd aussi l'état de fusion.
 
+L'état de file de fusion ne demande rien de plus. La requête d'instantané lit si une PR attend dans une file de fusion avec les permissions ci-dessus, et l'entrée ou la sortie de la file arrive sous forme d'événement **Pull request** : les installations existantes n'ont rien à réapprouver. Si une installation refuse les champs de file de fusion, Multica récupère l'instantané sans eux : la PR ne s'affiche alors jamais comme en file, mais garde sa CI et son état de fusion.
+
 <Callout type="warning">
 Il s'agit du **Webhook secret**, et non du Client secret OAuth. Si les deux côtés n'ont pas le même secret de webhook, les livraisons GitHub renvoient `401 invalid signature`.
 </Callout>
