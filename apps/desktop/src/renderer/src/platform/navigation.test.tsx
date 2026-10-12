@@ -143,23 +143,27 @@ describe("push", () => {
   });
 
   // The workspace switchers (sidebar dropdown, Mod+K palette) push the
-  // target's Issues root, which is where web lands. On desktop that push
-  // resumes the workspace where the user left it instead.
-  it("restores the target workspace's last active tab when switching to its Issues root", () => {
-    const store = useTabStore.getState();
-    store.switchWorkspace("butter", "/butter/projects");
-    store.switchWorkspace("acme");
-    const getAdapter = renderProvider();
+  // target's Issues root, which is where web lands. On desktop that resumes
+  // the workspace where the user left it instead. NoAccessPage recovers with
+  // replace() to the same kind of path, so both methods are covered.
+  it.each(["push", "replace"] as const)(
+    "%s to another workspace's Issues root restores its last active tab",
+    (method) => {
+      const store = useTabStore.getState();
+      store.switchWorkspace("butter", "/butter/projects");
+      store.switchWorkspace("acme");
+      const getAdapter = renderProvider();
 
-    getAdapter().push("/butter/issues");
+      getAdapter()[method]("/butter/issues");
 
-    const s = useTabStore.getState();
-    expect(s.activeWorkspaceSlug).toBe("butter");
-    expect(getActiveTab(s)?.url).toBe("/butter/projects");
-    expect(s.byWorkspace.butter.tabs.map((t) => t.url)).toEqual([
-      "/butter/projects",
-    ]);
-  });
+      const s = useTabStore.getState();
+      expect(s.activeWorkspaceSlug).toBe("butter");
+      expect(getActiveTab(s)?.url).toBe("/butter/projects");
+      expect(s.byWorkspace.butter.tabs.map((t) => t.url)).toEqual([
+        "/butter/projects",
+      ]);
+    },
+  );
 
   it("lands on Issues when switching to a workspace with no tabs yet", () => {
     const getAdapter = renderProvider();
@@ -199,27 +203,6 @@ describe("push", () => {
 
     expect(overlay.open).toHaveBeenCalledWith({ type: "new-workspace" });
     expect(acmeGroup()).toBe(before);
-  });
-});
-
-describe("replace", () => {
-  // NoAccessPage recovers with replace(resolvePostAuthDestination(...)),
-  // which is another workspace's Issues root — the same "resume where you
-  // left off" target the switchers push.
-  it("restores the target workspace's last active tab when replacing to its Issues root", () => {
-    const store = useTabStore.getState();
-    store.switchWorkspace("butter", "/butter/projects");
-    store.switchWorkspace("acme");
-    const getAdapter = renderProvider();
-
-    getAdapter().replace("/butter/issues");
-
-    const s = useTabStore.getState();
-    expect(s.activeWorkspaceSlug).toBe("butter");
-    expect(getActiveTab(s)?.url).toBe("/butter/projects");
-    expect(s.byWorkspace.butter.tabs.map((t) => t.url)).toEqual([
-      "/butter/projects",
-    ]);
   });
 });
 
