@@ -12,26 +12,36 @@ import (
 	"time"
 )
 
-// TestPiExecuteReportsRefusedResume pins the backend half of the GH #8082 fix.
+// TestPiExecuteReportsRefusedResume pins the backend half of the GH #8082 fix
+// and its omp ≥ 18.7 extension.
 //
-// When a resumed transcript names a working directory that no longer exists,
-// Pi prints its refusal to stderr and exits 1 before emitting a single JSON
-// event. Without a positive Result.ResumeRejected the daemon sees only
-// "exit status 1", classifies a non-retryable process_failure, records the same
-// session id again, and the next claim serves the same stale pointer — the
-// permanent crash loop the issue reported. This test drives the real backend
-// against a fake `pi` that reproduces that exact exit.
+// When a resumed transcript cannot be opened — it names a working directory
+// that no longer exists (pi and omp), it is empty (omp ≥ 18.7: the shape of
+// the file the pre-18.7 flow pre-creates), or the path is gone (omp ≥ 18.7) —
+// the CLI prints its refusal to stderr and exits 1 before emitting a single
+// JSON event. Without a positive Result.ResumeRejected the daemon sees only
+// "exit status 1", classifies a non-retryable process_failure, records the
+// same session id again, and the next claim serves the same stale pointer —
+// the permanent crash loop the issue reported. This test drives the real
+// backend against a fake `pi` that reproduces each exit.
 func TestPiExecuteReportsRefusedResume(t *testing.T) {
 	t.Parallel()
 
 	for _, test := range []struct {
 		name              string
+		marker            string
 		resume            bool
 		wantResumeRejects bool
 	}{
-		{name: "resumed run", resume: true, wantResumeRejects: true},
+		{name: "resumed run, missing cwd", marker: piResumeRefusedMarker, resume: true, wantResumeRejects: true},
+		{name: "resumed run, empty transcript", marker: `Cannot resume session "/gone/session.jsonl": the session file holds no entries. The file was not modified.`, resume: true, wantResumeRejects: true},
+		{name: "resumed run, missing transcript", marker: `Error: Session "/gone/session.jsonl" not found.`, resume: true, wantResumeRejects: true},
+		// The missing-transcript signature demands `Session "` alongside
+		// `" not found.`, so a provider-level "not found" on a resume must
+		// not retire a healthy session.
+		{name: "resumed run, model not found is not a refusal", marker: `Error: unknown model "ghost/model" not found.`, resume: true, wantResumeRejects: false},
 		// A cold run cannot have had a resume refused, whatever the CLI says.
-		{name: "cold run", resume: false, wantResumeRejects: false},
+		{name: "cold run", marker: piResumeRefusedMarker, resume: false, wantResumeRejects: false},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
@@ -42,11 +52,11 @@ func TestPiExecuteReportsRefusedResume(t *testing.T) {
 				t.Fatalf("create session: %v", err)
 			}
 
-			// Mirrors Pi's own output: the refusal on stderr, nothing on
+			// Mirrors the CLI's own output: the refusal on stderr, nothing on
 			// stdout, exit 1.
 			script := fmt.Sprintf(
 				"#!/bin/sh\ncat >/dev/null\necho %q >&2\nexit 1\n",
-				piResumeRefusedMarker+": /gone",
+				test.marker,
 			)
 			fakePath := filepath.Join(base, "pi")
 			writeTestExecutable(t, fakePath, []byte(script))

@@ -11,14 +11,14 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 )
 
 // piBackend implements Backend by spawning the Pi CLI in non-interactive
-// JSON mode (`pi -p --mode json --session <path>`) and parsing its event
-// stream on stdout.
+// JSON mode (`pi -p --mode json`) and parsing its event stream on stdout.
 //
 // It also backs the "omp" (oh-my-pi) provider — omp is a separate CLI
 // (https://omp.sh) that is a drop-in fork of pi and speaks the same JSON
@@ -26,6 +26,13 @@ import (
 // it under the "omp" key; piBackend uses defaultExecutable so the fallback
 // binary name matches the provider key (pi → "pi", omp → "omp") when
 // cfg.ExecutablePath is empty.
+//
+// Fresh sessions take one of two shapes depending on the CLI generation
+// (see the session selection in Execute): legacy CLIs append to a
+// daemon-named --session file, resume-only CLIs (omp ≥ 18.7) create their
+// own transcript inside --session-dir and the adopted path becomes the
+// opaque session id. Resume runs pass the transcript path to --session in
+// both generations.
 type piBackend struct {
 	cfg               Config
 	defaultExecutable string
@@ -373,35 +380,63 @@ func (b *piBackend) Execute(ctx context.Context, prompt string, opts ExecOptions
 
 	timeout := opts.Timeout
 
-	// Pi's --session flag expects a file path where events are appended.
-	// The path doubles as our opaque session identifier: we return it as
-	// SessionID and expect it back as ResumeSessionID on the next turn.
+	// The Pi family spans two --session generations, and a fresh session is
+	// where they disagree:
+	//
+	//   - pi 0.x and omp ≤ 18.6 treat `--session <path>` as create-or-append
+	//     but refuse to start when the path is missing, so the daemon picks
+	//     the name and pre-creates the (empty) file.
+	//   - omp 18.7 turned --session into an alias of --resume: a missing path
+	//     fails with "Session not found" and the pre-created empty file with
+	//     "Cannot resume session ... holds no entries", so every fresh run
+	//     died within a second of launch. Those CLIs create the transcript
+	//     inside --session-dir under their own name and report the session id
+	//     in the stream's first JSON event; we let them and adopt the path.
+	//
+	// In both generations the transcript path doubles as our opaque session
+	// identifier: we return it as SessionID and expect it back as
+	// ResumeSessionID on the next turn.
 	sessionPath := opts.ResumeSessionID
-	if sessionPath == "" {
+	sessionDirMode := false
+	if sessionPath == "" && piResumeOnlySession(b.cfg) {
+		sessionDirMode = true
+	} else if sessionPath == "" {
 		p, err := newPiSessionPath()
 		if err != nil {
 			return nil, fmt.Errorf("%s session path: %w", label, err)
 		}
 		sessionPath = p
 	}
-	if err := ensurePiSessionFile(sessionPath); err != nil {
-		return nil, fmt.Errorf("%s session file: %w", label, err)
-	}
-	sessionLock, locked, err := tryLockPiSessionFile(sessionPath)
-	if err != nil {
-		return nil, fmt.Errorf("%s session lock: %w", label, err)
-	}
-	if !locked {
-		if opts.ResumeSessionID != "" {
-			return piSessionBusyResult(label, sessionPath), nil
+	var sessionDir string
+	if sessionDirMode {
+		dir, err := piSessionDir()
+		if err != nil {
+			return nil, fmt.Errorf("%s session dir: %w", label, err)
 		}
-		return nil, fmt.Errorf("%s session file %q is already in use", label, sessionPath)
+		sessionDir = dir
+	}
+	var sessionLock *os.File
+	if !sessionDirMode {
+		if err := ensurePiSessionFile(sessionPath); err != nil {
+			return nil, fmt.Errorf("%s session file: %w", label, err)
+		}
+		lock, locked, err := tryLockPiSessionFile(sessionPath)
+		if err != nil {
+			return nil, fmt.Errorf("%s session lock: %w", label, err)
+		}
+		sessionLock = lock
+		if !locked {
+			if opts.ResumeSessionID != "" {
+				return piSessionBusyResult(label, sessionPath), nil
+			}
+			return nil, fmt.Errorf("%s session file %q is already in use", label, sessionPath)
+		}
 	}
 
 	runCtx, cancel := runContext(ctx, timeout)
 	processCtx, cancelProcess := context.WithCancel(runCtx)
 
-	args := buildPiArgs(sessionPath, opts, b.cfg.Logger)
+	args := buildPiArgs(sessionPath, sessionDir, opts, b.cfg.Logger)
 	cmd, _, _ := b.cfg.commandAt(execName).execVia(processCtx, choosePiInvocation, lookedUp, args, b.cfg.Logger)
 	hideAgentWindow(cmd)
 	b.cfg.logAgentCommand(cmd, newAgentCommandLogArgs(args))
@@ -522,6 +557,10 @@ func (b *piBackend) Execute(ctx context.Context, prompt string, opts ExecOptions
 		// partial on each delta); the shared stream bound covers that.
 		scanner := newAgentStreamScanner(stdout)
 		var textBuffer strings.Builder
+		// The transcript header event the CLI emits at run start carries its
+		// session id — the handle that ties a dir-mode fresh run to the file
+		// the CLI created for it.
+		var reportedSessionID string
 
 		for scanner.Scan() {
 			line := strings.TrimSpace(scanner.Text())
@@ -535,6 +574,9 @@ func (b *piBackend) Execute(ctx context.Context, prompt string, opts ExecOptions
 			turnErrors.observeEvent(evt.Type)
 
 			switch evt.Type {
+			case "session":
+				reportedSessionID = evt.ID
+
 			case "agent_start":
 				trySend(msgCh, Message{Type: MessageStatus, Status: "running"})
 
@@ -763,12 +805,25 @@ func (b *piBackend) Execute(ctx context.Context, prompt string, opts ExecOptions
 		// still busy after Pi had already exited.
 		releasePiSessionFileLock(sessionLock)
 		sessionLock = nil
+		// In the legacy flow this is the path we passed in. In dir mode the
+		// CLI named the file itself; the header event's id is what maps the
+		// run back to its transcript. An undiscoverable transcript still
+		// delivers the turn's output — only the continuation is lost, and
+		// the next turn starts fresh.
+		resultSessionID := sessionPath
+		if sessionDirMode {
+			resultSessionID = discoveredPiSessionFile(reportedSessionID)
+			if resultSessionID == "" {
+				b.cfg.Logger.Warn(label+" transcript not found after run; this turn will not be resumable",
+					"session_id", reportedSessionID)
+			}
+		}
 		resCh <- Result{
 			Status:     finalStatus,
 			Output:     output.String(),
 			Error:      finalError,
 			DurationMs: duration.Milliseconds(),
-			SessionID:  sessionPath,
+			SessionID:  resultSessionID,
 			Usage:      usage,
 			// Only a run that asked to resume can have had a resume refused.
 			// On a cold run the phrase cannot appear anyway, but stating the
@@ -803,19 +858,53 @@ func piSessionBusyResult(label, sessionPath string) *Session {
 // cwd recorded in the session header; when that directory is gone it prints
 // this to stderr and exits 1 immediately, before any JSON event, any tool call
 // and any output (GH #8082).
-//
-// The daemon's resume gate already declines to hand Pi such a session, so in
-// normal operation this never fires. It is the second layer, and its reach is
-// exactly this one refusal arriving on a run the gate let through: the
-// directory disappearing between the gate's check and Pi's, a header the
-// gate's bounded scan did not reach or could not parse, or a Pi-family runtime
-// the gate does not model as refusing. It is a single phrase match, so it does
-// NOT generalise to some other refusal Pi might grow later.
-//
-// Without it such a run fails as a generic non-retryable process_failure and
-// the same stale pointer is served again on the next claim — the permanent
-// loop #8082 reported.
 const piResumeRefusedMarker = "Stored session working directory does not exist"
+
+// piResumeRefusedMarkers are every stderr phrase the Pi family is known to
+// print when it refuses to open the transcript a resume pointed at, each
+// exiting 1 before any JSON event, any tool call, and any output. The
+// daemon's resume gate already declines to hand the CLI such a session, so in
+// normal operation none of these fire. They are the second layer, and their
+// reach is exactly a refusal arriving on a run the gate let through.
+//
+// Without them such a run fails as a generic non-retryable process_failure and
+// the same stale pointer is served again on the next claim — the permanent
+// loop #8082 reported. Each entry is a fixed refusal shape and does not
+// generalise to a refusal worded differently.
+var piResumeRefusedMarkers = piResumeRefusedSignatures{
+	{phrases: []string{piResumeRefusedMarker}},
+	// omp ≥ 18.7 refusing an empty transcript. That is the shape of the empty
+	// file the pre-18.7 flow pre-creates, so a daemon upgrade landing
+	// mid-conversation turns the stored pointer into exactly this refusal.
+	{phrases: []string{"Cannot resume session"}},
+	// omp ≥ 18.7 refusing a transcript path that no longer exists. The path
+	// sits between the two phrases (`Session "<path>" not found.`), so both
+	// must appear: matching `" not found.` alone would also flag a model or
+	// provider "not found" error, which is not a session problem.
+	{phrases: []string{`Session "`, `" not found.`}},
+}
+
+// resumeRefused reports whether the retained stderr tail carries evidence of
+// one of the known refusals.
+func (m piResumeRefusedSignatures) resumeRefused(tail []byte) bool {
+	for _, signature := range m {
+		found := true
+		for _, phrase := range signature.phrases {
+			if !bytes.Contains(tail, []byte(phrase)) {
+				found = false
+				break
+			}
+		}
+		if found {
+			return true
+		}
+	}
+	return false
+}
+
+type piResumeRefusedSignatures []struct {
+	phrases []string
+}
 
 // piStderrTailLimit bounds the retained stderr tail. The marker arrives in a
 // single write at startup, so this only has to be large enough that a partial
@@ -853,7 +942,7 @@ func (w *piStderrWatcher) Write(p []byte) (int, error) {
 func (w *piStderrWatcher) resumeRefused() bool {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	return bytes.Contains(w.tail, []byte(piResumeRefusedMarker))
+	return piResumeRefusedMarkers.resumeRefused(w.tail)
 }
 
 // ── Pi event types ──
@@ -864,6 +953,10 @@ func (w *piStderrWatcher) resumeRefused() bool {
 // demand by the switch arms.
 type piStreamEvent struct {
 	Type string `json:"type"`
+
+	// session: the transcript header emitted at run start. Its id ties a
+	// dir-mode fresh run to the transcript file the CLI created for it.
+	ID string `json:"id,omitempty"`
 
 	// message_update
 	AssistantMessageEvent *piAssistantMessageEvent `json:"assistantMessageEvent,omitempty"`
@@ -967,11 +1060,12 @@ func decodePiResult(raw json.RawMessage) string {
 // overridden by user-configured custom_args. Overriding these would
 // break the daemon↔Pi communication protocol.
 var piBlockedArgs = map[string]blockedArgMode{
-	"-p":         blockedStandalone, // non-interactive mode
-	"--print":    blockedStandalone, // alias for -p
-	"--mode":     blockedWithValue,  // "json" event stream protocol
-	"--session":  blockedWithValue,  // daemon manages the session path
-	"--thinking": blockedWithValue,  // owned by agent.thinking_level
+	"-p":           blockedStandalone, // non-interactive mode
+	"--print":      blockedStandalone, // alias for -p
+	"--mode":       blockedWithValue,  // "json" event stream protocol
+	"--session":    blockedWithValue,  // daemon manages the session path
+	"--session-dir": blockedWithValue, // daemon manages where transcripts live
+	"--thinking":   blockedWithValue,  // owned by agent.thinking_level
 }
 
 // piCustomArgModes mirrors Pi 0.83's built-in parser closely enough to
@@ -1039,19 +1133,24 @@ var piCustomArgModes = map[string]blockedArgMode{
 //	-p                          non-interactive mode (prompt arrives on stdin)
 //	--mode json                 emit one JSON event per line on stdout
 //	--session <path>            session log file (created upfront, reused on resume)
+//	--session-dir <dir>         dir the CLI creates its own transcript in, when
+//	                            it owns the naming (omp ≥ 18.7); mutually
+//	                            exclusive with --session
 //	--model <selector>          model selector, passed through verbatim
 //	--thinking <level>          per-agent reasoning level override
 //
 // The prompt is deliberately absent from argv. Pi reads a non-TTY stdin in
 // print/JSON mode; using that supported path prevents Windows PowerShell's npm
 // shim from re-tokenising prompt content into options.
-func buildPiArgs(sessionPath string, opts ExecOptions, logger *slog.Logger) []string {
+func buildPiArgs(sessionPath, sessionDir string, opts ExecOptions, logger *slog.Logger) []string {
 	args := []string{
 		"-p",
 		"--mode", "json",
 	}
 	if sessionPath != "" {
 		args = append(args, "--session", sessionPath)
+	} else if sessionDir != "" {
+		args = append(args, "--session-dir", sessionDir)
 	}
 	// The selector goes to --model whole, and --provider is never synthesized.
 	// Pi's own resolver already accepts every shape we hold: a canonical
@@ -1164,8 +1263,10 @@ func newPiSessionPath() (string, error) {
 }
 
 // ensurePiSessionFile creates an empty session file if one does not yet
-// exist at path. Pi refuses to start when --session points at a missing
-// file; paths that already exist (a resumed session) are left untouched.
+// exist at path. Legacy CLIs refuse to start when --session points at a
+// missing file; paths that already exist (a resumed session) are left
+// untouched. Resume-only CLIs (omp ≥ 18.7) never take this path on a fresh
+// run — they create the transcript themselves inside --session-dir.
 func ensurePiSessionFile(path string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
@@ -1175,6 +1276,97 @@ func ensurePiSessionFile(path string) error {
 		return err
 	}
 	return f.Close()
+}
+
+// ompResumeOnlySession is the first omp release where `--session <path>`
+// stopped creating transcripts and became an alias of `--resume`: a missing
+// file fails with "Session not found" and the legacy flow's pre-created empty
+// file with "Cannot resume session ... holds no entries". Empirically
+// bisected: 18.6.3 create-or-append; 18.7.0, 18.8.6, 18.8.7 and 18.9.1
+// resume-only.
+var ompResumeOnlySession = [3]int{18, 7, 0}
+
+// piResumeOnlySession reports whether the configured CLI needs dir-based
+// session creation: the built-in omp runtime at or above ompResumeOnlySession.
+// Everything else — pi 0.x, omp ≤ 18.6, a custom runtime profile whose command
+// merely resembles omp, and any CLI whose version could not be detected —
+// keeps the legacy --session flow, which is the behavior each of those is
+// verified against. Failing closed on an undetectable version keeps an
+// unknown wrapper on today's proven path rather than on an experiment.
+func piResumeOnlySession(cfg Config) bool {
+	if !cfg.BuiltinRuntime {
+		return false
+	}
+	version, ok := parseSemverTriple(cfg.CLIVersion)
+	if !ok {
+		return false
+	}
+	return semverAtLeast(version, ompResumeOnlySession)
+}
+
+// parseSemverTriple extracts the first major.minor[.patch] triple from a CLI
+// version string ("omp/18.8.7", "18.8.7", "pi 0.83.0"). A missing patch
+// defaults to zero.
+func parseSemverTriple(s string) ([3]int, bool) {
+	var triple [3]int
+	m := semverTripleRE.FindStringSubmatch(s)
+	if m == nil {
+		return triple, false
+	}
+	triple[0], _ = strconv.Atoi(m[1])
+	triple[1], _ = strconv.Atoi(m[2])
+	if m[3] != "" {
+		triple[2], _ = strconv.Atoi(m[3])
+	}
+	return triple, true
+}
+
+// semverTripleRE anchors each side on a non-digit (or the string ends) so a
+// token inside a longer number ("1.2.345") is not read as "1.2.345"→(1,2,34).
+var semverTripleRE = regexp.MustCompile(`(?:^|[^\d])(\d{1,3})\.(\d{1,3})(?:\.(\d{1,3}))?(?:[^\d]|$)`)
+
+func semverAtLeast(v, min [3]int) bool {
+	for i := range v {
+		if v[i] != min[i] {
+			return v[i] > min[i]
+		}
+	}
+	return true
+}
+
+// discoveredPiSessionFile locates the transcript the CLI created for a
+// dir-mode fresh run. omp writes `<timestamp>_<session id>.jsonl` directly
+// inside --session-dir (verified on 18.6.3 and 18.9.1), so the session
+// header event's id pins the run's file even while other fresh runs are
+// creating transcripts in the same directory. The run's artifacts live in a
+// sibling directory that shares the transcript's name, so a match only
+// counts when it is a regular file. No regular match — a CLI that changed
+// its layout, or a header event it never emitted — returns "", and the
+// caller degrades to a non-resumable turn rather than failing the run.
+func discoveredPiSessionFile(headerID string) string {
+	if headerID == "" {
+		return ""
+	}
+	dir, err := piSessionDir()
+	if err != nil {
+		return ""
+	}
+	matches, err := filepath.Glob(filepath.Join(dir, "*_"+headerID+".jsonl"))
+	if err != nil {
+		return ""
+	}
+	newest := ""
+	var newestMod time.Time
+	for _, match := range matches {
+		info, err := os.Stat(match)
+		if err != nil || !info.Mode().IsRegular() {
+			continue
+		}
+		if newest == "" || info.ModTime().After(newestMod) {
+			newest, newestMod = match, info.ModTime()
+		}
+	}
+	return newest
 }
 
 // PiSessionDir exposes piSessionDir to other packages in this module.

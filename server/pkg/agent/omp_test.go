@@ -342,7 +342,7 @@ func TestOmpSelectorSurvivesToBuildPiArgs(t *testing.T) {
 	// exactly what --model receives. Splitting it into --provider anthropic
 	// --model claude-sonnet-5 resolves identically for a real provider prefix
 	// but breaks slash-shaped model ids, so the split is gone (GH #7300).
-	args := buildPiArgs("/tmp/session.jsonl", ExecOptions{Model: models[0].ID}, slog.Default())
+	args := buildPiArgs("/tmp/session.jsonl", "", ExecOptions{Model: models[0].ID}, slog.Default())
 	joined := strings.Join(args, " ")
 	if !strings.Contains(joined, "--model anthropic/claude-sonnet-5") {
 		t.Errorf("args missing --model anthropic/claude-sonnet-5: %s", joined)

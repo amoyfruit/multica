@@ -16,7 +16,7 @@ func TestBuildPiArgsNoToolAllowlist(t *testing.T) {
 	// Extension tools registered via Pi's registerTool() must not be
 	// filtered out by a hardcoded --tools allowlist. Omitting --tools
 	// lets Pi use its full tool registry. See #2379.
-	args := buildPiArgs("/tmp/session.jsonl", ExecOptions{}, slog.Default())
+	args := buildPiArgs("/tmp/session.jsonl", "", ExecOptions{}, slog.Default())
 	for i, arg := range args {
 		if arg == "--tools" {
 			t.Errorf("buildPiArgs emits --tools %q; should not restrict tool registry (see #2379)", args[i+1])
@@ -25,7 +25,7 @@ func TestBuildPiArgsNoToolAllowlist(t *testing.T) {
 }
 
 func TestBuildPiArgsBasicFlags(t *testing.T) {
-	args := buildPiArgs("/tmp/s.jsonl", ExecOptions{
+	args := buildPiArgs("/tmp/s.jsonl", "", ExecOptions{
 		Model:         "anthropic/claude-sonnet-4-20250514",
 		ThinkingLevel: "high",
 	}, slog.Default())
@@ -48,7 +48,7 @@ func TestBuildPiArgsBasicFlags(t *testing.T) {
 // daemon never populates SystemPrompt for it (providerNeedsInlineSystemPrompt).
 // Forwarding it anyway would duplicate the whole runtime brief on every turn.
 func TestBuildPiArgsIgnoresSystemPrompt(t *testing.T) {
-	args := buildPiArgs("/tmp/s.jsonl", ExecOptions{
+	args := buildPiArgs("/tmp/s.jsonl", "", ExecOptions{
 		SystemPrompt: "the entire multica runtime brief",
 	}, slog.Default())
 
@@ -64,7 +64,7 @@ func TestBuildPiArgsIgnoresSystemPrompt(t *testing.T) {
 
 func TestBuildPiArgsCustomArgsAppended(t *testing.T) {
 	// Users can still restrict tools via custom_args if desired.
-	args := buildPiArgs("/tmp/s.jsonl", ExecOptions{
+	args := buildPiArgs("/tmp/s.jsonl", "", ExecOptions{
 		CustomArgs: []string{"--tools", "read,bash"},
 	}, slog.Default())
 
@@ -82,7 +82,7 @@ func TestBuildPiArgsCustomArgsAppended(t *testing.T) {
 func TestBuildPiArgsFiltersCustomInputButKeepsOptionValues(t *testing.T) {
 	t.Parallel()
 
-	args := buildPiArgs("/tmp/s.jsonl", ExecOptions{
+	args := buildPiArgs("/tmp/s.jsonl", "", ExecOptions{
 		CustomArgs: []string{
 			"--tools", "read,bash",
 			"positional-input",
@@ -128,7 +128,7 @@ func TestBuildPiArgsFiltersCustomInputButKeepsOptionValues(t *testing.T) {
 func TestBuildPiArgsThinkingLevelOverridesCustomArgs(t *testing.T) {
 	t.Parallel()
 
-	args := buildPiArgs("/tmp/s.jsonl", ExecOptions{
+	args := buildPiArgs("/tmp/s.jsonl", "", ExecOptions{
 		ThinkingLevel: "max",
 		CustomArgs:    []string{"--thinking", "low", "--thinking=medium"},
 	}, slog.Default())
@@ -971,7 +971,7 @@ func TestFlushPiTextBufferKeepsUnmatchedToolPrefixes(t *testing.T) {
 // selector must reach --model instead, where pi's resolver matches it as a
 // raw model id.
 func TestBuildPiArgsKeepsSlashShapedModelIDIntact(t *testing.T) {
-	args := buildPiArgs("/tmp/s.jsonl", ExecOptions{Model: "claude/claude-opus-5"}, slog.Default())
+	args := buildPiArgs("/tmp/s.jsonl", "", ExecOptions{Model: "claude/claude-opus-5"}, slog.Default())
 
 	joined := strings.Join(args, " ")
 	if !strings.Contains(joined, "--model claude/claude-opus-5") {
@@ -987,7 +987,7 @@ func TestBuildPiArgsKeepsSlashShapedModelIDIntact(t *testing.T) {
 // A fully-qualified selector is passed through the same way: pi infers the
 // provider from the prefix itself, so the daemon never has to take it apart.
 func TestBuildPiArgsPassesQualifiedSelectorWhole(t *testing.T) {
-	args := buildPiArgs("/tmp/s.jsonl", ExecOptions{Model: "multica-anthropic/claude/claude-opus-5"}, slog.Default())
+	args := buildPiArgs("/tmp/s.jsonl", "", ExecOptions{Model: "multica-anthropic/claude/claude-opus-5"}, slog.Default())
 
 	joined := strings.Join(args, " ")
 	if !strings.Contains(joined, "--model multica-anthropic/claude/claude-opus-5") {
@@ -1001,12 +1001,12 @@ func TestBuildPiArgsPassesQualifiedSelectorWhole(t *testing.T) {
 // A bare model id stays bare, and an empty model still omits --model entirely
 // so pi resolves its own default.
 func TestBuildPiArgsBareAndEmptyModels(t *testing.T) {
-	bare := buildPiArgs("", ExecOptions{Model: "  claude-opus-5  "}, slog.Default())
+	bare := buildPiArgs("", "", ExecOptions{Model: "  claude-opus-5  "}, slog.Default())
 	if joined := strings.Join(bare, " "); !strings.Contains(joined, "--model claude-opus-5") {
 		t.Errorf("bare model not forwarded (or not trimmed): %v", bare)
 	}
 
-	empty := buildPiArgs("", ExecOptions{Model: "   "}, slog.Default())
+	empty := buildPiArgs("", "", ExecOptions{Model: "   "}, slog.Default())
 	for _, arg := range empty {
 		if arg == "--model" {
 			t.Errorf("blank model should omit --model so pi picks its default: %v", empty)
