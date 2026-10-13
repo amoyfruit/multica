@@ -2,6 +2,17 @@
 
 This document covers advanced configuration for self-hosted Multica deployments. For the quick start guide, see [SELF_HOSTING.md](SELF_HOSTING.md).
 
+## Encrypted Full Backups
+
+For agent-run backups of a Compose deployment, use the standalone
+[`scripts/full-backup.sh`](scripts/full-backup.md). It accepts deployment JSON,
+exports PostgreSQL, roles, uploads and configuration, encrypts the archive with
+GPG, and restores service health. It does not require a systemd backup service.
+Keep host-specific configuration in the project description; fetch a reviewed
+commit of the script for each scheduled task. Actual backup briefly stops the
+configured application services. Use durable backup storage and perform a
+separate restore exercise before relying on recoverability.
+
 ## Configuration
 
 All configuration is done via environment variables. Copy `.env.example` as a starting point.
