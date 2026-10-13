@@ -43,6 +43,9 @@ interface ConfigState {
   // deleted the replies too, so absent must fail closed: the client then
   // promises nothing about replies and uses the legacy delete route.
   commentDeleteKeepRepliesSupported: boolean;
+  // Whether the server can delete a whole thread. Older servers ignore the
+  // request's opt-in and delete only the root, so absent must fail closed.
+  commentDeleteThreadSupported: boolean;
   setCdnConfig: (config: { cdnDomain: string; cdnSigned?: boolean }) => void;
   setAuthConfig: (config: {
     allowSignup: boolean;
@@ -60,6 +63,7 @@ interface ConfigState {
   setAgentConversationStartersSupported: (supported?: boolean) => void;
   setIssueCreatePropertiesSupported: (supported?: boolean) => void;
   setCommentDeleteKeepRepliesSupported: (supported?: boolean) => void;
+  setCommentDeleteThreadSupported: (supported?: boolean) => void;
 }
 
 export const configStore = createStore<ConfigState>((set) => ({
@@ -77,6 +81,7 @@ export const configStore = createStore<ConfigState>((set) => ({
   agentConversationStartersSupported: false,
   issueCreatePropertiesSupported: false,
   commentDeleteKeepRepliesSupported: false,
+  commentDeleteThreadSupported: false,
   setCdnConfig: ({ cdnDomain, cdnSigned = false }) => set({ cdnDomain, cdnSigned }),
   setAuthConfig: ({
     allowSignup,
@@ -96,6 +101,8 @@ export const configStore = createStore<ConfigState>((set) => ({
     set({ issueCreatePropertiesSupported: supported === true }),
   setCommentDeleteKeepRepliesSupported: (supported = false) =>
     set({ commentDeleteKeepRepliesSupported: supported === true }),
+  setCommentDeleteThreadSupported: (supported = false) =>
+    set({ commentDeleteThreadSupported: supported === true }),
 }));
 
 export function useConfigStore(): ConfigState;
