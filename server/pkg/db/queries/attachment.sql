@@ -91,6 +91,12 @@ DELETE FROM attachment
 WHERE comment_id = @comment_id AND workspace_id = @workspace_id
 RETURNING url;
 
+-- name: DeleteCommentsAttachments :many
+-- DeleteCommentAttachments for every comment of a deleted thread.
+DELETE FROM attachment
+WHERE comment_id = ANY(@comment_ids::uuid[]) AND workspace_id = @workspace_id
+RETURNING url;
+
 -- name: LinkAttachmentsToComment :exec
 UPDATE attachment
 SET comment_id = $1
