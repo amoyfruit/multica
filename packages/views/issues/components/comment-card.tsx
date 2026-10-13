@@ -1309,8 +1309,10 @@ function CommentCardImpl({
                 >
                   <ChevronRight aria-hidden className={cn("h-3.5 w-3.5 transition-transform motion-reduce:transition-none", open && "rotate-90")} />
                 </Button>
-                {open && !deleted && <>
-                  {!edit.editing && <QuickEmojiPicker
+                {/* A deleted root keeps only Delete thread, so the replies it
+                    kept can still go. */}
+                {open && (!deleted || (canDeleteEntry && replyCount > 0)) && <>
+                  {!deleted && !edit.editing && <QuickEmojiPicker
                     onSelect={(emoji) => onToggleReaction(entry.id, emoji)}
                     ariaLabel={t(($) => $.comment.add_reaction)}
                     align="end"
@@ -1331,55 +1333,59 @@ function CommentCardImpl({
                     />
                     <DropdownMenuContent align="end">
                       {/* Groups: act on it (edit, resolve), take it elsewhere, then delete alone. */}
-                      {canEditEntry && (
-                        <DropdownMenuItem onClick={edit.startEdit}>
-                          <Pencil className="h-3.5 w-3.5" />
-                          {t(($) => $.comment.edit_action)}
+                      {!deleted && <>
+                        {canEditEntry && (
+                          <DropdownMenuItem onClick={edit.startEdit}>
+                            <Pencil className="h-3.5 w-3.5" />
+                            {t(($) => $.comment.edit_action)}
+                          </DropdownMenuItem>
+                        )}
+                        {onResolveToggle && (
+                          <DropdownMenuItem onClick={() => onResolveToggle(entry.id, !entry.resolved_at)}>
+                            {entry.resolved_at ? (
+                              <>
+                                <RotateCcw className="h-3.5 w-3.5" />
+                                {t(($) => $.comment.resolve.unresolve_thread_action)}
+                              </>
+                            ) : (
+                              <>
+                                <CheckCircle2 className="h-3.5 w-3.5" />
+                                {t(($) => $.comment.resolve.resolve_thread_action)}
+                              </>
+                            )}
+                          </DropdownMenuItem>
+                        )}
+                        {(canEditEntry || onResolveToggle) && <DropdownMenuSeparator />}
+                        <DropdownMenuItem onClick={() => {
+                          void copyText(entry.content ?? "").then((ok) => {
+                            if (ok) toast.success(t(($) => $.comment.copied_toast));
+                          });
+                        }}>
+                          <Copy className="h-3.5 w-3.5" />
+                          {t(($) => $.comment.copy_action)}
                         </DropdownMenuItem>
-                      )}
-                      {onResolveToggle && (
-                        <DropdownMenuItem onClick={() => onResolveToggle(entry.id, !entry.resolved_at)}>
-                          {entry.resolved_at ? (
-                            <>
-                              <RotateCcw className="h-3.5 w-3.5" />
-                              {t(($) => $.comment.resolve.unresolve_thread_action)}
-                            </>
-                          ) : (
-                            <>
-                              <CheckCircle2 className="h-3.5 w-3.5" />
-                              {t(($) => $.comment.resolve.resolve_thread_action)}
-                            </>
-                          )}
-                        </DropdownMenuItem>
-                      )}
-                      {(canEditEntry || onResolveToggle) && <DropdownMenuSeparator />}
-                      <DropdownMenuItem onClick={() => {
-                        void copyText(entry.content ?? "").then((ok) => {
-                          if (ok) toast.success(t(($) => $.comment.copied_toast));
-                        });
-                      }}>
-                        <Copy className="h-3.5 w-3.5" />
-                        {t(($) => $.comment.copy_action)}
-                      </DropdownMenuItem>
-                      {onCopyLink && (
-                        <DropdownMenuItem onClick={() => onCopyLink(entry.id)}>
-                          <Link2 className="h-3.5 w-3.5" />
-                          {t(($) => $.comment.copy_link_action)}
-                        </DropdownMenuItem>
-                      )}
-                      {onCreateSubIssue && entry.comment_type === "comment" && (
-                        <DropdownMenuItem onClick={() => onCreateSubIssue(entry.id)}>
-                          <MessageSquarePlus className="h-3.5 w-3.5" aria-hidden />
-                          {t(($) => $.source_context.create_action)}
-                        </DropdownMenuItem>
-                      )}
+                        {onCopyLink && (
+                          <DropdownMenuItem onClick={() => onCopyLink(entry.id)}>
+                            <Link2 className="h-3.5 w-3.5" />
+                            {t(($) => $.comment.copy_link_action)}
+                          </DropdownMenuItem>
+                        )}
+                        {onCreateSubIssue && entry.comment_type === "comment" && (
+                          <DropdownMenuItem onClick={() => onCreateSubIssue(entry.id)}>
+                            <MessageSquarePlus className="h-3.5 w-3.5" aria-hidden />
+                            {t(($) => $.source_context.create_action)}
+                          </DropdownMenuItem>
+                        )}
+                      </>}
                       {canDeleteEntry && (
                         <>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem onClick={() => setConfirmDelete(true)} variant="destructive">
-                            <Trash2 className="h-3.5 w-3.5" />
-                            {t(($) => $.comment.delete_action)}
-                          </DropdownMenuItem>
+                          {!deleted && <>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem onClick={() => setConfirmDelete(true)} variant="destructive">
+                              <Trash2 className="h-3.5 w-3.5" />
+                              {t(($) => $.comment.delete_action)}
+                            </DropdownMenuItem>
+                          </>}
                           {replyCount > 0 && (
                             <DropdownMenuItem onClick={() => setConfirmDeleteThread(true)} variant="destructive">
                               <MessageSquareX className="h-3.5 w-3.5" aria-hidden />
