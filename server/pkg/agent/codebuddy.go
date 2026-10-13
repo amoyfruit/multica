@@ -206,6 +206,7 @@ func (b *codebuddyBackend) Execute(ctx context.Context, prompt string, opts Exec
 		sawResult := false
 		resultIsError := false
 		sawBackgroundTask := false
+		topLevelError := ""
 		var sessionID string
 		usage := make(map[string]TokenUsage)
 		seenUsage := make(map[string]struct{})
@@ -270,6 +271,27 @@ func (b *codebuddyBackend) Execute(ctx context.Context, prompt string, opts Exec
 					usage = resultUsage
 				}
 				closeStdin()
+			case "error":
+				// CodeBuddy's startup-failure shape (issue #9200): with an
+				// inherited SERVER__PORT a second concurrent run fails to
+				// listen, prints one top-level {"type":"error"} line and then
+				// stays alive and silent. Without a branch for the type the
+				// run sat at "waiting for agent response" until the idle
+				// watchdog stopped it. Treat the event as fatal: the CLI's
+				// message becomes the run error and the hung process is torn
+				// down now instead of idling. An already-seen terminal result
+				// keeps governing the outcome, so a late informational error
+				// line cannot flip a finished run.
+				if !sawResult {
+					topLevelError = strings.TrimSpace(msg.Error)
+					if topLevelError == "" {
+						topLevelError = "codebuddy emitted a top-level error event without details"
+					}
+					// End the hung process: the run context kill releases
+					// cmd.Wait and the stdout watcher below closes the pipe,
+					// which ends the scan loop.
+					cancel()
+				}
 			case "log":
 				if msg.Log != nil {
 					trySend(msgCh, Message{
@@ -320,6 +342,15 @@ func (b *codebuddyBackend) Execute(ctx context.Context, prompt string, opts Exec
 			},
 			completionGuardError,
 		)
+		// The CLI's own top-level error is the terminal truth for these runs:
+		// it outranks the generic aborted/timeout/ended-without-result
+		// verdicts the shared contract derives from the process we just tore
+		// down ourselves (issue #9200).
+		if topLevelError != "" && !sawResult {
+			finalStatus = "failed"
+			finalOutput = ""
+			finalError = topLevelError
+		}
 
 		// cmd.Wait() has returned — stderrBuf.Tail() is complete. Resume
 		// rejection phrases often land only on stderr (mirror Claude MUL-4966).
@@ -534,17 +565,33 @@ func writeCodebuddyInput(w io.Writer, prompt string) error {
 
 const codebuddyDisableBackgroundTasksEnv = "CODEBUDDY_CODE_DISABLE_BACKGROUND_TASKS"
 
-// buildCodebuddyEnv merges task env and always forces background tasks off.
+// CodeBuddy's PowerShell tool moves a command to the background when it hits
+// its foreground timeout and only honors this variable — the headless
+// background-task disable above does not stop it (issue #9200).
+const codebuddyDisableBashAutoBackgroundEnv = "CODEBUDDY_BASH_AUTO_BACKGROUND_DISABLED"
+
+// A user-scope SERVER__PORT (shared by several tools' configs) pins every
+// codebuddy run's internal HTTP server to one port; a second concurrent run
+// then dies with EADDRINUSE before doing any work (issue #9200). Port 0 lets
+// the OS assign a free port per run.
+const codebuddyInternalPortEnv = "SERVER__PORT"
+
+// buildCodebuddyEnv merges task env and always forces background tasks off,
+// a random internal HTTP port and the PowerShell auto-background disable.
 // Multica's adapter closes stdin after the first result; CodeBuddy's
 // background lifecycle can push task_notification after that point, which we
-// cannot observe. The official CLI documents this variable for exactly that
-// headless shape (https://www.codebuddy.ai/docs/cli/headless).
+// cannot observe. The official CLI documents the disable variable for exactly
+// that headless shape (https://www.codebuddy.ai/docs/cli/headless).
 //
-// Append the forced entry last so os/exec's platform-aware dedup
-// (case-insensitive on Windows, last-wins) keeps our "=1" even when the
+// Append the forced entries last so os/exec's platform-aware dedup
+// (case-insensitive on Windows, last-wins) keeps them even when the
 // inherited or custom_env key differs only by case.
 func buildCodebuddyEnv(extra map[string]string) []string {
-	return append(buildEnv(extra), codebuddyDisableBackgroundTasksEnv+"=1")
+	return append(buildEnv(extra),
+		codebuddyInternalPortEnv+"=0",
+		codebuddyDisableBashAutoBackgroundEnv+"=1",
+		codebuddyDisableBackgroundTasksEnv+"=1",
+	)
 }
 
 // codebuddySystemIsBackgroundTask reports CodeBuddy's real background-task
@@ -567,6 +614,11 @@ type codebuddySDKMessage struct {
 	SessionID       string          `json:"session_id,omitempty"`
 	Model           string          `json:"model,omitempty"`
 	ParentToolUseID string          `json:"parent_tool_use_id,omitempty"`
+
+	// top-level error event — CodeBuddy prints one {"type":"error"} line with
+	// the message inline and then stays alive (issue #9200: a second
+	// concurrent run failing to listen on an inherited SERVER__PORT).
+	Error string `json:"error,omitempty"`
 
 	// result fields — CodeBuddy failures use is_error + errors/errors_info;
 	// there is no Claude-style terminal_reason=prompt_too_long signal in the
