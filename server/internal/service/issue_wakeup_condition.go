@@ -259,9 +259,6 @@ func (s *IssueWakeupService) evaluateCondition(ctx context.Context, tx pgx.Tx, q
 		met, fingerprint, observed := childrenDone(c, children)
 		return met, fingerprint, observed, nil
 	case "pull_request":
-		if c.Event == "checks_finished" && (s.Tasks == nil || !s.Tasks.PRSnapshotsEnabled) {
-			return false, "", nil, errPRSnapshotsUnavailable
-		}
 		rows, err := tx.Query(ctx, `SELECT pr.pr_number,pr.state,COALESCE(pr.snapshot_head_sha,''),COALESCE(pr.checks_rollup_state,'')
 			FROM github_pull_request pr JOIN issue_pull_request ipr ON ipr.pull_request_id=pr.id WHERE ipr.issue_id=$1`, w.IssueID)
 		if err != nil {
@@ -296,7 +293,64 @@ func (s *IssueWakeupService) evaluateCondition(ctx context.Context, tx pgx.Tx, q
 		if err = rows.Err(); err != nil {
 			return false, "", nil, err
 		}
-		if linked == 0 {
+		// Self-hosted VCS pull requests (Forgejo/Gitea/GitLab) live in their own
+		// tables; the GitHub-only query above never sees them (#9034). Aggregate
+		// commit statuses for each PR's current head sha — the same rollup shape
+		// the issue PR list shows: any failed status = FAILURE, all passed (at
+		// least one) = SUCCESS, pending or none = not finished.
+		vcsLinked := 0
+		vcsRows, err := tx.Query(ctx, `SELECT pr.pr_number,pr.provider,pr.state,pr.head_sha,
+				COALESCE(SUM(CASE WHEN cs.state='failed' THEN 1 ELSE 0 END),0),
+				COALESCE(SUM(CASE WHEN cs.state='pending' THEN 1 ELSE 0 END),0),
+				COUNT(cs.state)
+			FROM vcs_pull_request pr
+			JOIN issue_vcs_pull_request ipr ON ipr.pull_request_id=pr.id
+			LEFT JOIN vcs_commit_status cs ON cs.connection_id=pr.connection_id AND cs.sha=pr.head_sha AND pr.head_sha<>''
+			WHERE ipr.issue_id=$1
+			GROUP BY pr.pr_number,pr.provider,pr.state,pr.head_sha`, w.IssueID)
+		if err != nil {
+			return false, "", nil, err
+		}
+		for vcsRows.Next() {
+			var number int32
+			var provider, state, head string
+			var failed, pending, total int64
+			if err = vcsRows.Scan(&number, &provider, &state, &head, &failed, &pending, &total); err != nil {
+				vcsRows.Close()
+				return false, "", nil, err
+			}
+			vcsLinked++
+			switch c.Event {
+			case "merged":
+				if state == "merged" {
+					keys = append(keys, fmt.Sprintf("vcs:%s:%d", provider, number))
+					prs = append(prs, map[string]any{"number": number, "provider": provider, "state": state})
+				}
+			case "checks_finished":
+				checks := ""
+				switch {
+				case failed > 0:
+					checks = "FAILURE"
+				case total > 0 && pending == 0:
+					checks = "SUCCESS"
+				}
+				if head != "" && slices.Contains([]string{"SUCCESS", "FAILURE", "ERROR"}, checks) {
+					keys = append(keys, fmt.Sprintf("vcs:%s:%d@%s:%s", provider, number, head, checks))
+					prs = append(prs, map[string]any{"number": number, "provider": provider, "head_sha": head, "checks": strings.ToLower(checks)})
+				}
+			}
+		}
+		vcsRows.Close()
+		if err = vcsRows.Err(); err != nil {
+			return false, "", nil, err
+		}
+		// The snapshot gate only covers GitHub rows: a rule watching only
+		// self-hosted VCS pull requests must still evaluate on servers without
+		// the GitHub App snapshot client.
+		if c.Event == "checks_finished" && (s.Tasks == nil || !s.Tasks.PRSnapshotsEnabled) && (linked > 0 || vcsLinked == 0) {
+			return false, "", nil, errPRSnapshotsUnavailable
+		}
+		if linked == 0 && vcsLinked == 0 {
 			return false, "", nil, errPRNotLinked
 		}
 		// Any matching PR satisfies the rule, even if another awaits a snapshot.
