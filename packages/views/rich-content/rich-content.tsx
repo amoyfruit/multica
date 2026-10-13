@@ -42,6 +42,7 @@ import rehypeSanitize from "rehype-sanitize";
 import { cn } from "@multica/ui/lib/utils";
 import { useWorkspaceSlug } from "@multica/core/paths";
 import { useConfigStore } from "@multica/core/config";
+import { api } from "@multica/core/api";
 import type { Attachment } from "@multica/core/types";
 import { attachmentIdFromDownloadURL } from "@multica/core/types";
 import {
@@ -208,10 +209,40 @@ function unfurlableEntityLink(
   return entity;
 }
 
+function ownAttachmentDownloadId(
+  href: string,
+  appOrigin: string | null,
+  attachmentPublicUrl: string,
+): string | undefined {
+  const id = attachmentIdFromDownloadURL(href);
+  if (!id) return undefined;
+  if (href.startsWith("/") && !href.startsWith("//")) return id;
+
+  // The path and UUID alone do not establish which deployment owns a link.
+  // PublicURL can differ from both the web app origin and the browser's
+  // same-origin API proxy, so the server supplies that origin via /api/config.
+  try {
+    const target = new URL(href);
+    if (target.username || target.password) return undefined;
+    const ownOrigins = [appOrigin, api.getBaseUrl?.(), attachmentPublicUrl];
+    return ownOrigins.some((base) => {
+      if (!base) return false;
+      try {
+        return new URL(base).origin === target.origin;
+      } catch {
+        return false;
+      }
+    }) ? id : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function RichLink({ href, children }: { href?: string; children?: ReactNode }) {
   const slug = useWorkspaceSlug();
   const appOrigin = useAppOrigin();
-  const downloadAttachment = useDownloadAttachment();
+  const attachmentPublicUrl = useConfigStore((s) => s.attachmentPublicUrl);
+  const downloadAttachment = useDownloadAttachment("markdown-link");
   // Platform probe only: `openInNewTab` present means desktop, where native
   // anchor behavior is a dead end and every click must be intercepted. Absent
   // (web), modified clicks are left to the browser — the only way to get a
@@ -233,9 +264,11 @@ function RichLink({ href, children }: { href?: string; children?: ReactNode }) {
   // and navigates to the credential-bearing URL the server mints for this
   // click (capability / presign / CloudFront, per deployment mode). Same
   // click-time re-sign the file-card renderer already does (MUL-3130).
-  // UUID-guarded by `attachmentIdFromDownloadURL`, so non-attachment /api
-  // links keep the routing below.
-  const attachmentId = href ? attachmentIdFromDownloadURL(href) : undefined;
+  // Also require this deployment's origin; another Multica instance may use
+  // the same path shape with unrelated attachment IDs.
+  const attachmentId = href
+    ? ownAttachmentDownloadId(href, appOrigin, attachmentPublicUrl)
+    : undefined;
 
   if (isMentionHref(href)) {
     const match = href.match(/^mention:\/\/(member|agent|issue|project|all)\/(.+)$/);

@@ -10,8 +10,9 @@
  * nothing about the routing decision.
  */
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { configStore } from "@multica/core/config";
 
 const APP_ORIGIN = "https://app.example";
 
@@ -65,6 +66,9 @@ let openSpy: ReturnType<typeof vi.spyOn>;
 
 beforeEach(() => {
   navigatedPaths = [];
+  act(() => {
+    configStore.getState().setAttachmentPublicUrl("https://multica-api.erlinerd.com");
+  });
   window.addEventListener("multica:navigate", captureNavigate);
   openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
 });
@@ -73,6 +77,9 @@ afterEach(() => {
   window.removeEventListener("multica:navigate", captureNavigate);
   vi.restoreAllMocks();
   downloadAttachmentSpy.mockClear();
+  act(() => {
+    configStore.getState().setAttachmentPublicUrl("");
+  });
 });
 
 function captureNavigate(e: Event) {
@@ -161,6 +168,19 @@ describe("RichContent link routing", () => {
     expect(downloadAttachmentSpy).toHaveBeenCalledWith(id);
   });
 
+  it("recognizes the API-host link when runtime config arrives after rendering", () => {
+    const id = "01a13179-08aa-7898-ae86-3a1994d2147e";
+    const download = `https://multica-api.erlinerd.com/api/attachments/${id}/download`;
+    act(() => configStore.getState().setAttachmentPublicUrl(""));
+    renderContent(`[report.pdf](${download})`);
+
+    act(() => configStore.getState().setAttachmentPublicUrl("https://multica-api.erlinerd.com"));
+    screen.getByText("report.pdf").click();
+
+    expect(downloadAttachmentSpy).toHaveBeenCalledWith(id);
+    expect(openSpy).not.toHaveBeenCalled();
+  });
+
   it("does not intercept a non-UUID /api/attachments link", () => {
     const download = `${APP_ORIGIN}/api/attachments/abc/download`;
     renderContent(`[report.pdf](${download})`);
@@ -169,5 +189,16 @@ describe("RichContent link routing", () => {
 
     expect(downloadAttachmentSpy).not.toHaveBeenCalled();
     expect(openSpy).toHaveBeenCalledWith(download, "_blank", "noopener,noreferrer");
+  });
+
+  it("keeps another deployment's attachment URL on the external link path", () => {
+    const id = "01a13179-08aa-7898-ae86-3a1994d2147e";
+    const external = `https://other.example/api/attachments/${id}/download`;
+    renderContent(`[report.pdf](${external})`);
+
+    screen.getByText("report.pdf").click();
+
+    expect(downloadAttachmentSpy).not.toHaveBeenCalled();
+    expect(openSpy).toHaveBeenCalledWith(external, "_blank", "noopener,noreferrer");
   });
 });
