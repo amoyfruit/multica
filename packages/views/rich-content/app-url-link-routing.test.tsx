@@ -45,6 +45,15 @@ vi.mock("../editor/link-hover-card", () => ({
   LinkHoverCard: () => null,
 }));
 
+// Intercepted-attachment-link click handler. A plain `<a>` to the API-host
+// attachment endpoint cannot authenticate a bare navigation (WK-11), so the
+// renderer must hand the click to this hook instead of `window.open`. We mock
+// the module so the test asserts the dispatch, not the download plumbing.
+const downloadAttachmentSpy = vi.fn();
+vi.mock("../editor/use-download-attachment", () => ({
+  useDownloadAttachment: () => downloadAttachmentSpy,
+}));
+
 vi.mock("mermaid", () => ({
   default: { initialize: vi.fn(), render: vi.fn() },
 }));
@@ -63,6 +72,7 @@ beforeEach(() => {
 afterEach(() => {
   window.removeEventListener("multica:navigate", captureNavigate);
   vi.restoreAllMocks();
+  downloadAttachmentSpy.mockClear();
 });
 
 function captureNavigate(e: Event) {
@@ -131,5 +141,33 @@ describe("RichContent link routing", () => {
       "_blank",
       "noopener,noreferrer",
     );
+  });
+
+  // WK-11: a plain-link attachment download URL (the shape `buildMarkdownURL`
+  // persists into bodies in private-storage deployments — absolute, API-host
+  // pinned) cannot authenticate a bare navigation, so it must be routed through
+  // the credentialed download hook rather than window.open.
+  it("routes a UUID attachment download link through the download hook (WK-11)", () => {
+    const id = "01a13179-08aa-7898-ae86-3a1994d2147e";
+    const download = `https://multica-api.erlinerd.com/api/attachments/${id}/download`;
+    renderContent(`[audit-report.md](${download})`);
+
+    screen.getByText("audit-report.md").click();
+
+    // Not opened as an unauthenticated external navigation, and not treated as
+    // an in-app path.
+    expect(openSpy).not.toHaveBeenCalled();
+    expect(navigatedPaths).toEqual([]);
+    expect(downloadAttachmentSpy).toHaveBeenCalledWith(id);
+  });
+
+  it("does not intercept a non-UUID /api/attachments link", () => {
+    const download = `${APP_ORIGIN}/api/attachments/abc/download`;
+    renderContent(`[report.pdf](${download})`);
+
+    screen.getByText("report.pdf").click();
+
+    expect(downloadAttachmentSpy).not.toHaveBeenCalled();
+    expect(openSpy).toHaveBeenCalledWith(download, "_blank", "noopener,noreferrer");
   });
 });

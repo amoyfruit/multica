@@ -43,6 +43,7 @@ import { cn } from "@multica/ui/lib/utils";
 import { useWorkspaceSlug } from "@multica/core/paths";
 import { useConfigStore } from "@multica/core/config";
 import type { Attachment } from "@multica/core/types";
+import { attachmentIdFromDownloadURL } from "@multica/core/types";
 import {
   isAllowedFileCardHref,
   isIssueIdentifier,
@@ -67,6 +68,7 @@ import {
 import { preprocessMarkdown } from "../editor/utils/preprocess";
 import { highlightToHtml } from "../editor/utils/highlight-markdown";
 import { AttachmentDownloadProvider } from "../editor/attachment-download-context";
+import { useDownloadAttachment } from "../editor/use-download-attachment";
 import { Attachment as AttachmentRenderer } from "../editor/attachment";
 import { computeClosedFences, type ClosedFence } from "./streaming-fence";
 import { remarkRepairCjkStrongTrailingWhitespace } from "./cjk-emphasis";
@@ -209,6 +211,7 @@ function unfurlableEntityLink(
 function RichLink({ href, children }: { href?: string; children?: ReactNode }) {
   const slug = useWorkspaceSlug();
   const appOrigin = useAppOrigin();
+  const downloadAttachment = useDownloadAttachment();
   // Platform probe only: `openInNewTab` present means desktop, where native
   // anchor behavior is a dead end and every click must be intercepted. Absent
   // (web), modified clicks are left to the browser — the only way to get a
@@ -218,6 +221,21 @@ function RichLink({ href, children }: { href?: string; children?: ReactNode }) {
   if (href?.startsWith("slash://skill/")) {
     return <span className="slash-command">{children}</span>;
   }
+
+  // An attachment download URL written as a plain link — the shape the
+  // server persists into bodies via `buildMarkdownURL`, which in private-
+  // storage deployments is ABSOLUTE and pinned to the API host
+  // (`MULTICA_PUBLIC_URL`). A bare navigation there cannot authenticate:
+  // web's session cookie is host-locked to the API origin and
+  // SameSite=Strict (and Desktop/mobile carry a bearer token no <a> can
+  // send), so the browser gets `401 missing authorization`. Route through
+  // the download hook instead, which refreshes the authenticated metadata
+  // and navigates to the credential-bearing URL the server mints for this
+  // click (capability / presign / CloudFront, per deployment mode). Same
+  // click-time re-sign the file-card renderer already does (MUL-3130).
+  // UUID-guarded by `attachmentIdFromDownloadURL`, so non-attachment /api
+  // links keep the routing below.
+  const attachmentId = href ? attachmentIdFromDownloadURL(href) : undefined;
 
   if (isMentionHref(href)) {
     const match = href.match(/^mention:\/\/(member|agent|issue|project|all)\/(.+)$/);
@@ -251,6 +269,20 @@ function RichLink({ href, children }: { href?: string; children?: ReactNode }) {
       onClick={(e) => {
         if (!href) {
           e.preventDefault();
+          return;
+        }
+        // An attachment link downloads through the re-sign path instead of a
+        // credential-less navigation (see attachmentId note above). This holds
+        // on every platform: web's session cookie is host-locked to the API
+        // origin and SameSite=Strict, and Desktop/mobile carry a bearer token
+        // no <a> can send, so a bare navigation 401s either way. The download
+        // hook owns the per-platform mechanism (capability anchor on web,
+        // native bridge on Desktop). Modified clicks stay native — the browser
+        // owns "open in background tab" and the raw URL remains the durable
+        // reference.
+        if (attachmentId && !e.metaKey && !e.ctrlKey && !e.shiftKey) {
+          e.preventDefault();
+          void downloadAttachment(attachmentId);
           return;
         }
         if (!desktopTabs && (e.metaKey || e.ctrlKey || e.shiftKey)) return;
