@@ -783,6 +783,110 @@ func TestCodebuddyExecuteErrorAfterResultDoesNotFlipOutcome(t *testing.T) {
 	}
 }
 
+func TestCodebuddyExecuteContinuesAfterRuntimeError(t *testing.T) {
+	t.Parallel()
+	if runtime.GOOS == "windows" {
+		t.Skip("shell-script fixture is POSIX-only")
+	}
+
+	// CodeBuddy can report a recoverable control-message error after its run
+	// has started, then still produce a successful terminal result.
+	fakePath := filepath.Join(t.TempDir(), "codebuddy")
+	script := "#!/bin/sh\n" +
+		"IFS= read -r _\n" +
+		`printf '%s\n' '{"type":"system","subtype":"init","session_id":"sess-recovered"}'` + "\n" +
+		`printf '%s\n' '{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Working"}]}}'` + "\n" +
+		`printf '%s\n' '{"type":"error","error":"control response rejected"}'` + "\n" +
+		`printf '%s\n' '{"type":"result","subtype":"success","is_error":false,"session_id":"sess-recovered","result":"done"}'` + "\n"
+	writeTestExecutable(t, fakePath, []byte(script))
+
+	b := &codebuddyBackend{cfg: Config{ExecutablePath: fakePath, Logger: slog.Default()}}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	session, err := b.Execute(ctx, "prompt", ExecOptions{})
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+
+	var sawErrorLog bool
+	for msg := range session.Messages {
+		if msg.Type == MessageLog && msg.Level == "error" && msg.Content == "control response rejected" {
+			sawErrorLog = true
+		}
+	}
+	result := <-session.Result
+	if result.Status != "completed" || result.Output != "done" {
+		t.Fatalf("recoverable error must not stop the run, got %+v", result)
+	}
+	if !sawErrorLog {
+		t.Fatal("expected recoverable error to appear in the message stream")
+	}
+}
+
+func TestCodebuddyExecuteReportsRuntimeErrorWithoutResult(t *testing.T) {
+	t.Parallel()
+	if runtime.GOOS == "windows" {
+		t.Skip("shell-script fixture is POSIX-only")
+	}
+
+	fakePath := filepath.Join(t.TempDir(), "codebuddy")
+	script := "#!/bin/sh\n" +
+		"IFS= read -r _\n" +
+		`printf '%s\n' '{"type":"system","subtype":"init","session_id":"sess-no-result"}'` + "\n" +
+		`printf '%s\n' '{"type":"error","error":"control channel failed"}'` + "\n" +
+		"exit 0\n"
+	writeTestExecutable(t, fakePath, []byte(script))
+
+	b := &codebuddyBackend{cfg: Config{ExecutablePath: fakePath, Logger: slog.Default()}}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	session, err := b.Execute(ctx, "prompt", ExecOptions{})
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	for range session.Messages {
+	}
+	result := <-session.Result
+	if result.Status != "failed" || result.Output != "" || !strings.Contains(result.Error, "control channel failed") {
+		t.Fatalf("expected the CLI error when the stream ends without a result, got %+v", result)
+	}
+}
+
+func TestCodebuddyExecuteRuntimeErrorDoesNotOverrideCancellation(t *testing.T) {
+	t.Parallel()
+	if runtime.GOOS == "windows" {
+		t.Skip("shell-script fixture is POSIX-only")
+	}
+
+	fakePath := filepath.Join(t.TempDir(), "codebuddy")
+	script := "#!/bin/sh\n" +
+		"IFS= read -r _\n" +
+		`printf '%s\n' '{"type":"system","subtype":"init","session_id":"sess-cancel"}'` + "\n" +
+		`printf '%s\n' '{"type":"error","error":"recoverable control error"}'` + "\n" +
+		"sleep 60\n"
+	writeTestExecutable(t, fakePath, []byte(script))
+
+	b := &codebuddyBackend{cfg: Config{ExecutablePath: fakePath, Logger: slog.Default()}}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	session, err := b.Execute(ctx, "prompt", ExecOptions{})
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+
+	var sawErrorLog bool
+	for msg := range session.Messages {
+		if msg.Type == MessageLog && msg.Content == "recoverable control error" {
+			sawErrorLog = true
+			cancel()
+		}
+	}
+	result := <-session.Result
+	if !sawErrorLog || result.Status != "aborted" {
+		t.Fatalf("user cancellation must outrank a prior recoverable error, log=%v result=%+v", sawErrorLog, result)
+	}
+}
+
 func TestBuildCodebuddyEnvForcesRandomInternalPortAndBashBackground(t *testing.T) {
 	t.Parallel()
 

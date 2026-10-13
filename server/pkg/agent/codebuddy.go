@@ -206,7 +206,9 @@ func (b *codebuddyBackend) Execute(ctx context.Context, prompt string, opts Exec
 		sawResult := false
 		resultIsError := false
 		sawBackgroundTask := false
+		sawStartedEvent := false
 		topLevelError := ""
+		fatalStartupError := false
 		var sessionID string
 		usage := make(map[string]TokenUsage)
 		seenUsage := make(map[string]struct{})
@@ -240,6 +242,7 @@ func (b *codebuddyBackend) Execute(ctx context.Context, prompt string, opts Exec
 
 			switch msg.Type {
 			case "assistant":
+				sawStartedEvent = true
 				assistantEventCount++
 				turn := b.handleAssistant(msg, msgCh, usage, seenUsage)
 				toolUseCount += turn.toolUses
@@ -248,8 +251,10 @@ func (b *codebuddyBackend) Execute(ctx context.Context, prompt string, opts Exec
 				}
 				lastAssistantText = turn.resolveFallback(lastAssistantText)
 			case "user":
+				sawStartedEvent = true
 				b.handleUser(msg, msgCh)
 			case "system":
+				sawStartedEvent = true
 				if msg.SessionID != "" {
 					sessionID = msg.SessionID
 				}
@@ -272,25 +277,23 @@ func (b *codebuddyBackend) Execute(ctx context.Context, prompt string, opts Exec
 				}
 				closeStdin()
 			case "error":
-				// CodeBuddy's startup-failure shape (issue #9200): with an
-				// inherited SERVER__PORT a second concurrent run fails to
-				// listen, prints one top-level {"type":"error"} line and then
-				// stays alive and silent. Without a branch for the type the
-				// run sat at "waiting for agent response" until the idle
-				// watchdog stopped it. Treat the event as fatal: the CLI's
-				// message becomes the run error and the hung process is torn
-				// down now instead of idling. An already-seen terminal result
-				// keeps governing the outcome, so a late informational error
-				// line cannot flip a finished run.
-				if !sawResult {
-					topLevelError = strings.TrimSpace(msg.Error)
-					if topLevelError == "" {
-						topLevelError = "codebuddy emitted a top-level error event without details"
-					}
-					// End the hung process: the run context kill releases
-					// cmd.Wait and the stdout watcher below closes the pipe,
-					// which ends the scan loop.
+				// Startup failures can leave CodeBuddy alive and silent (issue
+				// #9200). Once a run has emitted system/assistant activity, the
+				// same event can be recoverable, so keep the process running.
+				if sawResult || fatalStartupError {
+					break
+				}
+				topLevelError = strings.TrimSpace(msg.Error)
+				if topLevelError == "" {
+					topLevelError = "codebuddy emitted a top-level error event without details"
+				}
+				if !sawStartedEvent && runCtx.Err() == nil {
+					fatalStartupError = true
+					// Cancel only before the run starts; this also releases the
+					// scanner and cmd.Wait when the CLI remains alive.
 					cancel()
+				} else {
+					trySend(msgCh, Message{Type: MessageLog, Level: "error", Content: topLevelError})
 				}
 			case "log":
 				if msg.Log != nil {
@@ -342,11 +345,10 @@ func (b *codebuddyBackend) Execute(ctx context.Context, prompt string, opts Exec
 			},
 			completionGuardError,
 		)
-		// The CLI's own top-level error is the terminal truth for these runs:
-		// it outranks the generic aborted/timeout/ended-without-result
-		// verdicts the shared contract derives from the process we just tore
-		// down ourselves (issue #9200).
-		if topLevelError != "" && !sawResult {
+		// A startup error explains our own cancellation. After the run has
+		// started, use its last error only if it exited without a result;
+		// preserve an external cancellation or timeout otherwise.
+		if topLevelError != "" && !sawResult && (fatalStartupError || runCtx.Err() == nil) {
 			finalStatus = "failed"
 			finalOutput = ""
 			finalError = topLevelError
@@ -615,9 +617,8 @@ type codebuddySDKMessage struct {
 	Model           string          `json:"model,omitempty"`
 	ParentToolUseID string          `json:"parent_tool_use_id,omitempty"`
 
-	// top-level error event — CodeBuddy prints one {"type":"error"} line with
-	// the message inline and then stays alive (issue #9200: a second
-	// concurrent run failing to listen on an inherited SERVER__PORT).
+	// Top-level error events can be fatal during startup or recoverable once
+	// the run has begun; the message is inline rather than in a result event.
 	Error string `json:"error,omitempty"`
 
 	// result fields — CodeBuddy failures use is_error + errors/errors_info;
