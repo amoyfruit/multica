@@ -604,6 +604,9 @@ func runDaemonBackground(cmd *cobra.Command) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("create daemon directory: %w", err)
 	}
+	if err := waitForDaemonProfileRelease(profile, daemonShutdownLockWait); err != nil {
+		return err
+	}
 
 	// The child (foreground daemon) writes daemon.log itself through a
 	// rotating writer; its inherited stdout/stderr only need to catch raw
@@ -1330,6 +1333,13 @@ func runDaemonRestart(cmd *cobra.Command, args []string) error {
 	}
 
 	// Start fresh.
+	// Foreground restarts do not pass through runDaemonBackground, so they
+	// need the same shutdown wait before their short child lock timeout.
+	if foreground, _ := cmd.Flags().GetBool("foreground"); foreground {
+		if err := waitForDaemonProfileRelease(profile, daemonShutdownLockWait); err != nil {
+			return err
+		}
+	}
 	return runDaemonStart(cmd, args)
 }
 
