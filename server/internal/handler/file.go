@@ -35,7 +35,8 @@ var extContentTypes = map[string]string{
 	".wasm": "application/wasm",
 }
 
-const maxUploadSize = 100 << 20 // 100 MB
+const maxUploadSize = 100 << 20                        // 100 MiB per file
+const maxUploadRequestSize = maxUploadSize + (1 << 20) // multipart overhead
 
 const defaultAttachmentDownloadURLTTL = 30 * time.Minute
 
@@ -390,10 +391,15 @@ func (h *Handler) UploadFile(w http.ResponseWriter, r *http.Request) {
 
 	workspaceID := h.resolveWorkspaceID(r)
 
-	r.Body = http.MaxBytesReader(w, r.Body, maxUploadSize)
+	r.Body = http.MaxBytesReader(w, r.Body, maxUploadRequestSize)
 
 	if err := r.ParseMultipartForm(maxUploadSize); err != nil {
-		writeError(w, http.StatusBadRequest, "file too large or invalid multipart form")
+		var maxBytesError *http.MaxBytesError
+		if errors.As(err, &maxBytesError) {
+			writeError(w, http.StatusRequestEntityTooLarge, "file too large")
+		} else {
+			writeError(w, http.StatusBadRequest, "invalid multipart form")
+		}
 		return
 	}
 	defer r.MultipartForm.RemoveAll()
@@ -404,6 +410,10 @@ func (h *Handler) UploadFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer file.Close()
+	if header.Size > maxUploadSize {
+		writeError(w, http.StatusRequestEntityTooLarge, "file too large")
+		return
+	}
 
 	// Sniff actual content type from file bytes instead of trusting the client header.
 	buf := make([]byte, 512)
