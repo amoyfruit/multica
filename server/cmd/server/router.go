@@ -615,10 +615,11 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				patcher.Register(bus)
 
 				// Typing indicator: shows a "processing" reaction on the user's
-				// message while the agent is working, then removes it before the
-				// reply is sent. Best-effort; failures are logged only.
+				// message while the agent is working. Terminal cleanup has its own
+				// budget, with a durable retry worker for failed or missed cleanup.
 				typingIndicator := lark.NewTypingIndicatorManager(larkClient, installSvc, cs, slog.Default())
 				patcher.SetTypingIndicatorManager(typingIndicator)
+				h.LarkTyping = typingIndicator
 
 				// Inbound pipeline seams: lark_inbound_audit logger and the
 				// shared channel-agnostic chat-session service. They back the
@@ -978,7 +979,11 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					Binding: wecomBinding,
 					Senders: wecomSenders,
 					AppURL:  appURLFromEnv(),
-					Logger:  slog.Default(),
+					// Without this the replier has no way to read a reader's
+					// profile language and every notice falls back to the
+					// deployment's, which is the whole of what this is for.
+					Languages: queries,
+					Logger:    slog.Default(),
 				})
 
 				// Wecom shares the engine.ChatSession (channel_type-keyed) so
@@ -1688,6 +1693,10 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		// because they are JSON-API consumers that always have
 		// workspace context.
 		r.Get("/api/attachments/{id}/download", h.DownloadAttachment)
+		// Markdown links may point to an attachment in a different workspace.
+		// Resolve that workspace from the row and check membership before minting
+		// a fresh URL; the workspace-scoped metadata route stays unchanged.
+		r.Get("/api/attachments/{id}/download-metadata", h.GetAttachmentForDownload)
 
 		r.Route("/api/workspaces", func(r chi.Router) {
 			r.Get("/", h.ListWorkspaces)
@@ -1985,6 +1994,16 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 
 			// Assignee frequency
 			r.Get("/api/assignee-frequency", h.GetAssigneeFrequency)
+
+			// Local search index sync for Web/Desktop (MUL-7754). Human clients
+			// only: agents search through /api/issues/search.
+			r.Route("/api/search-index", func(r chi.Router) {
+				r.Use(handler.RequireHumanActor)
+				r.Use(h.RequireLocalSearchIndex)
+				r.Get("/manifest", h.GetSearchIndexManifest)
+				r.Get("/snapshot", h.GetSearchIndexSnapshot)
+				r.Post("/changes", h.ListSearchIndexChanges)
+			})
 
 			// Issues
 			r.Route("/api/issues", func(r chi.Router) {

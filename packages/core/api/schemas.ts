@@ -740,6 +740,7 @@ export const EMPTY_ISSUE_PROPERTIES_RESPONSE: IssuePropertiesResponse = {
 
 export interface AppConfigResponse {
   cdn_domain: string;
+  attachment_public_url?: string;
   // True when the CDN domain serves private content via time-bounded signed
   // URLs (CloudFront signing) — raw storage URLs on that domain are NOT
   // publicly fetchable and must not be used as native media sources
@@ -1022,6 +1023,7 @@ export const EMPTY_REFRESH_SESSION_RESPONSE: RefreshSessionResponse = {
 
 export const AppConfigSchema = z.object({
   cdn_domain: z.string().default(""),
+  attachment_public_url: OptionalStringSchema,
   cdn_signed: BooleanWithDefaultSchema(false),
   allow_signup: BooleanWithDefaultSchema(true),
   google_client_id: OptionalStringSchema,
@@ -1042,6 +1044,7 @@ export const AppConfigSchema = z.object({
 
 export const EMPTY_APP_CONFIG: AppConfigResponse = {
   cdn_domain: "",
+  attachment_public_url: "",
   cdn_signed: false,
   allow_signup: true,
   google_client_id: "",
@@ -1430,6 +1433,53 @@ export const SearchProjectsResponseSchema = z.object({
 export const EMPTY_SEARCH_PROJECTS_RESPONSE: SearchProjectsResponse = {
   projects: [],
 };
+
+// Local search index sync (MUL-7754). Callers reject a response that fails
+// these schemas instead of degrading to an empty value: an empty snapshot page
+// or change set would be applied to the local copy as truth.
+const SearchIndexIssueSchema = IssueSchema.extend({
+  search_updated_at: z.string(),
+}).loose();
+
+const SearchIndexProjectSchema = ProjectSchema.extend({
+  search_updated_at: z.string(),
+}).loose();
+
+const SearchIndexCommentSchema = z.object({
+  id: z.string().min(1),
+  issue_id: z.string().min(1),
+  content: z.string(),
+  created_at: z.string(),
+}).loose();
+
+export const SearchIndexManifestSchema = z.object({
+  cursor: z.string().min(1),
+  issue_count: z.number(),
+  comment_count: z.number(),
+  project_count: z.number(),
+  text_bytes: z.number(),
+}).loose();
+
+export const SearchIndexSnapshotPageSchema = z.object({
+  issues: z.array(SearchIndexIssueSchema),
+  comments: z.array(SearchIndexCommentSchema),
+  projects: z.array(SearchIndexProjectSchema),
+  next_after_number: z.number(),
+  done: z.boolean(),
+}).loose();
+
+export const SearchIndexChangesSchema = z.object({
+  issues: z.array(SearchIndexIssueSchema),
+  comments: z.array(SearchIndexCommentSchema),
+  projects: z.array(SearchIndexProjectSchema),
+  deleted: z.object({
+    issues: z.array(z.string()),
+    comments: z.array(z.string()),
+    projects: z.array(z.string()),
+  }).loose(),
+  cursor: z.string().min(1),
+  has_more: z.boolean(),
+}).loose();
 
 const IssueAssigneeGroupSchema = z.object({
   id: z.string(),
