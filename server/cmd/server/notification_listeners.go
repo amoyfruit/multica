@@ -3,13 +3,12 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"log/slog"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/multica-ai/multica/server/internal/events"
 	"github.com/multica-ai/multica/server/internal/handler"
+	"github.com/multica-ai/multica/server/internal/inbox"
 	"github.com/multica-ai/multica/server/internal/issuestatus"
 	"github.com/multica-ai/multica/server/internal/util"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
@@ -449,7 +448,7 @@ func notifyIssueSubscribers(
 			continue
 		}
 
-		item, err := queries.CreateInboxItem(ctx, db.CreateInboxItemParams{
+		item, inserted, err := inbox.CreateIfEligible(ctx, queries, db.CreateInboxItemParams{
 			ID:            dbid.NewV7(),
 			WorkspaceID:   parseUUID(workspaceID),
 			RecipientType: "member",
@@ -463,12 +462,12 @@ func notifyIssueSubscribers(
 			ActorID:       optionalUUID(e.ActorID),
 			Details:       details,
 		})
-		if errors.Is(err, pgx.ErrNoRows) {
-			continue
-		}
 		if err != nil {
 			slog.Error("subscriber notification creation failed",
 				"subscriber_id", subID, "type", notifType, "error", err)
+			continue
+		}
+		if !inserted {
 			continue
 		}
 
@@ -518,7 +517,7 @@ func notifyDirect(
 		}
 	}
 
-	item, err := queries.CreateInboxItem(ctx, db.CreateInboxItemParams{
+	item, inserted, err := inbox.CreateIfEligible(ctx, queries, db.CreateInboxItemParams{
 		ID:            dbid.NewV7(),
 		WorkspaceID:   parseUUID(workspaceID),
 		RecipientType: recipientType,
@@ -532,12 +531,12 @@ func notifyDirect(
 		ActorID:       optionalUUID(e.ActorID),
 		Details:       details,
 	})
-	if errors.Is(err, pgx.ErrNoRows) {
-		return
-	}
 	if err != nil {
 		slog.Error("direct notification creation failed",
 			"issue_id", issueID, "recipient_id", recipientID, "type", notifType, "error", err)
+		return
+	}
+	if !inserted {
 		return
 	}
 
@@ -639,7 +638,7 @@ func notifyMentionedMembers(
 		if p, ok := mentionPrefs[id]; ok && isNotifMuted(p, "mentioned") {
 			continue
 		}
-		item, err := queries.CreateInboxItem(context.Background(), db.CreateInboxItemParams{
+		item, inserted, err := inbox.CreateIfEligible(context.Background(), queries, db.CreateInboxItemParams{
 			ID:            dbid.NewV7(),
 			WorkspaceID:   parseUUID(e.WorkspaceID),
 			RecipientType: "member",
@@ -652,11 +651,11 @@ func notifyMentionedMembers(
 			ActorID:       optionalUUID(e.ActorID),
 			Details:       details,
 		})
-		if errors.Is(err, pgx.ErrNoRows) {
-			continue
-		}
 		if err != nil {
 			slog.Error("mention inbox creation failed", "mentioned_id", id, "error", err)
+			continue
+		}
+		if !inserted {
 			continue
 		}
 		resp := inboxItemToResponse(item)
