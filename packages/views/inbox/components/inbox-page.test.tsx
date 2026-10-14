@@ -549,6 +549,20 @@ describe("InboxPage", () => {
     expect(archivedView.querySelector('[aria-haspopup="menu"]')).toBeNull();
   });
 
+  it("ignores a carried-over idle selection in the archive", () => {
+    reset();
+    searchParams = new URLSearchParams("view=archived");
+    listData.archived = [item({ id: "archived-busy", issue_id: "issue-1", archived: true })];
+    listData.tasks = [
+      { id: "task-1", agent_id: "agent-1", issue_id: "issue-1", status: "running" },
+    ] as AgentTask[];
+    useInboxFilterStore.getState().toggleIdleOnly("workspace-1");
+
+    render(<InboxPage />);
+
+    expect(screen.getByTestId("row")).toHaveTextContent("archived-busy");
+  });
+
   it("keeps the archive open when it is empty", () => {
     reset();
     searchParams = new URLSearchParams("view=archived");

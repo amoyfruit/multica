@@ -89,12 +89,14 @@ function renderMenu({
   items = ITEMS,
   priorityFilterSupport = "supported",
   archived = false,
+  activeIssueIds,
   getArchivedInboxFacets = vi.fn(async () => ({ statuses: {}, priorities: {}, actors: {}, unreadCount: 0 })),
   statusEntries = BUILT_IN_STATUS_ORDER.map(statusEntry),
 }: {
   items?: InboxItem[];
   priorityFilterSupport?: InboxPriorityFilterSupport;
   archived?: boolean;
+  activeIssueIds?: ReadonlySet<string>;
   getArchivedInboxFacets?: ReturnType<typeof vi.fn>;
   statusEntries?: IssueStatusEntry[];
 } = {}) {
@@ -116,6 +118,7 @@ function renderMenu({
         wsId="ws-1"
         items={items}
         priorityFilterSupport={priorityFilterSupport}
+        activeIssueIds={activeIssueIds}
         archived={archived}
       />
     </QueryClientProvider>,
@@ -286,17 +289,29 @@ describe("InboxFilterMenu", () => {
     );
   });
 
-  it("toggles idle only", async () => {
-    renderMenu();
+  it("toggles idle only and counts the idle rows behind it", async () => {
+    renderMenu({ activeIssueIds: new Set(["issue-todo-high"]) });
 
     fireEvent.click(screen.getByRole("button", { name: "Filter inbox" }));
     fireEvent.click(
-      await screen.findByRole("menuitemcheckbox", { name: /Idle only/ }),
+      await screen.findByRole("menuitemcheckbox", {
+        name: /Idle only.*1 notification/,
+      }),
     );
 
     expect(
       useInboxFilterStore.getState().filtersByWorkspace["ws-1"]?.idleOnly,
     ).toBe(true);
+  });
+
+  it("hides idle only in the archive and ignores a carried-over selection", async () => {
+    useInboxFilterStore.getState().toggleIdleOnly("ws-1");
+    renderMenu({ archived: true });
+
+    // Not counted on the trigger, and not offered in the menu.
+    fireEvent.click(screen.getByRole("button", { name: "Filter inbox" }));
+    await screen.findByRole("menuitemcheckbox", { name: /Unread only/ });
+    expect(screen.queryByRole("menuitemcheckbox", { name: /Idle only/ })).toBeNull();
   });
 
   it("hides priority and clears its filter for a legacy response", async () => {
