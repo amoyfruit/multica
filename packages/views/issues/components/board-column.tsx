@@ -2,7 +2,15 @@
 
 import { memo, useCallback, useMemo, useState, type ReactNode } from "react";
 import { Virtuoso } from "react-virtuoso";
-import { EyeOff, FolderMinus, MoreHorizontal, Plus, UserMinus } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronRight,
+  EyeOff,
+  FolderMinus,
+  MoreHorizontal,
+  Plus,
+  UserMinus,
+} from "lucide-react";
 import { useDroppable } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import type {
@@ -34,6 +42,10 @@ import { DeferredPopup } from "../../common/deferred-popup";
 import { DeferredTooltip } from "../../common/deferred-tooltip";
 import { VirtuosoSeed } from "../../common/virtuoso-seed";
 import type { IssueCreateDefaults } from "../surface/types";
+import {
+  buildBoardColumnEntries,
+  type BoardColumnEntry,
+} from "../utils/board-hierarchy";
 
 // Insertion-position prediction intentionally omitted. The server's
 // ORDER BY uses PostgreSQL's en_US.utf8 collation (glibc), which
@@ -96,6 +108,12 @@ export interface BoardColumnGroup {
   createData?: IssueCreateDefaults;
 }
 
+/** Sub-issue nesting for a board column; omitted when nesting is off. */
+export interface BoardColumnHierarchy {
+  collapsed: ReadonlySet<string>;
+  onToggle: (issueId: string) => void;
+}
+
 export const BoardColumn = memo(function BoardColumn({
   group,
   issueIds,
@@ -107,6 +125,7 @@ export const BoardColumn = memo(function BoardColumn({
   projectId,
   onCreateIssue,
   sortLabel,
+  hierarchy,
 }: {
   group: BoardColumnGroup;
   issueIds: string[];
@@ -119,6 +138,7 @@ export const BoardColumn = memo(function BoardColumn({
   projectId?: string;
   onCreateIssue?: (defaults: IssueCreateDefaults) => void;
   sortLabel?: string | null;
+  hierarchy?: BoardColumnHierarchy;
 }) {
   const status = group.status;
   const wsId = useWorkspaceId();
@@ -134,14 +154,23 @@ export const BoardColumn = memo(function BoardColumn({
   const statusFixedByView = !!status && viewBaseline?.status.has(status) === true;
   const { t } = useT("issues");
 
-  // Resolve IDs to Issue objects, preserving parent-provided order
-  const resolvedIssues = useMemo(
+  // Resolve IDs to visible entries. Without nesting this preserves the
+  // parent-provided order; with nesting each sub-issue follows its parent.
+  const entries = useMemo<BoardColumnEntry[]>(
     () =>
-      issueIds.flatMap((id) => {
-        const issue = issueMap.get(id);
-        return issue ? [issue] : [];
-      }),
-    [issueIds, issueMap],
+      hierarchy
+        ? buildBoardColumnEntries(issueIds, issueMap, hierarchy.collapsed)
+        : issueIds.flatMap((id) => {
+            const issue = issueMap.get(id);
+            return issue
+              ? [{ issue, depth: 0 as const, nestedChildIds: [], collapsed: false }]
+              : [];
+          }),
+    [hierarchy, issueIds, issueMap],
+  );
+  const sortableIds = useMemo(
+    () => entries.map((entry) => entry.issue.id),
+    [entries],
   );
 
   // The column's scroll container is both dnd-kit's droppable and Virtuoso's
@@ -174,22 +203,50 @@ export const BoardColumn = memo(function BoardColumn({
     [footer],
   );
 
-  const computeItemKey = (_index: number, issue: Issue) => issue.id;
-  const itemContent = (index: number, issue: Issue) => (
-    // pt-2 on every card but the first reproduces the previous `space-y-2`
-    // gap; padding (not margin) is inside Virtuoso's measured item box so its
-    // height math stays correct.
-    <div className={index === 0 ? undefined : "pt-2"}>
-      <DraggableBoardCard
-        issue={issue}
-        childProgress={childProgressMap?.get(issue.id)}
-        project={
-          issue.project_id ? projectMap?.get(issue.project_id) : undefined
-        }
-        disableSorting={!!sortLabel}
-      />
-    </div>
-  );
+  const computeItemKey = (_index: number, entry: BoardColumnEntry) =>
+    entry.issue.id;
+  const itemContent = (index: number, entry: BoardColumnEntry) => {
+    const { issue } = entry;
+    const nestedCount = entry.nestedChildIds.length;
+    return (
+      // pt-2 on every card but the first reproduces the previous `space-y-2`
+      // gap; padding (not margin) is inside Virtuoso's measured item box so its
+      // height math stays correct.
+      <div className={index === 0 ? undefined : "pt-2"}>
+        <div
+          className={
+            entry.depth === 1 ? "ml-2 border-l-2 border-border pl-2" : undefined
+          }
+        >
+          <DraggableBoardCard
+            issue={issue}
+            childProgress={childProgressMap?.get(issue.id)}
+            project={
+              issue.project_id ? projectMap?.get(issue.project_id) : undefined
+            }
+            disableSorting={!!sortLabel}
+          />
+        </div>
+        {hierarchy && nestedCount > 0 && (
+          // Outside the card's link so the toggle is never a control nested
+          // inside an anchor; buttons are also excluded from board panning.
+          <button
+            type="button"
+            aria-expanded={!entry.collapsed}
+            className="mt-1 flex items-center gap-1 rounded-md px-1.5 py-0.5 text-caption text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground"
+            onClick={() => hierarchy.onToggle(issue.id)}
+          >
+            {entry.collapsed ? (
+              <ChevronRight className="size-3.5" />
+            ) : (
+              <ChevronDown className="size-3.5" />
+            )}
+            {t(($) => $.board.sub_issue_count, { count: nestedCount })}
+          </button>
+        )}
+      </div>
+    );
+  };
 
   return (
     <div style={{ width: BOARD_COL_WIDTH }} className={`flex shrink-0 flex-col rounded-xl ${cfg?.columnBg ?? "bg-muted/40"} p-2`}>
@@ -279,9 +336,9 @@ export const BoardColumn = memo(function BoardColumn({
                 : ""
           }`}
         >
-          {resolvedIssues.length > 0 ? (
-            <SortableContext items={issueIds} strategy={verticalListSortingStrategy}>
-              {resolvedIssues.length <= BOARD_VIRTUALIZE_THRESHOLD ? (
+          {entries.length > 0 ? (
+            <SortableContext items={sortableIds} strategy={verticalListSortingStrategy}>
+              {entries.length <= BOARD_VIRTUALIZE_THRESHOLD ? (
                 /* Small column: plain full render (reusing the same
                    itemContent, so it is byte-identical to the virtualized
                    rows). No handoff, no estimates — see
@@ -291,20 +348,20 @@ export const BoardColumn = memo(function BoardColumn({
                    Footer slot. */
                 <>
                   <VirtuosoSeed
-                    data={resolvedIssues}
+                    data={entries}
                     itemContent={itemContent}
                     computeItemKey={computeItemKey}
-                    count={resolvedIssues.length}
+                    count={entries.length}
                   />
                   {footer}
                 </>
               ) : scrollEl ? (
                 <Virtuoso
                   customScrollParent={scrollEl}
-                  data={resolvedIssues}
+                  data={entries}
                   computeItemKey={computeItemKey}
                   initialScrollTop={restoredScrollTop}
-                  initialItemCount={Math.min(resolvedIssues.length, BOARD_SEED_COUNT)}
+                  initialItemCount={Math.min(entries.length, BOARD_SEED_COUNT)}
                   defaultItemHeight={BOARD_CARD_ESTIMATED_HEIGHT}
                   increaseViewportBy={{ top: 300, bottom: 300 }}
                   components={footerComponents}
@@ -317,7 +374,7 @@ export const BoardColumn = memo(function BoardColumn({
                    with a matching `initialItemCount` to survive the
                    measurement frame (MUL-4750). */
                 <VirtuosoSeed
-                  data={resolvedIssues}
+                  data={entries}
                   itemContent={itemContent}
                   computeItemKey={computeItemKey}
                   count={BOARD_SEED_COUNT}

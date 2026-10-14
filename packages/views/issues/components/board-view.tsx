@@ -30,7 +30,12 @@ import { propertyListOptions, useSetIssueProperty, useUnsetIssueProperty } from 
 import { useWorkspaceId } from "@multica/core/hooks";
 import type { IssueGrouping } from "@multica/core/issues/stores/view-store";
 import { useActorName } from "@multica/core/workspace/hooks";
-import { BoardColumn, BOARD_CARD_WIDTH, type BoardColumnGroup } from "./board-column";
+import {
+  BoardColumn,
+  BOARD_CARD_WIDTH,
+  type BoardColumnGroup,
+  type BoardColumnHierarchy,
+} from "./board-column";
 import { BoardCardContent } from "./board-card";
 import { HiddenColumnsPanel, HiddenColumnRow } from "./hidden-columns-panel";
 import { InfiniteScrollSentinel } from "./infinite-scroll-sentinel";
@@ -64,6 +69,11 @@ import {
   propertyGroupId,
   projectGroupId,
 } from "../utils/drag-utils";
+import {
+  orderColumnByHierarchy,
+  siblingIds,
+  visibleColumnIds,
+} from "../utils/board-hierarchy";
 
 function isStatusGroup(
   group: BoardColumnGroup,
@@ -470,6 +480,41 @@ function BoardViewImpl({
     [groupIds],
   );
 
+  // --- Issue map ---
+  // Frozen during drag so BoardColumn/DraggableBoardCard props stay
+  // referentially stable even if a TQ refetch lands mid-drag.
+  const issueMap = useMemo(() => {
+    const map = new Map<string, Issue>();
+    for (const issue of groupedIssues) map.set(issue.id, issue);
+    return map;
+  }, [groupedIssues]);
+
+  // --- Sub-issue nesting ---
+  // Columns hold ids in display order (each nested child right after its
+  // parent), so drag indices match what the user sees.
+  const boardHierarchy = useViewStore((s) => s.boardHierarchy);
+  const boardCollapsedParents = useViewStore((s) => s.boardCollapsedParents);
+  const toggleBoardParentCollapsed = useViewStore((s) => s.toggleBoardParentCollapsed);
+  const collapsedParentSet = useMemo(
+    () => new Set(boardCollapsedParents),
+    [boardCollapsedParents],
+  );
+  const columnHierarchy = useMemo(
+    () =>
+      boardHierarchy
+        ? { collapsed: collapsedParentSet, onToggle: toggleBoardParentCollapsed }
+        : undefined,
+    [boardHierarchy, collapsedParentSet, toggleBoardParentCollapsed],
+  );
+  const buildBoardColumns = useCallback(() => {
+    const cols = buildColumns(groupedIssues, groups, grouping, groupingOptionIds);
+    if (!boardHierarchy) return cols;
+    for (const id of Object.keys(cols)) {
+      cols[id] = orderColumnByHierarchy(cols[id]!, issueMap);
+    }
+    return cols;
+  }, [boardHierarchy, groupedIssues, groups, grouping, groupingOptionIds, issueMap]);
+
   // --- Drag state ---
   const [activeIssue, setActiveIssue] = useState<Issue | null>(null);
   // Shared drag/settle primitive: owns the local column mirror, the
@@ -486,22 +531,13 @@ function BoardViewImpl({
     recentlyMovedRef,
     settleVersion,
     beginSettle,
-  } = useDragSettle(() => buildColumns(groupedIssues, groups, grouping, groupingOptionIds));
+  } = useDragSettle(buildBoardColumns);
 
   useEffect(() => {
     if (!isDraggingRef.current && !isSettlingRef.current) {
-      setColumns(buildColumns(groupedIssues, groups, grouping, groupingOptionIds));
+      setColumns(buildBoardColumns());
     }
-  }, [groupedIssues, groups, grouping, groupingOptionIds, settleVersion, setColumns, isDraggingRef, isSettlingRef]);
-
-  // --- Issue map ---
-  // Frozen during drag so BoardColumn/DraggableBoardCard props stay
-  // referentially stable even if a TQ refetch lands mid-drag.
-  const issueMap = useMemo(() => {
-    const map = new Map<string, Issue>();
-    for (const issue of groupedIssues) map.set(issue.id, issue);
-    return map;
-  }, [groupedIssues]);
+  }, [buildBoardColumns, settleVersion, setColumns, isDraggingRef, isSettlingRef]);
 
   const issueMapRef = useRef(issueMap);
   if (!isDraggingRef.current && !isSettlingRef.current) {
@@ -517,8 +553,15 @@ function BoardViewImpl({
   // Side peek steps through a column with J / K, in the order shown here.
   const peek = useIssuePeekActions();
   useEffect(() => {
-    peek?.publishColumns(groups.map((group) => columns[group.id] ?? EMPTY_IDS));
-  }, [peek, groups, columns]);
+    peek?.publishColumns(
+      groups.map((group) => {
+        const ids = columns[group.id] ?? EMPTY_IDS;
+        return boardHierarchy
+          ? visibleColumnIds(ids, issueMapRef.current, collapsedParentSet)
+          : ids;
+      }),
+    );
+  }, [peek, groups, columns, boardHierarchy, collapsedParentSet]);
   useEffect(() => () => peek?.publishColumns(null), [peek]);
 
   // #6700: drag empty board background with the left button to pan horizontally
@@ -569,8 +612,7 @@ function BoardViewImpl({
       isDraggingRef.current = false;
       setActiveIssue(null);
 
-      const resetColumns = () =>
-        setColumns(buildColumns(groupedIssues, groups, grouping, groupingOptionIds));
+      const resetColumns = () => setColumns(buildBoardColumns());
 
       if (!over) {
         resetColumns();
@@ -615,6 +657,10 @@ function BoardViewImpl({
       }
 
       const map = issueMapRef.current;
+      // With nesting on, a card is positioned only against cards on its own
+      // level, never against another parent's nested children.
+      const levelIds = (ids: string[]) =>
+        boardHierarchy ? siblingIds(ids, activeId, map) : ids;
       if (finalGroup.status && map.get(activeId)?.status !== finalGroup.status && catalog.entryOf(finalGroup.status)?.archived_at) {
         resetColumns();
         return;
@@ -639,12 +685,15 @@ function BoardViewImpl({
         // settles. That is the "snaps back to origin, then moves" glitch.
         // Placement mirrors the cache (insertByPosition) so the settle rebuild
         // from TanStack Query is a visual no-op.
-        const targetIds = insertIdByPosition(
+        const insertedIds = insertIdByPosition(
           (cols[overCol] ?? []).filter((id) => id !== activeId),
           activeId,
           currentIssue.position,
           map,
         );
+        const targetIds = boardHierarchy
+          ? orderColumnByHierarchy(insertedIds, map)
+          : insertedIds;
         setColumns((prev) => {
           const fromIds = (prev[activeCol] ?? []).filter((cid) => cid !== activeId);
           return { ...prev, [activeCol]: fromIds, [overCol]: targetIds };
@@ -653,7 +702,7 @@ function BoardViewImpl({
           activeId,
           {
             ...getMoveUpdates(finalGroup, currentIssue.position, currentIssue),
-            ...getMoveAnchors(targetIds, activeId),
+            ...getMoveAnchors(levelIds(targetIds), activeId),
           },
           beginSettle(),
         );
@@ -661,7 +710,7 @@ function BoardViewImpl({
         return;
       }
 
-      const finalIds = finalColumns[finalCol]!;
+      const finalIds = levelIds(finalColumns[finalCol]!);
       const newPosition = computePosition(finalIds, activeId, map);
       const currentIssue = map.get(activeId);
 
@@ -688,7 +737,7 @@ function BoardViewImpl({
       );
       applyPropertyGroupValue(finalGroup, activeId);
     },
-    [groupedIssues, groups, grouping, groupingOptionIds, onMoveIssue, groupIds, groupMap, sortBy, beginSettle, columnsRef, isDraggingRef, setColumns, applyPropertyGroupValue, catalog, t],
+    [buildBoardColumns, boardHierarchy, onMoveIssue, groupIds, groupMap, sortBy, beginSettle, columnsRef, isDraggingRef, setColumns, applyPropertyGroupValue, catalog, t],
   );
 
   // An aborted drag (pointercancel, window resize, tab hide, Escape) fires
@@ -698,8 +747,8 @@ function BoardViewImpl({
   const handleDragCancel = useCallback(() => {
     isDraggingRef.current = false;
     setActiveIssue(null);
-    setColumns(buildColumns(groupedIssues, groups, grouping, groupingOptionIds));
-  }, [groupedIssues, groups, grouping, groupingOptionIds, setColumns, isDraggingRef]);
+    setColumns(buildBoardColumns());
+  }, [buildBoardColumns, setColumns, isDraggingRef]);
 
   return (
     <DndContext
@@ -753,6 +802,7 @@ function BoardViewImpl({
                 projectId={projectId}
                 onCreateIssue={onCreateIssue}
                 sortLabel={sortLabel}
+                hierarchy={columnHierarchy}
               />
             ) : (
               groupPagination?.[group.id] ? (
@@ -767,6 +817,7 @@ function BoardViewImpl({
                   projectId={projectId}
                   onCreateIssue={onCreateIssue}
                   sortLabel={sortLabel}
+                  hierarchy={columnHierarchy}
                 />
               ) : (
                 <BoardColumn
@@ -780,6 +831,7 @@ function BoardViewImpl({
                   onCreateIssue={onCreateIssue}
                   totalCount={group.totalCount}
                   sortLabel={sortLabel}
+                  hierarchy={columnHierarchy}
                 />
               )
             ),
@@ -833,6 +885,7 @@ const ServerPaginatedBoardColumn = memo(function ServerPaginatedBoardColumn({
   projectId,
   onCreateIssue,
   sortLabel,
+  hierarchy,
 }: {
   group: BoardColumnGroup;
   issueIds: string[];
@@ -843,6 +896,7 @@ const ServerPaginatedBoardColumn = memo(function ServerPaginatedBoardColumn({
   projectId?: string;
   onCreateIssue?: (defaults: IssueCreateDefaults) => void;
   sortLabel?: string | null;
+  hierarchy?: BoardColumnHierarchy;
 }) {
   const footer = page ? (
     <ListLoadMoreFooter
@@ -866,6 +920,7 @@ const ServerPaginatedBoardColumn = memo(function ServerPaginatedBoardColumn({
       onCreateIssue={onCreateIssue}
       sortLabel={sortLabel}
       footer={footer}
+      hierarchy={hierarchy}
     />
   );
 });
