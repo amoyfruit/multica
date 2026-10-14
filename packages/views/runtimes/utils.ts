@@ -221,6 +221,11 @@ const MODEL_PRICING: Record<
   //    SKUs at 10/50 (5.1 prices cache reads at 0.025x input, a quarter of the
   //    usual 0.1x); Opus 4.5 through Opus 5 stay on the lower 5/25 Opus tier,
   //    and Opus 5.5 drops to 4/20 (cache reads at 0.05x input). --
+  "claude-sonnet-5-5":   { input: 2,    output: 10,   cacheRead: 0.10, cacheWrite: 2.50 },
+  // Haiku 5.5 is tiered by prompt size; this is the <=100K tier (>100K is
+  // 0.50 / 2.50). Rollups carry no per-request size, so it under-estimates
+  // long-context usage.
+  "claude-haiku-5-5":    { input: 0.10, output: 0.50, cacheRead: 0.01, cacheWrite: 0.125 },
   "claude-sonnet-5":     { input: 2,    output: 10,   cacheRead: 0.20, cacheWrite: 2.50 },
   "claude-fable-5-1":   { input: 10,   output: 50,   cacheRead: 0.25, cacheWrite: 12.50 },
   "claude-fable-5":     { input: 10,   output: 50,   cacheRead: 1.00, cacheWrite: 12.50 },

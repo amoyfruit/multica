@@ -176,6 +176,22 @@ describe("estimateCost", () => {
     expect(cost).toBeCloseTo(10 + 50 + 0.25 + 12.5, 5);
   });
 
+  it("prices Claude Sonnet 5.5 and Haiku 5.5", () => {
+    const usage = {
+      ...zeroUsage,
+      input_tokens: 1_000_000,
+      output_tokens: 1_000_000,
+      cache_read_tokens: 1_000_000,
+      cache_write_tokens: 1_000_000,
+    };
+    expect(
+      estimateCost({ ...usage, model: "claude-sonnet-5-5" }),
+    ).toBeCloseTo(2 + 10 + 0.1 + 2.5, 5);
+    expect(
+      estimateCost({ ...usage, model: "claude-haiku-5-5" }),
+    ).toBeCloseTo(0.1 + 0.5 + 0.01 + 0.125, 5);
+  });
+
   it("prices Claude Sonnet 5 at Anthropic's intro $2 / $10 tier", () => {
     const cost = estimateCost({
       ...zeroUsage,
