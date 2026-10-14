@@ -8,7 +8,7 @@
  * navigation behavior of `document.title`.
  */
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { render } from "@testing-library/react";
+import { render, waitFor } from "@testing-library/react";
 
 const route = vi.hoisted(() => ({ pathname: "/acme/issues", search: "" }));
 vi.mock("next/navigation", () => ({
@@ -111,6 +111,37 @@ describe("WorkspaceDocumentTitle", () => {
     render(<WorkspaceDocumentTitle />);
 
     expect(document.title).toBe(SITE_TITLE);
+  });
+
+  it("keeps the issue title when route metadata arrives after navigation", async () => {
+    open("/acme/issues/11111111-1111-4111-8111-111111111111");
+    presentation.title = "MUL-123: Fix login";
+    const view = render(<WorkspaceDocumentTitle />);
+
+    // UUID links are replaced with the identifier URL after the issue loads.
+    open("/acme/issues/MUL-123");
+    view.rerender(<WorkspaceDocumentTitle />);
+    expect(document.title).toBe("MUL-123: Fix login | Multica");
+
+    // App Router metadata can commit AFTER the route effect, with no further
+    // URL or query-cache change to trigger another render.
+    document.title = SITE_TITLE;
+    await waitFor(() => {
+      expect(document.title).toBe("MUL-123: Fix login | Multica");
+    });
+
+    // It can also replace the title node rather than update its text.
+    const metadata = document.createElement("title");
+    metadata.textContent = SITE_TITLE;
+    document.head.querySelector("title")!.replaceWith(metadata);
+    await waitFor(() => {
+      expect(document.title).toBe("MUL-123: Fix login | Multica");
+    });
+
+    view.unmount();
+    document.title = "Login | Multica";
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(document.title).toBe("Login | Multica");
   });
 
   it("restores the site title when the dashboard unmounts", () => {
