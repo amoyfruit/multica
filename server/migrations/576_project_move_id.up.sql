@@ -1,1 +1,1 @@
-CREATE UNIQUE INDEX CONCURRENTLY idx_project_move_id ON project_move (id);
+CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS idx_project_move_id ON project_move (id);
