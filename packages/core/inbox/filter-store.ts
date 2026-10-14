@@ -7,7 +7,15 @@ export interface InboxFilters {
   /** Actor keys — see `inboxActorKey`. */
   readonly actors: readonly string[];
   readonly unreadOnly: boolean;
+  /** Only issues no agent is running or queued on. Active inbox only. */
+  readonly idleOnly: boolean;
 }
+
+/**
+ * The dimensions the server-filtered archive understands. It has no idle
+ * dimension, so `idleOnly` never reaches its endpoints or query keys.
+ */
+export type ArchivedInboxFilters = Omit<InboxFilters, "idleOnly">;
 
 /**
  * Stable identity for "who this notification came from", used as the value of
@@ -43,6 +51,7 @@ export const EMPTY_INBOX_FILTERS: InboxFilters = Object.freeze({
   priorities: Object.freeze([]),
   actors: Object.freeze([]),
   unreadOnly: false,
+  idleOnly: false,
 });
 
 /** True when nothing is selected in any dimension. */
@@ -56,6 +65,7 @@ interface InboxFilterState {
   togglePriorityFilter: (wsId: string, priority: IssuePriority) => void;
   toggleActorFilter: (wsId: string, actor: string) => void;
   toggleUnreadOnly: (wsId: string) => void;
+  toggleIdleOnly: (wsId: string) => void;
   clearPriorityFilters: (wsId: string) => void;
   clearFilters: (wsId: string) => void;
 }
@@ -111,6 +121,16 @@ export const useInboxFilterStore = create<InboxFilterState>()((set) => ({
         filtersByWorkspace: {
           ...state.filtersByWorkspace,
           [wsId]: { ...current, unreadOnly: !current.unreadOnly },
+        },
+      };
+    }),
+  toggleIdleOnly: (wsId) =>
+    set((state) => {
+      const current = state.filtersByWorkspace[wsId] ?? EMPTY_INBOX_FILTERS;
+      return {
+        filtersByWorkspace: {
+          ...state.filtersByWorkspace,
+          [wsId]: { ...current, idleOnly: !current.idleOnly },
         },
       };
     }),
@@ -177,6 +197,17 @@ export function inboxFiltersForPrioritySupport(
   return { ...filters, priorities: [] };
 }
 
+const EMPTY_ISSUE_IDS: ReadonlySet<string> = new Set();
+
+/**
+ * The archive is filtered server-side and the backend has no idle dimension,
+ * so a selection kept from the active inbox stays dormant there instead of
+ * narrowing whichever archived pages happen to be loaded.
+ */
+export function inboxFiltersForArchive(filters: InboxFilters): InboxFilters {
+  return filters.idleOnly ? { ...filters, idleOnly: false } : filters;
+}
+
 /**
  * OR within a dimension, AND between dimensions.
  *
@@ -193,10 +224,15 @@ export function inboxFiltersForPrioritySupport(
  * (`useInboxUnreadCount`) counts the same thing from the server's summary
  * endpoint, which applies that newest-per-issue rule in SQL — so "only unread"
  * and the number next to Inbox still cannot disagree.
+ *
+ * `idleOnly` asks about the issue, like status and priority, so a row without
+ * one never matches. `activeIssueIds` are the issues an agent is running or
+ * queued on; the caller derives them from the agent task snapshot.
  */
 export function filterInboxItems(
   items: InboxItem[],
   filters: InboxFilters,
+  activeIssueIds: ReadonlySet<string> = EMPTY_ISSUE_IDS,
 ): InboxItem[] {
   if (isEmptyInboxFilters(filters)) return items;
 
@@ -211,7 +247,9 @@ export function filterInboxItems(
       (priorities.size === 0 ||
         (item.issue_priority != null && priorities.has(item.issue_priority))) &&
       (actors.size === 0 || (actor != null && actors.has(actor))) &&
-      (!filters.unreadOnly || item.read !== true)
+      (!filters.unreadOnly || item.read !== true) &&
+      (!filters.idleOnly ||
+        (item.issue_id != null && !activeIssueIds.has(item.issue_id)))
     );
   });
 }
@@ -221,6 +259,7 @@ export function inboxFilterCount(filters: InboxFilters): number {
     filters.statuses.length +
     filters.priorities.length +
     filters.actors.length +
-    (filters.unreadOnly ? 1 : 0)
+    (filters.unreadOnly ? 1 : 0) +
+    (filters.idleOnly ? 1 : 0)
   );
 }

@@ -17,6 +17,7 @@
     "priority": "Priorité",
     "from": "De",
     "unread_only": "Non lues uniquement",
+    "idle_only": "Au repos uniquement",
     "notification_count_one": "{{count}} notification",
     "notification_count_other": "{{count}} notifications",
     "clear": "Effacer les filtres",

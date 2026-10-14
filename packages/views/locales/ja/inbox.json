@@ -16,6 +16,7 @@
     "priority": "優先度",
     "from": "送信者",
     "unread_only": "未読のみ",
+    "idle_only": "アイドルのみ",
     "notification_count_other": "{{count}} 件の通知",
     "clear": "フィルターをクリア",
     "empty": "フィルターに一致する通知はありません"

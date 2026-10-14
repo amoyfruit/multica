@@ -43,6 +43,7 @@ import {
 } from "@multica/core/inbox/mutations";
 import {
   filterInboxItems,
+  inboxFiltersForArchive,
   inboxFiltersForPrioritySupport,
   inboxFilterCount,
   inboxPriorityFilterSupport,
@@ -51,6 +52,7 @@ import {
 } from "@multica/core/inbox/filter-store";
 
 import { IssueDetail, issueHighlightMementoKey } from "../../issues/components/issue-detail";
+import { useIssueSurfaceActivity } from "../../issues/surface/activity";
 import { useViewStateWriter } from "../../platform";
 import { ErrorBoundary } from "@multica/ui/components/common/error-boundary";
 import { useNavigation, useReportNavigating } from "../../navigation";
@@ -149,8 +151,20 @@ export function InboxPage() {
   const viewItems = isArchivedView ? archivedItems : items;
   // The paginated endpoint guarantees the projection, including on empty pages.
   const priorityFilterSupport = isArchivedView ? "supported" : inboxPriorityFilterSupport(rawItems);
-  const effectiveFilters = useMemo(() => inboxFiltersForPrioritySupport(filters, priorityFilterSupport), [filters, priorityFilterSupport]);
-  const visibleItems = useMemo(() => filterInboxItems(viewItems, effectiveFilters), [viewItems, effectiveFilters]);
+  const effectiveFilters = useMemo(() => {
+    const supported = inboxFiltersForPrioritySupport(filters, priorityFilterSupport);
+    return isArchivedView ? inboxFiltersForArchive(supported) : supported;
+  }, [filters, priorityFilterSupport, isArchivedView]);
+  // "Active" is the same running-or-queued rule the row's activity badge uses.
+  const { activityByIssueId } = useIssueSurfaceActivity();
+  const activeIssueIds = useMemo(() => new Set(activityByIssueId.keys()), [activityByIssueId]);
+  // Only an idle selection reads the snapshot, so task churn leaves the list
+  // alone while it is off.
+  const idleFilterIssueIds = effectiveFilters.idleOnly ? activeIssueIds : undefined;
+  const visibleItems = useMemo(
+    () => filterInboxItems(viewItems, effectiveFilters, idleFilterIssueIds),
+    [viewItems, effectiveFilters, idleFilterIssueIds],
+  );
   const hasActiveFilters = inboxFilterCount(effectiveFilters) > 0;
   const selectedOnPage = viewItems.find((i) => (i.issue_id ?? i.id) === selectedKey);
   // A deep link can point beyond every loaded page. Resolve its group directly
@@ -514,6 +528,7 @@ export function InboxPage() {
         wsId={wsId}
         items={viewItems}
         priorityFilterSupport={priorityFilterSupport}
+        activeIssueIds={activeIssueIds}
         archived={isArchivedView}
       />
       {/* Batch actions are main-view only. Every entry archives from the MAIN

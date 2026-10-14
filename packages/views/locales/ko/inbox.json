@@ -16,6 +16,7 @@
     "priority": "우선순위",
     "from": "보낸 사람",
     "unread_only": "읽지 않음만",
+    "idle_only": "유휴만",
     "notification_count_other": "알림 {{count}}개",
     "clear": "필터 지우기",
     "empty": "필터와 일치하는 알림이 없습니다"
