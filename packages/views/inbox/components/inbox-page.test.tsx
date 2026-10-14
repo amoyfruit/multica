@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { toast } from "sonner";
 import { ApiError } from "@multica/core/api";
-import type { InboxItem } from "@multica/core/types";
+import type { AgentTask, InboxItem } from "@multica/core/types";
 import { useInboxFilterStore } from "@multica/core/inbox/filter-store";
 import { InboxPage } from "./inbox-page";
 
@@ -17,9 +17,10 @@ vi.mock("react-resizable-panels", () => ({
 // The page runs two queries — the active list and the archived one. They are
 // told apart by the queryKey their options carry, so each test can stock the
 // two lists independently.
-const listData: { active: InboxItem[]; archived: InboxItem[]; lookup?: InboxItem[] } = {
+const listData: { active: InboxItem[]; archived: InboxItem[]; lookup?: InboxItem[]; tasks: AgentTask[] } = {
   active: [],
   archived: [],
+  tasks: [],
 };
 
 const queryCalls: Array<{ queryKey: readonly unknown[]; enabled?: boolean }> = [];
@@ -28,7 +29,9 @@ vi.mock("@tanstack/react-query", () => ({
   useQuery: (options: { queryKey: readonly unknown[]; enabled?: boolean }) => {
     queryCalls.push(options);
     return ({
-    data: options.queryKey.includes("archived") ? { items: listData.lookup ?? listData.archived, hasMore: false, nextCursor: null } : listData.active,
+    data: options.queryKey.includes("archived")
+      ? { items: listData.lookup ?? listData.archived, hasMore: false, nextCursor: null }
+      : options.queryKey.includes("agent-task-snapshot") ? listData.tasks : listData.active,
     isLoading: false,
     isError: false,
     refetch: vi.fn(),
@@ -271,6 +274,7 @@ function reset() {
   listData.active = [];
   listData.archived = [];
   listData.lookup = undefined;
+  listData.tasks = [];
   lookupState.isLoading = false;
   lookupState.isError = false;
   lookupState.refetch.mockClear();
@@ -382,6 +386,29 @@ describe("InboxPage", () => {
 
     expect(screen.getAllByTestId("row")).toHaveLength(1);
     expect(screen.getByTestId("row")).toHaveTextContent("from-alice");
+  });
+
+  it("hides issues an agent is running or queued on while the idle filter is on", () => {
+    reset();
+    listData.active = [
+      item({ id: "running", issue_id: "issue-1" }),
+      item({ id: "queued", issue_id: "issue-2" }),
+      item({ id: "finished", issue_id: "issue-3" }),
+      item({ id: "untouched", issue_id: "issue-4" }),
+    ];
+    listData.tasks = [
+      { id: "task-1", agent_id: "agent-1", issue_id: "issue-1", status: "running" },
+      { id: "task-2", agent_id: "agent-1", issue_id: "issue-2", status: "queued" },
+      { id: "task-3", agent_id: "agent-1", issue_id: "issue-3", status: "completed" },
+    ] as AgentTask[];
+    useInboxFilterStore.getState().toggleIdleOnly("workspace-1");
+
+    render(<InboxPage />);
+
+    expect(screen.getAllByTestId("row").map((row) => row.textContent)).toEqual([
+      "finished",
+      "untouched",
+    ]);
   });
 
   it("offers to clear filters when they hide every notification", () => {

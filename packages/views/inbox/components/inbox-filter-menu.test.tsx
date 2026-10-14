@@ -100,6 +100,7 @@ function renderMenu({
 } = {}) {
   setApiInstance({
     getArchivedInboxFacets,
+    getAgentTaskSnapshot: async () => [],
     listIssueStatuses: async () => ({
       statuses: statusEntries,
       categories: [],
@@ -283,6 +284,19 @@ describe("InboxFilterMenu", () => {
         screen.getByRole("button", { name: "1 active filter" }),
       ).toHaveTextContent("1"),
     );
+  });
+
+  it("toggles idle only", async () => {
+    renderMenu();
+
+    fireEvent.click(screen.getByRole("button", { name: "Filter inbox" }));
+    fireEvent.click(
+      await screen.findByRole("menuitemcheckbox", { name: /Idle only/ }),
+    );
+
+    expect(
+      useInboxFilterStore.getState().filtersByWorkspace["ws-1"]?.idleOnly,
+    ).toBe(true);
   });
 
   it("hides priority and clears its filter for a legacy response", async () => {

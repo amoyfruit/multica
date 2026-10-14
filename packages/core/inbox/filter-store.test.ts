@@ -172,6 +172,25 @@ describe("unread filtering", () => {
   });
 });
 
+describe("idle filtering", () => {
+  it("keeps only issues no agent is active on and counts as one filter", () => {
+    const rows = [
+      item("busy", "todo", "high", { issue_id: "issue-busy" }),
+      item("idle", "todo", "high", { issue_id: "issue-idle" }),
+      // Idle is a property of an issue; a row without one has none to report.
+      item("no-issue", null, null),
+    ];
+    const filters = { ...EMPTY_INBOX_FILTERS, idleOnly: true };
+
+    expect(
+      filterInboxItems(rows, filters, new Set(["issue-busy"])).map(
+        (candidate) => candidate.id,
+      ),
+    ).toEqual(["idle"]);
+    expect(inboxFilterCount(filters)).toBe(1);
+  });
+});
+
 describe("inboxPriorityFilterSupport", () => {
   it("distinguishes an omitted legacy projection from a supported null", () => {
     expect(inboxPriorityFilterSupport([])).toBe("unknown");
