@@ -3,8 +3,10 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/multica-ai/multica/server/internal/events"
 	"github.com/multica-ai/multica/server/internal/handler"
@@ -461,6 +463,9 @@ func notifyIssueSubscribers(
 			ActorID:       optionalUUID(e.ActorID),
 			Details:       details,
 		})
+		if errors.Is(err, pgx.ErrNoRows) {
+			continue
+		}
 		if err != nil {
 			slog.Error("subscriber notification creation failed",
 				"subscriber_id", subID, "type", notifType, "error", err)
@@ -527,6 +532,9 @@ func notifyDirect(
 		ActorID:       optionalUUID(e.ActorID),
 		Details:       details,
 	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return
+	}
 	if err != nil {
 		slog.Error("direct notification creation failed",
 			"issue_id", issueID, "recipient_id", recipientID, "type", notifType, "error", err)
@@ -644,6 +652,9 @@ func notifyMentionedMembers(
 			ActorID:       optionalUUID(e.ActorID),
 			Details:       details,
 		})
+		if errors.Is(err, pgx.ErrNoRows) {
+			continue
+		}
 		if err != nil {
 			slog.Error("mention inbox creation failed", "mentioned_id", id, "error", err)
 			continue

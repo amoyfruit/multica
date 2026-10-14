@@ -559,10 +559,14 @@ func (s *IssueWakeupService) dispatchSystem(ctx context.Context, prev db.IssueWa
 				Type: "children_done", Severity: "info", IssueID: issue.ID, Title: issue.Title,
 				ActorType: pgtype.Text{String: "system", Valid: true}, Details: details,
 			})
-			if err != nil {
+			if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 				return err
 			}
-			inbox = append(inbox, item)
+			if err == nil {
+				inbox = append(inbox, item)
+			} else {
+				facts["outcome"] = "none"
+			}
 		}
 		if err = q.ConsumeWakeupReceipts(ctx, db.ConsumeWakeupReceiptsParams{Ids: ids}); err != nil {
 			return err

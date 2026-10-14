@@ -6521,6 +6521,9 @@ func (s *TaskService) exhaustDelegatedFailureRecovery(ctx context.Context, targe
 				ActorID:       pgtype.UUID{},
 				Details:       details,
 			})
+			if errors.Is(err, pgx.ErrNoRows) {
+				return nil
+			}
 			if err != nil {
 				return fmt.Errorf("create delegated failure exhaustion inbox item: %w", err)
 			}
@@ -7943,6 +7946,9 @@ func (s *TaskService) notifyQuickCreateCompleted(ctx context.Context, task db.Ag
 		ActorID:       task.AgentID,
 		Details:       details,
 	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return
+	}
 	if err != nil {
 		slog.Error("quick-create completion: inbox write failed", "task_id", util.UUIDToString(task.ID), "error", err)
 		return
@@ -8044,6 +8050,9 @@ func (s *TaskService) writeQuickCreateOutcomeInbox(ctx context.Context, task db.
 		ActorID:       task.AgentID,
 		Details:       details,
 	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return
+	}
 	if err != nil {
 		slog.Error("quick-create failure: inbox write failed", "task_id", util.UUIDToString(task.ID), "error", err)
 		return

@@ -912,6 +912,9 @@ func (s *AutopilotService) notifyAutopilotSubscribersOnCreate(
 			ActorID:       leaderID,
 			Details:       details,
 		})
+		if errors.Is(err, pgx.ErrNoRows) {
+			continue
+		}
 		if err != nil {
 			slog.Error("autopilot subscriber inbox write failed",
 				"autopilot_id", util.UUIDToString(ap.ID),

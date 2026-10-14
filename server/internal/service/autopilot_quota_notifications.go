@@ -166,6 +166,9 @@ func (s *AutopilotService) createAutopilotQuotaInboxItems(
 			ActorType: pgtype.Text{String: "system", Valid: true}, ActorID: pgtype.UUID{},
 			Details: details,
 		})
+		if errors.Is(err, pgx.ErrNoRows) {
+			continue
+		}
 		if err != nil {
 			return nil, fmt.Errorf("create autopilot quota inbox item: %w", err)
 		}

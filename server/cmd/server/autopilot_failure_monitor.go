@@ -259,6 +259,9 @@ func emitAutopilotPausedNotifications(
 			ActorID:       pgtype.UUID{},
 			Details:       details,
 		})
+		if errors.Is(err, pgx.ErrNoRows) {
+			continue
+		}
 		if err != nil {
 			slog.Warn("autopilot failure monitor: inbox write failed",
 				"autopilot_id", autopilotIDStr,
