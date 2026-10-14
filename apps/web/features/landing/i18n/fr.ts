@@ -8,6 +8,46 @@ import type { LandingDict } from "./types";
 function frChangelogEntries(): LandingDict["changelog"]["entries"] {
   return [
     {
+      version: "0.6.2",
+      date: "2026-10-13",
+      title:
+        "Propriétés de listes de textes et de liens, changement d’espace de travail via Cmd+K, amorces en un clic, et exécutions plus stables",
+      changes: [],
+      features: [
+        "Les propriétés personnalisées peuvent contenir une liste de textes ou de liens, et se filtrer par valeur exacte.",
+        "Appuyez sur Cmd/Ctrl+K pour passer à un autre espace de travail.",
+        "Dans l’application de bureau, changer d’espace de travail rouvre l’onglet que vous y aviez laissé ouvert.",
+        "Toucher une amorce de conversation dans une discussion vide l’envoie aussitôt, et n’écrase jamais votre brouillon.",
+        "Activez le démarrage à l’ouverture de session pour votre démon local depuis la ligne de commande ; il reste désactivé tant que vous ne le faites pas.",
+      ],
+      improvements: [
+        "La liste des tâches charge sa première page plus vite.",
+        "Dans l’application de bureau, la navigation et la barre d’onglets sont désormais alignées.",
+      ],
+      fixes: [
+        "Les longs fils Codex se poursuivent d’un dossier local à l’autre, et les limites de débit ne bloquent plus une exécution.",
+        "Le CLI Codex au sein de ChatGPT.app est détecté.",
+        "Les tâches Pi disposent des serveurs MCP que vous avez configurés.",
+        "Les exécutions Pi et Kimi en échec s’affichent comme telles au lieu de se terminer en silence.",
+        "Antigravity conserve sa réponse même lorsque la connexion tombe juste à la fin.",
+        "Une erreur de démarrage de CodeBuddy n’interrompt plus les exécutions déjà en cours.",
+        "Oh My Pi démarre une nouvelle session lorsqu’on le lui demande, au lieu de reprendre l’ancienne.",
+        "Les tâches sous Windows conservent l’accès au dossier temporaire du système.",
+        "Les tâches ne sont plus signalées comme sans réponse quand votre ordinateur sort de veille.",
+        "Le démon local se rétablit même lorsque son port de contrôle de santé est occupé.",
+        "Hermes reprend sa session précédente d’un dossier local à l’autre.",
+        "Les planifications d’automatisation chargées ne restent plus muettes, et les exécutions conservent leur attribution d’automatisation.",
+        "Les réveils de PR ne manquent plus un changement, et expliquent les problèmes qu’ils peuvent surmonter.",
+        "Lark efface son indicateur de frappe dès que la tâche se termine.",
+        "Les notifications de tâches WeCom proviennent du bot de l’agent qui fait le travail.",
+        "Les préfixes de tâche contenant des chiffres apparaissent dans la recherche.",
+        "Modifier un projet en même temps qu’une autre personne n’efface plus ses champs.",
+        "Les relances envoyées pendant le chargement d’une discussion ne sont plus perdues.",
+        "Les liens de téléchargement directs des pièces jointes continuent de fonctionner, et les étapes textuelles des détails d’exécution portent le bon libellé.",
+        "Les erreurs du serveur n’exposent plus les détails internes de l’erreur.",
+      ],
+    },
+    {
       version: "0.6.1",
       date: "2026-10-01",
       title:
