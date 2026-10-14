@@ -146,6 +146,62 @@ describe("HtmlBlockPreview — height", () => {
     render(<HtmlBlockPreview html="<p>chart</p>" />);
     expect(body(inlineFrame()).style.height).toBe("300px");
   });
+
+  // Regression: the reported height used to land a frame before the frame's
+  // collapse clip did, so a tall document painted unclipped and then folded
+  // back — a total-height shock wave virtualized timelines render as flicker
+  // when a scroll jump lands on the block. The clip must apply in the same
+  // render the height arrives.
+  it("clips a tall document in the same render its height arrives", () => {
+    render(<HtmlBlockPreview html="<p>tall</p>" />);
+    const frame = inlineFrame();
+
+    post(frame, { type: "height", height: 3000 });
+    // The body keeps the document's full height; the frame's clip decides the
+    // visible box right away.
+    expect(body(frame).style.height).toBe("3000px");
+    const clip = frame.closest<HTMLElement>("[data-collapsed]");
+    expect(clip).not.toBeNull();
+    expect(clip!.style.maxHeight).toBe("480px");
+    expect(screen.getByRole("button", { name: "Show all" })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Show all" }));
+    expect(frame.closest("[data-collapsed]")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Show all" })).toBeNull();
+  });
+
+  it("starts a tall cached document clipped too, not unclipped", () => {
+    const first = render(<HtmlBlockPreview html="<p>tall</p>" />);
+    post(inlineFrame(), { type: "height", height: 3000 });
+    first.unmount();
+
+    render(<HtmlBlockPreview html="<p>tall</p>" />);
+    const clip = inlineFrame().closest<HTMLElement>("[data-collapsed]");
+    expect(clip).not.toBeNull();
+    expect(clip!.style.maxHeight).toBe("480px");
+  });
+
+  // Regression: re-authoring a block must restart measurement. The body used
+  // to keep its measurement state across a content change, so a stale
+  // `frozen` runaway guard ignored every report from the new document
+  // forever, and stale `loaded`/`timedOut` could reveal it unmeasured.
+  it("measures re-authored content again, starting clean", () => {
+    const view = render(<HtmlBlockPreview html="<p>first</p>" />);
+    const frame = inlineFrame();
+    // Three equal steps trip the runaway guard, which pins the height and
+    // ignores every further report — here at 400 forever.
+    post(frame, { type: "height", height: 200 });
+    post(frame, { type: "height", height: 300 });
+    post(frame, { type: "height", height: 400 });
+    post(frame, { type: "height", height: 500 });
+    expect(body(frame).style.height).toBe("400px");
+
+    view.rerender(<HtmlBlockPreview html="<p>second</p>" />);
+    const next = inlineFrame();
+    expect(next).not.toBe(frame);
+    post(next, { type: "height", height: 250 });
+    expect(body(next).style.height).toBe("250px");
+  });
 });
 
 describe("HtmlBlockPreview — errors", () => {
