@@ -4,7 +4,7 @@ import { useIssueStatuses } from "@multica/core/issue-statuses/hooks";
 import { cn } from "@multica/ui/lib/utils";
 
 import { useState, useCallback, useMemo, useEffect, useRef, memo } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQueries, useQuery } from "@tanstack/react-query";
 import {
   DndContext,
   DragOverlay,
@@ -30,6 +30,7 @@ import { propertyListOptions, useSetIssueProperty, useUnsetIssueProperty } from 
 import { useWorkspaceId } from "@multica/core/hooks";
 import type { IssueGrouping } from "@multica/core/issues/stores/view-store";
 import { useActorName } from "@multica/core/workspace/hooks";
+import { issueDetailOptions } from "@multica/core/issues/queries";
 import {
   BoardColumn,
   BOARD_CARD_WIDTH,
@@ -70,9 +71,9 @@ import {
   projectGroupId,
 } from "../utils/drag-utils";
 import {
-  orderColumnByHierarchy,
+  buildBoardColumnTree,
   siblingIds,
-  visibleColumnIds,
+  visibleTreeIssueIds,
 } from "../utils/board-hierarchy";
 
 function isStatusGroup(
@@ -490,8 +491,10 @@ function BoardViewImpl({
   }, [groupedIssues]);
 
   // --- Sub-issue nesting ---
-  // Columns hold ids in display order (each nested child right after its
-  // parent), so drag indices match what the user sees.
+  // Sub-issues render inside their parent's card. A parent outside a column
+  // still frames its sub-issues there, so a parent that is not loaded on the
+  // board at all (a hidden column, another page, a filter) is fetched for its
+  // title.
   const boardHierarchy = useViewStore((s) => s.boardHierarchy);
   const boardCollapsedParents = useViewStore((s) => s.boardCollapsedParents);
   const toggleBoardParentCollapsed = useViewStore((s) => s.toggleBoardParentCollapsed);
@@ -499,21 +502,42 @@ function BoardViewImpl({
     () => new Set(boardCollapsedParents),
     [boardCollapsedParents],
   );
+  const missingParentIds = useMemo(() => {
+    if (!boardHierarchy) return [];
+    const ids = new Set<string>();
+    for (const issue of groupedIssues) {
+      const parentId = issue.parent_issue_id;
+      if (parentId && !issueMap.has(parentId)) ids.add(parentId);
+    }
+    return Array.from(ids).sort();
+  }, [boardHierarchy, groupedIssues, issueMap]);
+  const missingParents = useQueries({
+    queries: missingParentIds.map((id) => issueDetailOptions(boardWsId, id)),
+    combine: (results) => results.map((result) => result.data),
+  });
+  const lookupParent = useMemo(() => {
+    const fetched = new Map<string, Issue>();
+    for (const parent of missingParents) {
+      if (parent) fetched.set(parent.id, parent);
+    }
+    return (id: string) => fetched.get(id);
+  }, [missingParents]);
   const columnHierarchy = useMemo(
     () =>
       boardHierarchy
-        ? { collapsed: collapsedParentSet, onToggle: toggleBoardParentCollapsed }
+        ? {
+            collapsed: collapsedParentSet,
+            onToggle: toggleBoardParentCollapsed,
+            lookupParent,
+          }
         : undefined,
-    [boardHierarchy, collapsedParentSet, toggleBoardParentCollapsed],
+    [boardHierarchy, collapsedParentSet, toggleBoardParentCollapsed, lookupParent],
   );
-  const buildBoardColumns = useCallback(() => {
-    const cols = buildColumns(groupedIssues, groups, grouping, groupingOptionIds);
-    if (!boardHierarchy) return cols;
-    for (const id of Object.keys(cols)) {
-      cols[id] = orderColumnByHierarchy(cols[id]!, issueMap);
-    }
-    return cols;
-  }, [boardHierarchy, groupedIssues, groups, grouping, groupingOptionIds, issueMap]);
+  // Columns keep the server order; nesting is derived when rendering.
+  const buildBoardColumns = useCallback(
+    () => buildColumns(groupedIssues, groups, grouping, groupingOptionIds),
+    [groupedIssues, groups, grouping, groupingOptionIds],
+  );
 
   // --- Drag state ---
   const [activeIssue, setActiveIssue] = useState<Issue | null>(null);
@@ -557,11 +581,14 @@ function BoardViewImpl({
       groups.map((group) => {
         const ids = columns[group.id] ?? EMPTY_IDS;
         return boardHierarchy
-          ? visibleColumnIds(ids, issueMapRef.current, collapsedParentSet)
+          ? visibleTreeIssueIds(
+              buildBoardColumnTree(ids, issueMapRef.current, lookupParent),
+              collapsedParentSet,
+            )
           : ids;
       }),
     );
-  }, [peek, groups, columns, boardHierarchy, collapsedParentSet]);
+  }, [peek, groups, columns, boardHierarchy, collapsedParentSet, lookupParent]);
   useEffect(() => () => peek?.publishColumns(null), [peek]);
 
   // #6700: drag empty board background with the left button to pan horizontally
@@ -685,15 +712,12 @@ function BoardViewImpl({
         // settles. That is the "snaps back to origin, then moves" glitch.
         // Placement mirrors the cache (insertByPosition) so the settle rebuild
         // from TanStack Query is a visual no-op.
-        const insertedIds = insertIdByPosition(
+        const targetIds = insertIdByPosition(
           (cols[overCol] ?? []).filter((id) => id !== activeId),
           activeId,
           currentIssue.position,
           map,
         );
-        const targetIds = boardHierarchy
-          ? orderColumnByHierarchy(insertedIds, map)
-          : insertedIds;
         setColumns((prev) => {
           const fromIds = (prev[activeCol] ?? []).filter((cid) => cid !== activeId);
           return { ...prev, [activeCol]: fromIds, [overCol]: targetIds };

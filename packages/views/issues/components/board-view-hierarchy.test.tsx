@@ -1,8 +1,9 @@
 /**
  * @vitest-environment jsdom
  *
- * Board sub-issue nesting: a sub-issue hangs beneath its parent only inside
- * the parent's own column, one level deep, and the parent folds it away.
+ * Board sub-issue nesting: sub-issues render inside their parent's card,
+ * recursively; in another column a muted ghost frame names the parent; and a
+ * parent folds its sub-issues away.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, screen } from "@testing-library/react";
@@ -100,8 +101,7 @@ function makeIssue(
 }
 
 // Server order puts the same-column child after an unrelated card, so nesting
-// has to move it up; the done child lives in another column; the grandchild's
-// parent is itself nested, so it must stay a root card.
+// has to pull it into its parent; the done child lives in another column.
 const ISSUES = [
   makeIssue("parent", "todo"),
   makeIssue("other", "todo"),
@@ -165,43 +165,60 @@ describe("Board sub-issue nesting", () => {
     return store;
   }
 
-  it("hangs a same-column sub-issue beneath its parent, one level deep", () => {
+  /** The card that hosts the given issue's own card, if any. */
+  function hostCard(identifier: string) {
+    const own = screen.getByText(identifier).closest("[data-board-card]");
+    return own?.parentElement?.closest("[data-board-card]") ?? null;
+  }
+
+  it("renders sub-issues inside their parent's card, recursively", () => {
     render();
 
-    const todo = column("Todo");
-    expect(order(todo, ["parent", "other", "child", "grandchild"])).toEqual([
+    expect(hostCard("MUL-child")?.textContent).toContain("MUL-parent");
+    expect(hostCard("MUL-grandchild")?.textContent).toContain("MUL-child");
+    expect(hostCard("MUL-other")).toBeNull();
+    expect(order(column("Todo"), ["parent", "other", "child", "grandchild"])).toEqual([
       "parent",
       "child",
-      "other",
       "grandchild",
+      "other",
     ]);
-    // The sub-issue in another status stays in its own column.
-    expect(column("Done").textContent).toContain("MUL-finished");
-    expect(todo.textContent).not.toContain("MUL-finished");
+  });
+
+  it("frames a sub-issue in another column with its parent's title", () => {
+    render();
+
+    const done = column("Done");
+    expect(done.textContent).toContain("MUL-finished");
+    // The ghost names the parent but is not a card of its own there.
+    expect(done.textContent).toContain("Task parent");
+    expect(hostCard("MUL-finished")).toBeNull();
+    expect(column("Todo").textContent).not.toContain("MUL-finished");
   });
 
   it("folds a parent's nested sub-issues away and back", () => {
     render();
 
-    const toggle = screen.getByRole("button", { name: "1 sub-issue" });
+    const toggle = screen.getByRole("button", { name: "2 sub-issues" });
     expect(toggle.getAttribute("aria-expanded")).toBe("true");
 
     fireEvent.click(toggle);
     expect(toggle.getAttribute("aria-expanded")).toBe("false");
     expect(column("Todo").textContent).not.toContain("MUL-child");
-    // A grandchild is a root card, so folding its grandparent never hides it.
-    expect(column("Todo").textContent).toContain("MUL-grandchild");
+    expect(column("Todo").textContent).not.toContain("MUL-grandchild");
 
     fireEvent.click(toggle);
-    expect(column("Todo").textContent).toContain("MUL-child");
+    expect(column("Todo").textContent).toContain("MUL-grandchild");
   });
 
-  it("keeps server order when nesting is switched off", () => {
+  it("keeps flat server order when nesting is switched off", () => {
     const store = render();
 
     act(() => store.getState().toggleBoardHierarchy());
 
-    expect(screen.queryByRole("button", { name: "1 sub-issue" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "2 sub-issues" })).toBeNull();
+    expect(hostCard("MUL-child")).toBeNull();
+    expect(column("Done").textContent).not.toContain("Task parent");
     expect(order(column("Todo"), ["parent", "other", "child", "grandchild"])).toEqual([
       "parent",
       "other",

@@ -1,125 +1,144 @@
 import type { Issue } from "@multica/core/types";
 
 /**
- * Board sub-issue nesting is one level deep and scoped to a single column:
- * an issue nests under its parent only when that parent sits in the same
- * column as a root card. Everything else — a sub-issue whose parent lives in
- * another column, or a grandchild whose parent is itself nested — stays a
- * root card, so nesting never hides an issue from the board.
+ * Board sub-issue nesting, per column. Sub-issues render inside their
+ * parent's card, recursively:
+ * - a parent in the same column hosts its sub-issues in its own card;
+ * - a parent outside the column is shown as a muted "ghost" container around
+ *   its sub-issues, so a sub-issue moved to another status keeps its context.
+ *   The ghost itself sits inside the grandparent's card when that one is in
+ *   the column, otherwise at the top level.
+ * Every issue in the column appears exactly once.
  */
-export interface BoardColumnEntry {
-  issue: Issue;
-  depth: 0 | 1;
-  /** Ids nested under this root card, in column order. Empty for children. */
-  nestedChildIds: string[];
-  collapsed: boolean;
+export type BoardTreeNode =
+  | {
+      kind: "issue";
+      key: string;
+      issue: Issue;
+      children: BoardTreeNode[];
+      /** Issue cards anywhere beneath this node in the column. */
+      descendantCount: number;
+    }
+  | {
+      kind: "ghost";
+      key: string;
+      parentId: string;
+      /** Undefined while the parent is not loaded on the board or fetched yet. */
+      parent: Issue | undefined;
+      children: BoardTreeNode[];
+      descendantCount: number;
+    };
+
+export type ParentLookup = (issueId: string) => Issue | undefined;
+
+/** Collapse state is keyed by the hosting issue id (real card or ghost). */
+export function nodeIssueId(node: BoardTreeNode): string {
+  return node.kind === "issue" ? node.issue.id : node.parentId;
 }
 
-function resolveNestingParent(
-  id: string,
-  inColumn: ReadonlySet<string>,
-  issueMap: ReadonlyMap<string, Issue>,
-): string | null {
-  const parentId = issueMap.get(id)?.parent_issue_id;
-  if (!parentId || parentId === id || !inColumn.has(parentId)) return null;
-  // A parent that is itself nested cannot host children (one level only).
-  const grandparentId = issueMap.get(parentId)?.parent_issue_id;
-  if (grandparentId && grandparentId !== parentId && inColumn.has(grandparentId)) {
-    return null;
-  }
-  return parentId;
-}
-
-/** The card this issue nests under in the given column, or null for a root. */
-export function nestingParentId(
-  id: string,
+export function buildBoardColumnTree(
   ids: readonly string[],
   issueMap: ReadonlyMap<string, Issue>,
-): string | null {
-  return resolveNestingParent(id, new Set(ids), issueMap);
-}
-
-function groupByNestingParent(
-  ids: readonly string[],
-  issueMap: ReadonlyMap<string, Issue>,
-) {
+  lookupParent: ParentLookup,
+): BoardTreeNode[] {
   const inColumn = new Set(ids);
-  const roots: string[] = [];
-  const children = new Map<string, string[]>();
+  const issueNodes = new Map<string, BoardTreeNode & { kind: "issue" }>();
   for (const id of ids) {
-    const parentId = resolveNestingParent(id, inColumn, issueMap);
-    if (parentId === null) {
-      roots.push(id);
+    const issue = issueMap.get(id);
+    if (issue && !issueNodes.has(id)) {
+      issueNodes.set(id, {
+        kind: "issue",
+        key: id,
+        issue,
+        children: [],
+        descendantCount: 0,
+      });
+    }
+  }
+
+  const roots: BoardTreeNode[] = [];
+  const ghosts = new Map<string, BoardTreeNode & { kind: "ghost" }>();
+  const hostIn = (hostId: string | null | undefined, selfId: string) =>
+    hostId && hostId !== selfId && inColumn.has(hostId)
+      ? issueNodes.get(hostId)
+      : undefined;
+
+  for (const node of issueNodes.values()) {
+    const parentId = node.issue.parent_issue_id;
+    const host = hostIn(parentId, node.issue.id);
+    if (host) {
+      host.children.push(node);
       continue;
     }
-    const siblings = children.get(parentId);
-    if (siblings) siblings.push(id);
-    else children.set(parentId, [id]);
-  }
-  return { roots, children };
-}
-
-/**
- * Column ids in display order: roots keep their server order and each is
- * followed by its nested children (also in server order). Children of
- * collapsed parents are kept, so drag math always sees the whole column.
- */
-export function orderColumnByHierarchy(
-  ids: readonly string[],
-  issueMap: ReadonlyMap<string, Issue>,
-): string[] {
-  const { roots, children } = groupByNestingParent(ids, issueMap);
-  return roots.flatMap((id) => [id, ...(children.get(id) ?? [])]);
-}
-
-/** Visible column entries; children of collapsed parents are omitted. */
-export function buildBoardColumnEntries(
-  ids: readonly string[],
-  issueMap: ReadonlyMap<string, Issue>,
-  collapsedParentIds: ReadonlySet<string>,
-): BoardColumnEntry[] {
-  const { roots, children } = groupByNestingParent(ids, issueMap);
-  const entries: BoardColumnEntry[] = [];
-  for (const rootId of roots) {
-    const issue = issueMap.get(rootId);
-    if (!issue) continue;
-    const nestedChildIds = children.get(rootId) ?? [];
-    const collapsed = nestedChildIds.length > 0 && collapsedParentIds.has(rootId);
-    entries.push({ issue, depth: 0, nestedChildIds, collapsed });
-    if (collapsed) continue;
-    for (const childId of nestedChildIds) {
-      const child = issueMap.get(childId);
-      if (child) {
-        entries.push({ issue: child, depth: 1, nestedChildIds: [], collapsed: false });
-      }
+    if (!parentId || parentId === node.issue.id) {
+      roots.push(node);
+      continue;
     }
+    let ghost = ghosts.get(parentId);
+    if (!ghost) {
+      const parent = issueMap.get(parentId) ?? lookupParent(parentId);
+      ghost = {
+        kind: "ghost",
+        key: `ghost:${parentId}`,
+        parentId,
+        parent,
+        children: [],
+        descendantCount: 0,
+      };
+      ghosts.set(parentId, ghost);
+      const ghostHost = hostIn(parent?.parent_issue_id, parentId);
+      (ghostHost ? ghostHost.children : roots).push(ghost);
+    }
+    ghost.children.push(node);
   }
-  return entries;
+
+  // Corrupt parent data could form a cycle that no root reaches. Surface
+  // those cards flat at the end instead of dropping them from the board.
+  const reached = new Set<string>();
+  const count = (node: BoardTreeNode): number => {
+    if (node.kind === "issue") {
+      if (reached.has(node.issue.id)) return 0;
+      reached.add(node.issue.id);
+    }
+    let total = 0;
+    for (const child of node.children) {
+      total += count(child) + (child.kind === "issue" ? 1 : 0);
+    }
+    node.descendantCount = total;
+    return total;
+  };
+  for (const root of roots) count(root);
+  for (const node of issueNodes.values()) {
+    if (reached.has(node.issue.id)) continue;
+    roots.push({ ...node, children: [], descendantCount: 0 });
+    reached.add(node.issue.id);
+  }
+  return roots;
 }
 
-/** Ids on the same nesting level as `activeId` (roots, or one parent's children). */
+/** Issue ids in display order, skipping the contents of collapsed nodes. */
+export function visibleTreeIssueIds(
+  nodes: readonly BoardTreeNode[],
+  collapsed: ReadonlySet<string>,
+): string[] {
+  const result: string[] = [];
+  const walk = (list: readonly BoardTreeNode[]) => {
+    for (const node of list) {
+      if (node.kind === "issue") result.push(node.issue.id);
+      if (!collapsed.has(nodeIssueId(node))) walk(node.children);
+    }
+  };
+  walk(nodes);
+  return result;
+}
+
+/** Ids that share `activeId`'s parent — the cards it is ordered against. */
 export function siblingIds(
   ids: readonly string[],
   activeId: string,
   issueMap: ReadonlyMap<string, Issue>,
 ): string[] {
-  const inColumn = new Set(ids);
-  const level = resolveNestingParent(activeId, inColumn, issueMap);
-  return ids.filter(
-    (id) => resolveNestingParent(id, inColumn, issueMap) === level,
-  );
-}
-
-/** Column ids that are currently visible (children of collapsed parents dropped). */
-export function visibleColumnIds(
-  ids: readonly string[],
-  issueMap: ReadonlyMap<string, Issue>,
-  collapsedParentIds: ReadonlySet<string>,
-): string[] {
-  if (collapsedParentIds.size === 0) return [...ids];
-  const inColumn = new Set(ids);
-  return ids.filter((id) => {
-    const parentId = resolveNestingParent(id, inColumn, issueMap);
-    return parentId === null || !collapsedParentIds.has(parentId);
-  });
+  const parentOf = (id: string) => issueMap.get(id)?.parent_issue_id ?? null;
+  const level = parentOf(activeId);
+  return ids.filter((id) => parentOf(id) === level);
 }

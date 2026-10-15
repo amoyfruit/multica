@@ -2,11 +2,10 @@
 import { describe, expect, it } from "vitest";
 import type { Issue } from "@multica/core/types";
 import {
-  buildBoardColumnEntries,
-  nestingParentId,
-  orderColumnByHierarchy,
+  buildBoardColumnTree,
   siblingIds,
-  visibleColumnIds,
+  visibleTreeIssueIds,
+  type BoardTreeNode,
 } from "./board-hierarchy";
 
 function mk(id: string, parent: string | null = null): Issue {
@@ -41,67 +40,77 @@ function mapOf(...issues: Issue[]) {
   return new Map(issues.map((issue) => [issue.id, issue]));
 }
 
-const NONE = new Set<string>();
+/** Compact shape: "id" for a card, "~id" for a ghost, children in brackets. */
+function shape(nodes: BoardTreeNode[]): unknown[] {
+  return nodes.map((node) => {
+    const label = node.kind === "issue" ? node.issue.id : `~${node.parentId}`;
+    return node.children.length ? [label, shape(node.children)] : label;
+  });
+}
 
-describe("board hierarchy", () => {
-  it("nests a child under its parent in the same column", () => {
-    const map = mapOf(mk("p"), mk("x"), mk("c", "p"));
-    expect(orderColumnByHierarchy(["p", "x", "c"], map)).toEqual(["p", "c", "x"]);
-    const entries = buildBoardColumnEntries(["p", "x", "c"], map, NONE);
-    expect(entries.map((e) => [e.issue.id, e.depth])).toEqual([
-      ["p", 0],
-      ["c", 1],
-      ["x", 0],
+const none = () => undefined;
+
+describe("board column tree", () => {
+  it("puts sub-issues inside their parent's card, recursively", () => {
+    const map = mapOf(mk("epic"), mk("x"), mk("feature", "epic"), mk("task", "feature"));
+    const tree = buildBoardColumnTree(["epic", "x", "feature", "task"], map, none);
+    expect(shape(tree)).toEqual([["epic", [["feature", ["task"]]]], "x"]);
+    expect(tree[0]!.descendantCount).toBe(2);
+  });
+
+  it("wraps a sub-issue whose parent is in another column in a ghost", () => {
+    const map = mapOf(mk("p"), mk("c1", "p"), mk("c2", "p"), mk("x"));
+    const tree = buildBoardColumnTree(["x", "c1", "c2"], map, none);
+    expect(shape(tree)).toEqual(["x", ["~p", ["c1", "c2"]]]);
+    const ghost = tree[1]!;
+    expect(ghost.kind === "ghost" && ghost.parent?.id).toBe("p");
+  });
+
+  it("resolves a ghost's parent through the lookup when it is not on the board", () => {
+    const parent = mk("p");
+    const map = mapOf(mk("c", "p"));
+    const tree = buildBoardColumnTree(["c"], map, (id) => (id === "p" ? parent : undefined));
+    expect(tree[0]).toMatchObject({ kind: "ghost", parent });
+  });
+
+  it("keeps an unresolved ghost with an unknown parent", () => {
+    const tree = buildBoardColumnTree(["c"], mapOf(mk("c", "gone")), none);
+    expect(tree[0]).toMatchObject({ kind: "ghost", parentId: "gone", parent: undefined });
+  });
+
+  it("places a ghost inside the grandparent's card when that is in the column", () => {
+    const map = mapOf(mk("epic"), mk("feature", "epic"), mk("task", "feature"));
+    const tree = buildBoardColumnTree(["epic", "task"], map, none);
+    expect(shape(tree)).toEqual([["epic", [["~feature", ["task"]]]]]);
+  });
+
+  it("orders a ghost where its first sub-issue appears", () => {
+    const map = mapOf(mk("a"), mk("c", "p"), mk("b"));
+    expect(shape(buildBoardColumnTree(["a", "c", "b"], map, none))).toEqual([
+      "a",
+      ["~p", ["c"]],
+      "b",
     ]);
-    expect(entries[0]!.nestedChildIds).toEqual(["c"]);
   });
 
-  it("keeps a child whose parent is in another column as a root", () => {
-    const map = mapOf(mk("p"), mk("c", "p"));
-    expect(nestingParentId("c", ["c"], map)).toBeNull();
-    expect(buildBoardColumnEntries(["c"], map, NONE)[0]!.depth).toBe(0);
+  it("never drops a card caught in a corrupt parent cycle", () => {
+    const map = mapOf(mk("a", "b"), mk("b", "a"));
+    const ids = visibleTreeIssueIds(buildBoardColumnTree(["a", "b"], map, none), new Set());
+    expect(ids.sort()).toEqual(["a", "b"]);
   });
 
-  it("keeps a grandchild as a root when its parent is nested", () => {
-    const map = mapOf(mk("g"), mk("p", "g"), mk("c", "p"));
-    const entries = buildBoardColumnEntries(["g", "p", "c"], map, NONE);
-    expect(entries.map((e) => [e.issue.id, e.depth])).toEqual([
-      ["g", 0],
-      ["p", 1],
-      ["c", 0],
-    ]);
+  it("lists visible cards in display order, skipping collapsed contents", () => {
+    const map = mapOf(mk("p"), mk("c", "p"), mk("g", "c"), mk("o", "elsewhere"));
+    const tree = buildBoardColumnTree(["p", "c", "g", "o"], map, none);
+    expect(visibleTreeIssueIds(tree, new Set())).toEqual(["p", "c", "g", "o"]);
+    expect(visibleTreeIssueIds(tree, new Set(["c"]))).toEqual(["p", "c", "o"]);
+    expect(visibleTreeIssueIds(tree, new Set(["elsewhere"]))).toEqual(["p", "c", "g"]);
   });
 
-  it("nests a grandchild under its parent when the grandparent is elsewhere", () => {
-    const map = mapOf(mk("g"), mk("p", "g"), mk("c", "p"));
-    expect(nestingParentId("c", ["p", "c"], map)).toBe("p");
-  });
-
-  it("pulls a child loaded before its parent beneath the parent", () => {
-    const map = mapOf(mk("c", "p"), mk("x"), mk("p"));
-    expect(orderColumnByHierarchy(["c", "x", "p"], map)).toEqual(["x", "p", "c"]);
-  });
-
-  it("keeps children of a collapsed parent in the order but hides them", () => {
+  it("orders a card only against cards sharing its parent", () => {
     const map = mapOf(mk("p"), mk("c1", "p"), mk("c2", "p"), mk("x"));
     const ids = ["p", "c1", "x", "c2"];
-    const collapsed = new Set(["p"]);
-    expect(orderColumnByHierarchy(ids, map)).toEqual(["p", "c1", "c2", "x"]);
-    const entries = buildBoardColumnEntries(ids, map, collapsed);
-    expect(entries.map((e) => e.issue.id)).toEqual(["p", "x"]);
-    expect(entries[0]).toMatchObject({ collapsed: true, nestedChildIds: ["c1", "c2"] });
-    expect(visibleColumnIds(orderColumnByHierarchy(ids, map), map, collapsed)).toEqual(["p", "x"]);
-  });
-
-  it("does not mark a childless card collapsed", () => {
-    const map = mapOf(mk("p"));
-    expect(buildBoardColumnEntries(["p"], map, new Set(["p"]))[0]!.collapsed).toBe(false);
-  });
-
-  it("returns siblings on the dragged card's level", () => {
-    const map = mapOf(mk("p"), mk("c1", "p"), mk("c2", "p"), mk("x"));
-    const ordered = ["p", "c1", "c2", "x"];
-    expect(siblingIds(ordered, "x", map)).toEqual(["p", "x"]);
-    expect(siblingIds(ordered, "c2", map)).toEqual(["c1", "c2"]);
+    expect(siblingIds(ids, "x", map)).toEqual(["p", "x"]);
+    expect(siblingIds(ids, "c2", map)).toEqual(["c1", "c2"]);
   });
 });
