@@ -116,12 +116,18 @@ func TestClaimTasksByRuntime_DeadlineRecoveryOverWebSocket(t *testing.T) {
 	if len(failed.Tasks) != 0 || failed.ClaimPollHintSupported {
 		t.Fatalf("failed build returned tasks or enabled the long poll: %+v", failed)
 	}
+	// Cleanup can finish after the response; its wakeup still has to arrive on
+	// this same healthy connection before another claim is needed.
+	for !woke {
+		var msg protocol.Message
+		if err := conn.ReadJSON(&msg); err != nil {
+			t.Fatal(err)
+		}
+		woke = msg.Type == protocol.EventDaemonTaskAvailable
+	}
 	task, err := h.Queries.GetAgentTask(ctx, parseUUID(taskID))
 	if err != nil || task.Status != "queued" || task.DispatchedAt.Valid {
 		t.Fatalf("undelivered claim was not released: task=%+v err=%v", task, err)
-	}
-	if !woke {
-		t.Fatal("recovery did not send task_available on the healthy WebSocket")
 	}
 	retried := claim("retry")
 	if len(retried.Tasks) != 1 || retried.Tasks[0].ID != taskID || retried.Tasks[0].AuthToken == "" {

@@ -1923,11 +1923,6 @@ func (h *Handler) ClaimTasksByRuntime(w http.ResponseWriter, r *http.Request) {
 		out = append(out, resp)
 	}
 
-	// A committed claim must not wait for stale-dispatch recovery just because
-	// building its payload exhausted the request deadline. Recover only omitted
-	// tasks; successful claims must stay reserved for this response.
-	h.requeueUndeliveredBatchClaims(r.Context(), claimed, out, responseDeadline)
-
 	if len(out) > 0 {
 		slog.Info("tasks claimed by runtime batch",
 			"runtimes", len(authorized), "requested_max", maxTasks, "claimed", len(out),
@@ -1957,6 +1952,20 @@ func (h *Handler) ClaimTasksByRuntime(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeMeasuredJSON(w, http.StatusOK, response)
+	if len(out) != len(claimed) {
+		// Deliver successful payloads before batch recovery side effects. Cache
+		// invalidation, event listeners and cross-node wakeups can use their own
+		// timeouts, so the recovery context alone cannot bound the response wait.
+		// HTTP already advertises Content-Length; flushing sends the whole body.
+		// WS keeps cleanup in the existing RPC worker after queuing its response.
+		cleanup := func() {
+			h.requeueUndeliveredBatchClaims(r.Context(), claimed, out, responseDeadline)
+		}
+		if !daemonws.AfterRPCResponse(r.Context(), cleanup) {
+			_ = http.NewResponseController(w).Flush()
+			cleanup()
+		}
+	}
 }
 
 const (
@@ -1979,8 +1988,9 @@ func batchClaimDeadlines(ctx context.Context, start time.Time) (build, response 
 	return build, response
 }
 
-// Share one recovery budget across the batch. Detach from build cancellation,
-// but never extend the original response deadline or wait separately per task.
+// Share one deadline for recovery DB work across the batch. Post-commit cache,
+// event and wakeup side effects may outlive it, so callers deliver the response
+// first while retaining cleanup in the current HTTP/RPC request worker.
 func (h *Handler) requeueUndeliveredBatchClaims(ctx context.Context, claimed []db.AgentTaskQueue, delivered []AgentTaskResponse, responseDeadline time.Time) {
 	if len(claimed) == len(delivered) {
 		return

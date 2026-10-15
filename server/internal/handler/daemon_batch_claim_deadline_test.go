@@ -72,8 +72,9 @@ func TestClaimTasksByRuntime_PartialSuccessFitsClientDeadlines(t *testing.T) {
 				h.TaskService = service.NewTaskService(db.New(recoveryDB), testPool, testHandler.TaskService.Hub, testHandler.TaskService.Bus, hub)
 				completed := make(chan struct{})
 				hub.SetRPCHandler(func(ctx context.Context, identity daemonws.ClientIdentity, method string, body json.RawMessage) (int, json.RawMessage, error) {
-					defer close(completed)
-					return h.DaemonRPCHandler(ctx, identity, method, body)
+					status, response, err := h.DaemonRPCHandler(ctx, identity, method, body)
+					daemonws.AfterRPCResponse(ctx, func() { close(completed) })
+					return status, response, err
 				})
 				identity := daemonws.ClientIdentity{
 					DaemonID: batchClaimTestDaemonID, UserID: testUserID,
