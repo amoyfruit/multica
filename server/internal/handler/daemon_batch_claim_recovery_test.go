@@ -81,7 +81,8 @@ func TestClaimTasksByRuntime_DeadlineRecoveryOverWebSocket(t *testing.T) {
 		if err := conn.WriteJSON(protocol.Message{Type: protocol.EventDaemonRPCRequest, Payload: payload}); err != nil {
 			t.Fatal(err)
 		}
-		if err := conn.SetReadDeadline(time.Now().Add(15 * time.Second)); err != nil {
+		// Match the installed daemon's five-second budget plus two-second grace.
+		if err := conn.SetReadDeadline(time.Now().Add(protocol.DaemonBatchClaimRequestTimeout + 2*time.Second)); err != nil {
 			t.Fatal(err)
 		}
 		for {
@@ -183,7 +184,7 @@ func TestRequeueUndeliveredBatchClaims_PreservesOtherGenerationsAndStates(t *tes
 				}
 				claimed = append(claimed, other)
 			}
-			testHandler.requeueUndeliveredBatchClaims(expired, claimed, delivered)
+			testHandler.requeueUndeliveredBatchClaims(expired, claimed, delivered, time.Now().Add(batchClaimRecoveryTimeout))
 			got, err := testHandler.Queries.GetAgentTask(ctx, task.ID)
 			if err != nil || got.Status != want {
 				t.Fatalf("recovery status=%s err=%v, want %s", got.Status, err, want)
