@@ -4,7 +4,7 @@
  * Board sub-issue nesting, drag side: moving a card to another column takes
  * the sub-issues shown inside it along, and nothing else.
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import { act, cleanup } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ViewStoreProvider } from "@multica/core/issues/stores/view-store-context";
@@ -12,7 +12,11 @@ import { getIssueSurfaceViewStore } from "@multica/core/issues/stores/surface-vi
 import type { Issue, IssueStatus } from "@multica/core/types";
 import { renderWithI18n } from "../../test/i18n";
 import { IssueContextMenuProvider } from "../actions/issue-actions-context-menu";
-import { IssueSurfaceActionsProvider } from "../surface/actions-context";
+import {
+  IssueSurfaceActionsProvider,
+  type IssueSurfaceActions,
+} from "../surface/actions-context";
+import type { DragMoveUpdates } from "../utils/drag-utils";
 import { BoardView } from "./board-view";
 
 vi.mock("@multica/core/hooks", () => ({ useWorkspaceId: () => "ws-1" }));
@@ -154,8 +158,10 @@ class ObserverStub {
 
 describe("Board drag with nested sub-issues", () => {
   let queryClient: QueryClient;
-  let onMoveIssue: ReturnType<typeof vi.fn>;
-  let batchUpdate: ReturnType<typeof vi.fn>;
+  let onMoveIssue: Mock<
+    (issueId: string, updates: DragMoveUpdates, onSettled?: () => void) => void
+  >;
+  let batchUpdate: Mock<IssueSurfaceActions["batchUpdate"]>;
 
   beforeEach(() => {
     vi.stubGlobal("IntersectionObserver", ObserverStub);
@@ -164,7 +170,7 @@ describe("Board drag with nested sub-issues", () => {
       defaultOptions: { queries: { retry: false, staleTime: Infinity } },
     });
     onMoveIssue = vi.fn();
-    batchUpdate = vi.fn(() => Promise.resolve());
+    batchUpdate = vi.fn<IssueSurfaceActions["batchUpdate"]>(() => Promise.resolve());
   });
 
   afterEach(() => {
