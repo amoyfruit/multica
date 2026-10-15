@@ -1951,8 +1951,8 @@ func (h *Handler) ClaimTasksByRuntime(w http.ResponseWriter, r *http.Request) {
 				"error", nextErr)
 		} else {
 			response["claim_poll_hint_supported"] = true
-			if nextDeferred.Valid {
-				response["next_deferred_task_after_ms"] = claimPollHintDelay(time.Now(), nextDeferred.Time).Milliseconds()
+			if nextDeferred.PendingCount > 0 {
+				response["next_deferred_task_after_ms"] = claimPollHintDelayDuration(time.Duration(nextDeferred.DelaySeconds * float64(time.Second))).Milliseconds()
 			}
 		}
 	}
@@ -1960,7 +1960,10 @@ func (h *Handler) ClaimTasksByRuntime(w http.ResponseWriter, r *http.Request) {
 }
 
 func claimPollHintDelay(now, fireAt time.Time) time.Duration {
-	delay := fireAt.Sub(now)
+	return claimPollHintDelayDuration(fireAt.Sub(now))
+}
+
+func claimPollHintDelayDuration(delay time.Duration) time.Duration {
 	if delay < claimPollHintMinDelay {
 		return claimPollHintMinDelay
 	}
