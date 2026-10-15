@@ -1,5 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { act, render } from "@testing-library/react";
+import { createQueryClient } from "@multica/core/query-client";
+import { workspaceKeys } from "@multica/core/workspace/queries";
 import { useEffect } from "react";
 
 // MUL-4741: the adapter mutates tab sessions in the REAL store (no router,
@@ -32,6 +34,7 @@ import { currentPath, useNavigation } from "@multica/views/navigation";
 import { useTabStore, getActiveTab } from "@/stores/tab-store";
 
 beforeEach(() => {
+  createQueryClient();
   overlay.open.mockReset();
   overlay.close.mockReset();
   overlay.overlay = null;
@@ -354,4 +357,33 @@ describe("routeContentLinkPath (links inside content — MUL-5208)", () => {
       state.byWorkspace.acme.tabs.some((t) => t.url === "/butter/issues/BUT-1"),
     ).toBe(false);
   });
+});
+
+
+describe("existing reserved workspace navigation", () => {
+  it.each(["push", "replace", "openInNewTab", "content"])("routes %s through the workspace switch flow", (action) => {
+    const client = createQueryClient();
+    client.setQueryData(workspaceKeys.list(), [{ slug: "dingtalk" }]);
+    const adapter = renderProvider();
+    act(() => {
+      if (action === "content") routeContentLinkPath("/dingtalk/issues/ISS-1", "background-tab");
+      else if (action === "openInNewTab") adapter().openInNewTab!("/dingtalk/issues/ISS-1");
+      else if (action === "replace") adapter().replace("/dingtalk/issues/ISS-1");
+      else adapter().push("/dingtalk/issues");
+    });
+    expect(useTabStore.getState().activeWorkspaceSlug).toBe("dingtalk");
+    expect(getActiveTab(useTabStore.getState())?.url).toBe(action === "push" ? "/dingtalk/issues" : "/dingtalk/issues/ISS-1");
+    client.clear();
+  });
+});
+
+
+it("does not send a known invite workspace entity route to the invite overlay", () => {
+  const client = createQueryClient();
+  client.setQueryData(workspaceKeys.list(), [{ slug: "invite" }]);
+  const adapter = renderProvider();
+  act(() => adapter().push("/invite/issues/MUL-123"));
+  expect(overlay.open).not.toHaveBeenCalled();
+  expect(getActiveTab(useTabStore.getState())?.url).toBe("/invite/issues/MUL-123");
+  client.clear();
 });

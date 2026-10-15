@@ -1,3 +1,5 @@
+import { createQueryClient } from "@multica/core/query-client";
+import { workspaceKeys } from "@multica/core/workspace/queries";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   openLink,
@@ -15,6 +17,7 @@ let dispatched: Event[] = [];
 let openSpy: ReturnType<typeof vi.spyOn>;
 
 beforeEach(() => {
+  createQueryClient();
   dispatched = [];
   vi.spyOn(window, "dispatchEvent").mockImplementation((e: Event) => {
     dispatched.push(e);
@@ -260,4 +263,19 @@ describe("parseWorkspaceEntityLink", () => {
   it("returns null for a malformed percent-escape", () => {
     expect(parseWorkspaceEntityLink("/acme/projects/%E0%A4%A")).toBeNull();
   });
+});
+
+
+it("keeps known reserved workspace links internal, including legacy route-name slugs", () => {
+  const client = createQueryClient();
+  client.setQueryData(workspaceKeys.list(), [{ slug: "dingtalk" }, { slug: "issues" }]);
+  expect(toInternalAppPath(`${APP_ORIGIN}/dingtalk/issues/MUL-123`, APP_ORIGIN)).toBe("/dingtalk/issues/MUL-123");
+  expect(parseWorkspaceEntityLink(`${APP_ORIGIN}/dingtalk/issues/MUL-123`, APP_ORIGIN)).toEqual({ kind: "issue", id: "MUL-123", slug: "dingtalk" });
+  openLink(`${APP_ORIGIN}/dingtalk/issues/MUL-123`, "acme", APP_ORIGIN);
+  openLink("/issues/issues/MUL-123", "acme", APP_ORIGIN);
+  expect(navigatedPaths()).toEqual(["/dingtalk/issues/MUL-123", "/issues/issues/MUL-123"]);
+  expect(openSpy).not.toHaveBeenCalled();
+  expect(toInternalAppPath(`${APP_ORIGIN}/dingtalk/bind`, APP_ORIGIN)).toBeNull();
+  client.clear();
+  expect(toInternalAppPath(`${APP_ORIGIN}/dingtalk/issues/MUL-123`, APP_ORIGIN)).toBeNull();
 });
