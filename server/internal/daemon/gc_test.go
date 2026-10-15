@@ -597,7 +597,7 @@ func TestApplyGCAction_RefusesEveryMutationWithoutOwner(t *testing.T) {
 			}
 
 			stats := &gcStats{byPattern: map[string]int{}}
-			if removed := d.applyGCAction(taskDir, tc.action, stats); removed != 0 {
+			if removed := d.applyGCAction(context.Background(), taskDir, tc.action, stats); removed != 0 {
 				t.Fatalf("applyGCAction reported %d removals on an unowned directory", removed)
 			}
 			if stats.cleaned != 0 || stats.orphaned != 0 || stats.artifactDirs != 0 || stats.bytesReclaimed != 0 {
@@ -1401,7 +1401,7 @@ func TestCleanTaskArtifacts_RemovesOnlyMatchedDirs(t *testing.T) {
 	mustMkdir("output")
 	mustWrite("output/result.txt", "done")
 
-	removed, bytes, perPattern := d.cleanTaskArtifacts(taskDir, []string{"node_modules", ".next", ".turbo"})
+	removed, bytes, perPattern := d.cleanTaskArtifacts(context.Background(), taskDir, []string{"node_modules", ".next", ".turbo"})
 
 	if removed != 3 {
 		t.Fatalf("expected 3 artifact dirs removed, got %d", removed)
@@ -1464,7 +1464,7 @@ func TestCleanTaskArtifacts_PreservesTrackedArtifactDirectory(t *testing.T) {
 		t.Fatalf("git add tracked artifact: %v: %s", err, out)
 	}
 
-	removed, _, perPattern := d.cleanTaskArtifacts(taskDir, []string{"node_modules", ".next"})
+	removed, _, perPattern := d.cleanTaskArtifacts(context.Background(), taskDir, []string{"node_modules", ".next"})
 
 	if removed != 1 || perPattern["node_modules"] != 1 || perPattern[".next"] != 0 {
 		t.Fatalf("removed=%d perPattern=%v, want only untracked node_modules removed", removed, perPattern)
@@ -1486,7 +1486,7 @@ func TestCleanTaskArtifacts_RejectsPatternsWithSeparators(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	removed, _, _ := d.cleanTaskArtifacts(taskDir, []string{"workdir/node_modules", "../etc"})
+	removed, _, _ := d.cleanTaskArtifacts(context.Background(), taskDir, []string{"workdir/node_modules", "../etc"})
 	if removed != 0 {
 		t.Fatalf("expected 0 removals from separator-bearing patterns, got %d", removed)
 	}
@@ -1514,7 +1514,7 @@ func TestCleanTaskArtifacts_DoesNotFollowSymlinks(t *testing.T) {
 		t.Skipf("symlink not supported: %v", err)
 	}
 
-	removed, _, _ := d.cleanTaskArtifacts(taskDir, []string{"node_modules"})
+	removed, _, _ := d.cleanTaskArtifacts(context.Background(), taskDir, []string{"node_modules"})
 	if removed != 0 {
 		t.Fatalf("expected 0 removals (symlinked node_modules), got %d", removed)
 	}
@@ -1534,7 +1534,7 @@ func TestCleanTaskArtifacts_ManagedPathIsExactAndDeduplicated(t *testing.T) {
 		writeFile(t, filepath.Join(taskDir, "workdir/repo/.sandbox-bin/keep"), 400)
 		writeFile(t, filepath.Join(taskDir, "codex-home/auth.json"), 10)
 
-		removed, bytes, perPattern := d.cleanTaskArtifacts(taskDir, nil)
+		removed, bytes, perPattern := d.cleanTaskArtifacts(context.Background(), taskDir, nil)
 		if removed != 1 || bytes != 300 {
 			t.Fatalf("removed=%d bytes=%d, want 1/300", removed, bytes)
 		}
@@ -1553,7 +1553,7 @@ func TestCleanTaskArtifacts_ManagedPathIsExactAndDeduplicated(t *testing.T) {
 		writeFile(t, filepath.Join(taskDir, "codex-home/.sandbox-bin/codex.exe"), 300)
 		writeFile(t, filepath.Join(taskDir, "workdir/repo/.sandbox-bin/cache"), 400)
 
-		removed, bytes, perPattern := d.cleanTaskArtifacts(taskDir, []string{".sandbox-bin"})
+		removed, bytes, perPattern := d.cleanTaskArtifacts(context.Background(), taskDir, []string{".sandbox-bin"})
 		if removed != 2 || bytes != 700 {
 			t.Fatalf("removed=%d bytes=%d, want 2/700 without double counting", removed, bytes)
 		}
@@ -1588,7 +1588,7 @@ func TestCleanTaskArtifacts_ManagedPathDoesNotFollowSymlinks(t *testing.T) {
 				t.Skipf("symlink not supported: %v", err)
 			}
 
-			removed, _, _ := d.cleanTaskArtifacts(taskDir, nil)
+			removed, _, _ := d.cleanTaskArtifacts(context.Background(), taskDir, nil)
 			if removed != 0 {
 				t.Fatalf("removed=%d, want 0 for symlinked managed path", removed)
 			}
@@ -2460,7 +2460,7 @@ func TestShouldCleanTaskDir_ChatActiveResistsOldMtime(t *testing.T) {
 	if action == gcActionClean || action == gcActionOrphan {
 		t.Fatalf("active chat session's directory must never be removed, got action %d", action)
 	}
-	d.applyGCAction(taskDir, action, &gcStats{byPattern: map[string]int{}})
+	d.applyGCAction(context.Background(), taskDir, action, &gcStats{byPattern: map[string]int{}})
 
 	for _, rel := range []string{".", "logs/run.log", "output/result.md", ".gc_meta.json"} {
 		if _, err := os.Stat(filepath.Join(taskDir, rel)); err != nil {
