@@ -53,6 +53,7 @@ import type {
 } from "../surface/use-issue-group-branches";
 import { useDragSettle } from "./use-drag-settle";
 import { useIssuePeekActions } from "../surface/peek-context";
+import { useIssueSurfaceActionsOptional } from "../surface/actions-context";
 import { useBoardDragPan } from "./use-board-drag-pan";
 import { useT } from "../../i18n";
 import {
@@ -72,6 +73,7 @@ import {
 } from "../utils/drag-utils";
 import {
   buildBoardColumnTree,
+  nestedIssueIds,
   siblingIds,
   visibleTreeIssueIds,
 } from "../utils/board-hierarchy";
@@ -595,13 +597,29 @@ function BoardViewImpl({
   // (Trello/Linear). Card drags start on `[data-board-card]` and are ignored.
   const pan = useBoardDragPan<HTMLDivElement>();
 
+  // Sub-issues shown inside the dragged card travel with it to another
+  // column. Captured at drag start, before onDragOver re-homes the card.
+  const surfaceActions = useIssueSurfaceActionsOptional();
+  const draggedNestedIdsRef = useRef<string[]>([]);
+
   const handleDragStart = useCallback(
     (event: DragStartEvent) => {
       isDraggingRef.current = true;
-      const issue = issueMapRef.current.get(event.active.id as string) ?? null;
+      const activeId = event.active.id as string;
+      const issue = issueMapRef.current.get(activeId) ?? null;
       setActiveIssue(issue);
+      const originCol = findColumn(columnsRef.current, activeId, groupIds);
+      draggedNestedIdsRef.current =
+        boardHierarchy && originCol
+          ? nestedIssueIds(
+              columnsRef.current[originCol] ?? EMPTY_IDS,
+              issueMapRef.current,
+              lookupParent,
+              activeId,
+            )
+          : [];
     },
-    [isDraggingRef],
+    [isDraggingRef, columnsRef, groupIds, boardHierarchy, lookupParent],
   );
 
   const handleDragOver = useCallback(
@@ -688,6 +706,41 @@ function BoardViewImpl({
       // level, never against another parent's nested children.
       const levelIds = (ids: string[]) =>
         boardHierarchy ? siblingIds(ids, activeId, map) : ids;
+      // Give the card's nested sub-issues the target column's value too. They
+      // keep their own positions, so only the grouped field is written.
+      const moveNestedSubIssues = () => {
+        const ids = draggedNestedIdsRef.current.filter((id) => {
+          const issue = map.get(id);
+          return !!issue && !issueMatchesGroup(issue, finalGroup);
+        });
+        draggedNestedIdsRef.current = [];
+        if (ids.length === 0) return;
+        const moving = new Set(ids);
+        setColumns((prev) => {
+          const next: Record<string, string[]> = {};
+          for (const [columnId, columnIds] of Object.entries(prev)) {
+            next[columnId] = columnIds.filter((id) => !moving.has(id));
+          }
+          let target = next[finalGroup.id] ?? [];
+          for (const id of ids) {
+            target = insertIdByPosition(target, id, map.get(id)!.position, map);
+          }
+          next[finalGroup.id] = target;
+          return next;
+        });
+        if (finalGroup.propertyId !== undefined) {
+          for (const id of ids) applyPropertyGroupValue(finalGroup, id);
+          return;
+        }
+        const { position: _position, ...groupUpdates } = getMoveUpdates(finalGroup, 0);
+        surfaceActions?.batchUpdate(ids, groupUpdates).catch((err: unknown) => {
+          toast.error(
+            err instanceof Error && err.message
+              ? err.message
+              : t(($) => $.page.move_failed),
+          );
+        });
+      };
       if (finalGroup.status && map.get(activeId)?.status !== finalGroup.status && catalog.entryOf(finalGroup.status)?.archived_at) {
         resetColumns();
         return;
@@ -731,6 +784,7 @@ function BoardViewImpl({
           beginSettle(),
         );
         applyPropertyGroupValue(finalGroup, activeId);
+        moveNestedSubIssues();
         return;
       }
 
@@ -760,8 +814,11 @@ function BoardViewImpl({
         beginSettle(),
       );
       applyPropertyGroupValue(finalGroup, activeId);
+      if (currentIssue && !issueMatchesGroup(currentIssue, finalGroup)) {
+        moveNestedSubIssues();
+      }
     },
-    [buildBoardColumns, boardHierarchy, onMoveIssue, groupIds, groupMap, sortBy, beginSettle, columnsRef, isDraggingRef, setColumns, applyPropertyGroupValue, catalog, t],
+    [buildBoardColumns, boardHierarchy, onMoveIssue, groupIds, groupMap, sortBy, beginSettle, columnsRef, isDraggingRef, setColumns, applyPropertyGroupValue, surfaceActions, catalog, t],
   );
 
   // An aborted drag (pointercancel, window resize, tab hide, Escape) fires

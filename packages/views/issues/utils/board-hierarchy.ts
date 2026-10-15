@@ -142,3 +142,35 @@ export function siblingIds(
   const level = parentOf(activeId);
   return ids.filter((id) => parentOf(id) === level);
 }
+
+/**
+ * Issue ids rendered inside `rootId`'s card in this column, at any depth and
+ * including collapsed ones — the sub-issues that travel with it when the card
+ * is dragged to another column. Sub-issues in other columns are not included.
+ */
+export function nestedIssueIds(
+  ids: readonly string[],
+  issueMap: ReadonlyMap<string, Issue>,
+  lookupParent: ParentLookup,
+  rootId: string,
+): string[] {
+  const result: string[] = [];
+  const collect = (nodes: readonly BoardTreeNode[]) => {
+    for (const node of nodes) {
+      if (node.kind === "issue") result.push(node.issue.id);
+      collect(node.children);
+    }
+  };
+  const find = (nodes: readonly BoardTreeNode[]): boolean => {
+    for (const node of nodes) {
+      if (node.kind === "issue" && node.issue.id === rootId) {
+        collect(node.children);
+        return true;
+      }
+      if (find(node.children)) return true;
+    }
+    return false;
+  };
+  find(buildBoardColumnTree(ids, issueMap, lookupParent));
+  return result;
+}

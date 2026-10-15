@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { Issue } from "@multica/core/types";
 import {
   buildBoardColumnTree,
+  nestedIssueIds,
   siblingIds,
   visibleTreeIssueIds,
   type BoardTreeNode,
@@ -112,5 +113,22 @@ describe("board column tree", () => {
     const ids = ["p", "c1", "x", "c2"];
     expect(siblingIds(ids, "x", map)).toEqual(["p", "x"]);
     expect(siblingIds(ids, "c2", map)).toEqual(["c1", "c2"]);
+  });
+  it("collects every sub-issue inside a card, at any depth, but nothing outside it", () => {
+    const map = mapOf(
+      mk("p"),
+      mk("c", "p"),
+      mk("g", "c"),
+      mk("e", "elsewhere"),
+      mk("x"),
+      mk("orphan", "p-elsewhere-child"),
+      mk("p-elsewhere-child", "p"),
+    );
+    // "p-elsewhere-child" lives in another column, so its child "orphan"
+    // sits in a ghost inside p's card here and travels along with p.
+    const ids = ["p", "c", "g", "e", "x", "orphan"];
+    expect(nestedIssueIds(ids, map, none, "p")).toEqual(["c", "g", "orphan"]);
+    expect(nestedIssueIds(ids, map, none, "c")).toEqual(["g"]);
+    expect(nestedIssueIds(ids, map, none, "x")).toEqual([]);
   });
 });
