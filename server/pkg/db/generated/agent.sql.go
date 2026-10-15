@@ -2822,6 +2822,22 @@ func (q *Queries) CreateQuickCreateTask(ctx context.Context, arg CreateQuickCrea
 }
 
 const createRetryTask = `-- name: CreateRetryTask :one
+WITH retry_parent AS MATERIALIZED (
+    SELECT p.id, p.agent_id, p.issue_id, p.status, p.priority, p.dispatched_at, p.started_at, p.completed_at, p.result, p.error, p.created_at, p.context, p.runtime_id, p.session_id, p.work_dir, p.trigger_comment_id, p.chat_session_id, p.autopilot_run_id, p.attempt, p.max_attempts, p.parent_task_id, p.failure_reason, p.trigger_summary, p.force_fresh_session, p.is_leader_task, p.wait_reason, p.initiator_user_id, p.handoff_note, p.prepare_lease_expires_at, p.squad_id, p.runtime_mcp_overlay, p.escalation_for_task_id, p.fire_at, p.originator_user_id, p.runtime_connected_apps, p.coalesced_comment_ids, p.delivered_comment_ids, p.chat_input_task_id, p.chat_finalize_deferred_at, p.originator_source, p.delegated_from_task_id, p.retry_of_task_id, p.rerun_of_task_id, p.rule_version_id, p.trigger_evidence_kind, p.trigger_evidence_ref_id, p.accountable_user_id, p.session_rollout_missing, p.retired_session_id, p.quick_actions_disabled, p.regenerate_quick_actions_for, p.branch_name, p.durable_work_dir, p.channel_context_revision, p.comment_thread_id, p.cancelled_by_type, p.cancelled_by_id, p.cancelled_by_name, p.issue_snapshot, lock_task_owner_rows(p.agent_id, p.issue_id, p.runtime_id) AS owner_rows_locked
+    FROM agent_task_queue p
+    WHERE p.id = $1
+), eligible_parent AS MATERIALIZED (
+    SELECT p.id, p.agent_id, p.issue_id, p.status, p.priority, p.dispatched_at, p.started_at, p.completed_at, p.result, p.error, p.created_at, p.context, p.runtime_id, p.session_id, p.work_dir, p.trigger_comment_id, p.chat_session_id, p.autopilot_run_id, p.attempt, p.max_attempts, p.parent_task_id, p.failure_reason, p.trigger_summary, p.force_fresh_session, p.is_leader_task, p.wait_reason, p.initiator_user_id, p.handoff_note, p.prepare_lease_expires_at, p.squad_id, p.runtime_mcp_overlay, p.escalation_for_task_id, p.fire_at, p.originator_user_id, p.runtime_connected_apps, p.coalesced_comment_ids, p.delivered_comment_ids, p.chat_input_task_id, p.chat_finalize_deferred_at, p.originator_source, p.delegated_from_task_id, p.retry_of_task_id, p.rerun_of_task_id, p.rule_version_id, p.trigger_evidence_kind, p.trigger_evidence_ref_id, p.accountable_user_id, p.session_rollout_missing, p.retired_session_id, p.quick_actions_disabled, p.regenerate_quick_actions_for, p.branch_name, p.durable_work_dir, p.channel_context_revision, p.comment_thread_id, p.cancelled_by_type, p.cancelled_by_id, p.cancelled_by_name, p.issue_snapshot, p.owner_rows_locked
+    FROM retry_parent p
+    WHERE p.owner_rows_locked
+      AND (p.context->>'wakeup_id' IS NULL OR EXISTS (
+          SELECT 1 FROM issue_wakeup w
+          WHERE w.id = (p.context->>'wakeup_id')::uuid
+            AND w.disabled_at IS NULL
+            AND w.revision = (p.context->>'wakeup_revision')::bigint
+          FOR SHARE OF w
+      ))
+)
 INSERT INTO agent_task_queue (
     agent_id, runtime_id, issue_id, chat_session_id, autopilot_run_id,
     status, priority, trigger_comment_id, coalesced_comment_ids, trigger_summary, context,
@@ -2855,9 +2871,7 @@ SELECT
     CASE WHEN p.context->>'wakeup_id' IS NOT NULL THEN p.handoff_note END,
     -- Named new_task_id, not id: $1 above is the PARENT task's id.
     COALESCE($6::uuid, gen_random_uuid())
-FROM agent_task_queue p
-WHERE p.id = $1
-  AND lock_task_owner_rows(p.agent_id, p.issue_id, p.runtime_id)
+FROM eligible_parent p
 ON CONFLICT (issue_id, agent_id, (COALESCE(comment_thread_id, '00000000-0000-0000-0000-000000000000'::uuid))) WHERE status IN ('queued', 'dispatched')
        OR (status = 'deferred' AND context->>'channel_issue_media_pending' = 'true')
 DO NOTHING
@@ -2949,6 +2963,8 @@ type CreateRetryTaskParams struct {
 // attempt=3, max_attempts=3 rather than leaking attempt=3, max_attempts=2 to the
 // task API (MUL-4910). The Go retryAttemptCeiling already refuses to raise a
 // disabled (max_attempts<=1) task, so this only ever widens, never revives.
+// Lock task owners before the wakeup row so rule edits serialize with retries
+// without reversing the owner-lock order.
 func (q *Queries) CreateRetryTask(ctx context.Context, arg CreateRetryTaskParams) (AgentTaskQueue, error) {
 	row := q.db.QueryRow(ctx, createRetryTask,
 		arg.ID,
