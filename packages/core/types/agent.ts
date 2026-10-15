@@ -216,6 +216,9 @@ export interface AgentActivityBucket {
   // back-end always reports all three.
   completed_count: number;
   cancelled_count: number;
+  // Absent on older servers; do not estimate duration from a task page.
+  duration_ms?: number;
+  duration_count?: number;
 }
 
 // 30-day total run count per agent, drives the Agents-list RUNS column.
@@ -727,6 +730,8 @@ export interface StoredAgentDraft {
   member_ids: string[];
   team_ids: string[];
   applied_message_id: string | null;
+  /** Recovery notice acknowledged by manual editing or dismissal. */
+  dismissed_message_id?: string | null;
 }
 
 /** One unfinished agent-creation conversation, as listed by the studio. */
