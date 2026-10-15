@@ -1951,6 +1951,11 @@ func (h *Handler) ClaimTasksByRuntime(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+	if len(out) != len(claimed) {
+		// HTTP/1.1 cannot process another request until this handler returns.
+		// Keep the next claim off this connection while recovery is running.
+		w.Header().Set("Connection", "close")
+	}
 	writeMeasuredJSON(w, http.StatusOK, response)
 	if len(out) != len(claimed) {
 		// Deliver successful payloads before batch recovery side effects. Cache
