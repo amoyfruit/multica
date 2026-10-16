@@ -2722,14 +2722,17 @@ describe("IssueDetail (shared)", () => {
 
       it("lands once late timeline data arrives", async () => {
         mockApiObj.listTimeline.mockResolvedValue(bulkRoots(10));
-        const { queryClient } = renderVirtualDeepLink("bulk-150");
+        const result = renderVirtualDeepLink("bulk-150");
+        const queryClient = result.queryClient;
         await waitFor(() => {
           expect(document.getElementById("comment-bulk-0")).not.toBeNull();
         });
         // Unknown while the cache is small: flat, no index scroll.
         expect(screen.queryByTestId("virtuoso-mock")).toBeNull();
         expect(scrollToIndexSpy).not.toHaveBeenCalled();
-        queryClient.setQueryData(["issues", "timeline", "issue-1"], bulkRoots(200));
+        act(() => {
+          queryClient.setQueryData(issueKeys.timeline("issue-1"), bulkRoots(200));
+        });
         await waitFor(() => {
           expect(scrollToIndexSpy).toHaveBeenCalledWith(
             expect.objectContaining({ index: 150 }),
@@ -2786,7 +2789,9 @@ describe("IssueDetail (shared)", () => {
           updated_at: "2026-01-19T00:00:00Z",
           comment_type: "comment",
         } as TimelineEntry;
-        queryClient.setQueryData(["issues", "timeline", "issue-1"], [newer, ...timeline]);
+        act(() => {
+          queryClient.setQueryData(issueKeys.timeline("issue-1"), [newer, ...timeline]);
+        });
         await waitFor(() => {
           expect(document.getElementById("comment-bulk-new")).not.toBeNull();
         });
