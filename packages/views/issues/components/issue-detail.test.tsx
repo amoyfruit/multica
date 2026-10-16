@@ -2730,8 +2730,12 @@ describe("IssueDetail (shared)", () => {
         // Unknown while the cache is small: flat, no index scroll.
         expect(screen.queryByTestId("virtuoso-mock")).toBeNull();
         expect(scrollToIndexSpy).not.toHaveBeenCalled();
+        // Late data arrives as fresh server state (not a direct cache
+        // write): the query refetches it, the timeline updates, and the
+        // virtual landing starts from the new index.
+        mockApiObj.listTimeline.mockResolvedValue(bulkRoots(200));
         act(() => {
-          queryClient.setQueryData(issueKeys.timeline("issue-1"), bulkRoots(200));
+          queryClient.invalidateQueries({ queryKey: issueKeys.timeline("issue-1") });
         });
         await waitFor(() => {
           expect(scrollToIndexSpy).toHaveBeenCalledWith(
@@ -2789,8 +2793,11 @@ describe("IssueDetail (shared)", () => {
           updated_at: "2026-01-19T00:00:00Z",
           comment_type: "comment",
         } as TimelineEntry;
+        // A timeline refresh that moves the target's index: the settled
+        // landing re-resolves without a new scroll.
+        mockApiObj.listTimeline.mockResolvedValue([newer, ...timeline]);
         act(() => {
-          queryClient.setQueryData(issueKeys.timeline("issue-1"), [newer, ...timeline]);
+          queryClient.invalidateQueries({ queryKey: issueKeys.timeline("issue-1") });
         });
         await waitFor(() => {
           expect(document.getElementById("comment-bulk-new")).not.toBeNull();
