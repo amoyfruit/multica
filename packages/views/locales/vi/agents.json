@@ -1,7 +1,7 @@
 {
   "page": {
     "title": "Agent",
-    "tagline": "Đồng đội AI nhận issue, bình luận và cập nhật trạng thái.",
+    "tagline": "Đồng đội AI nhận công việc, bình luận và cập nhật trạng thái.",
     "learn_more": "Tìm hiểu thêm →",
     "new_agent": "Agent mới",
     "search_placeholder": "Tìm kiếm agent…",
@@ -44,7 +44,7 @@
   },
   "empty": {
     "title": "Chưa có agent nào",
-    "description": "Tạo một agent, rồi giao issue cho nó."
+    "description": "Tạo một agent, rồi giao công việc cho nó."
   },
   "no_matches": {
     "title": "Không có kết quả phù hợp",
@@ -166,7 +166,7 @@
     "section_properties": "Thuộc tính",
     "section_details": "Chi tiết",
     "section_details_hint": "Thông tin chỉ đọc về quyền sở hữu và vòng đời.",
-    "section_skills": "Kỹ năng",
+    "section_skills": "Skills",
     "section_integrations": "Tích hợp",
     "prop_runtime": "Runtime",
     "prop_model": "Model",
@@ -199,7 +199,7 @@
     "attention_queued_other": "{{count}} lượt chạy đang chờ trong khi runtime không khả dụng."
   },
   "skill_attach": {
-    "trigger_aria": "Gắn kỹ năng của không gian làm việc",
+    "trigger_aria": "Gắn skill của không gian làm việc",
     "trigger_label": "Gắn"
   },
   "pickers": {
@@ -262,7 +262,7 @@
     "activity": "Hoạt động",
     "tasks": "Lượt chạy",
     "instructions": "Hướng dẫn",
-    "skills": "Kỹ năng",
+    "skills": "Skills",
     "environment": "Môi trường",
     "custom_args": "Tham số tùy chỉnh",
     "mcp_config": "MCP",
@@ -293,7 +293,7 @@
       },
       "template": {
         "title": "Dùng mẫu",
-        "description": "Bắt đầu từ hướng dẫn và kỹ năng có sẵn, rồi tùy chỉnh mọi chi tiết cho không gian làm việc của bạn."
+        "description": "Bắt đầu từ hướng dẫn và các skill có sẵn, rồi tùy chỉnh mọi chi tiết cho không gian làm việc của bạn."
       },
       "ai": {
         "title": "Xây dựng bằng AI",
@@ -350,7 +350,7 @@
     },
     "live_draft": "Cấu hình agent",
     "live_draft_hint": "Bạn có thể chỉnh sửa trực tiếp bản nháp.",
-    "duplicate_env_notice": "Hướng dẫn, kỹ năng và tham số lệnh được sao chép. Biến môi trường, máy chủ MCP và cấu hình runtime cục bộ trên máy thì không.",
+    "duplicate_env_notice": "Hướng dẫn, skill và tham số lệnh được sao chép. Biến môi trường, máy chủ MCP và cấu hình runtime cục bộ trên máy thì không.",
     "duplicate_runtime_reset_notice": "Runtime gốc không khả dụng, nên bản sao này chạy trên runtime khác. Model, mức suy luận và tốc độ đã bị xóa vì chúng chỉ áp dụng cho runtime đã chọn chúng.",
     "create_and_open": "Tạo & mở agent",
     "create_and_add": "Tạo & thêm vào squad",
@@ -372,7 +372,7 @@
   "create_dialog": {
     "title_create": "Tạo Agent",
     "title_duplicate": "Nhân bản Agent",
-    "description_duplicate": "Tạo agent mới dựa trên \"{{name}}\". Hướng dẫn, biến môi trường và kỹ năng được sao chép sẵn cho bạn.",
+    "description_duplicate": "Tạo agent mới dựa trên \"{{name}}\". Hướng dẫn, biến môi trường và skill được sao chép sẵn cho bạn.",
     "name_label": "Tên",
     "name_placeholder": "ví dụ: Deep Research Agent",
     "description_label": "Mô tả",
@@ -405,7 +405,7 @@
     "creating": "Đang tạo...",
     "cancel": "Hủy",
     "create_failed_toast": "Tạo agent thất bại",
-    "skill_attach_failed_toast": "Đã tạo agent, nhưng gắn kỹ năng thất bại: {{error}}",
+    "skill_attach_failed_toast": "Đã tạo agent, nhưng gắn skill thất bại: {{error}}",
     "squad_join_failed_toast": "Agent \"{{name}}\" đã được tạo nhưng không tham gia được squad: {{error}}. Bạn có thể thêm thủ công từ mục Thành viên.",
     "instructions": {
       "label": "Hướng dẫn",
@@ -415,15 +415,15 @@
       "editor_placeholder": "Viết những gì agent này nên làm, nên tập trung vào điều gì, nên tránh điều gì…"
     },
     "skills_section": {
-      "label": "Kỹ năng",
-      "placeholder": "Thêm kỹ năng từ không gian làm việc",
+      "label": "Skills",
+      "placeholder": "Thêm skill từ không gian làm việc",
       "selected_other": "{{count}} đã chọn — nhấn để chỉnh sửa",
       "collapse": "Thu gọn",
-      "list_empty_multi": "Chưa có kỹ năng nào trong không gian làm việc này. Hãy tạo hoặc nhập một kỹ năng trước.",
+      "list_empty_multi": "Chưa có skill nào trong không gian làm việc này. Hãy tạo hoặc nhập một skill trước.",
       "list_loading": "Đang tải…",
-      "list_empty_default": "Không có kỹ năng nào khả dụng.",
-      "list_no_match": "Không có kỹ năng phù hợp.",
-      "search_placeholder": "Tìm kiếm kỹ năng…"
+      "list_empty_default": "Không có skill nào khả dụng.",
+      "list_no_match": "Không có skill phù hợp.",
+      "search_placeholder": "Tìm kiếm skill…"
     },
     "avatar": {
       "change_aria": "Đổi ảnh đại diện",
@@ -462,7 +462,7 @@
       "system_layer_hide": "Ẩn",
       "workspace_notes_label": "Ghi chú của không gian làm việc",
       "workspace_notes_intro": "Thêm bối cảnh và tùy chọn của nhóm bạn bên dưới. Chúng áp dụng chồng lên hướng dẫn mà Multica duy trì cho agent này. Hỗ trợ Markdown.",
-      "workspace_notes_placeholder": "Thêm bối cảnh mà agent này nên luôn có.\n\n# Ví dụ\nRepo chính của chúng tôi là github.com/acme/platform.\nHãy viết issue bằng tiếng Anh ngay cả khi chúng ta trò chuyện bằng tiếng Việt.\nChúng tôi không triển khai vào thứ Sáu."
+      "workspace_notes_placeholder": "Thêm bối cảnh mà agent này nên luôn có.\n\n# Ví dụ\nRepo chính của chúng tôi là github.com/acme/platform.\nHãy viết công việc bằng tiếng Anh ngay cả khi chúng ta trò chuyện bằng tiếng Việt.\nChúng tôi không triển khai vào thứ Sáu."
     },
     "env": {
       "intro_readonly": "Được tiêm vào tiến trình agent khi khởi chạy. Chỉ chủ sở hữu và quản trị viên của không gian làm việc mới đọc hoặc sửa được giá trị; mọi lần xem và sửa đều được ghi vào nhật ký kiểm toán của không gian làm việc.",
@@ -648,7 +648,7 @@
     },
     "skills": {
       "assigned_title": "Đã gán cho agent",
-      "assigned_hint": "Tắt một kỹ năng để tạm dừng sử dụng mà không loại bỏ nó.",
+      "assigned_hint": "Tắt một skill để tạm dừng sử dụng mà không loại bỏ nó.",
       "runtime_title": "Kế thừa từ runtime",
       "runtime_hint": "Được khám phá tự động từ {{runtime}} và khả dụng mỗi khi agent này chạy ở đó.",
       "workspace_badge": "Không gian làm việc",
@@ -657,36 +657,36 @@
       "no_description": "Không có mô tả",
       "toggle_aria": "Bật/tắt {{name}}",
       "remove_aria": "Loại bỏ {{name}}",
-      "toggle_failed_toast": "Thay đổi trạng thái kỹ năng thất bại",
-      "runtime_toggle_aria": "Bật/tắt kỹ năng kế thừa {{name}}",
-      "runtime_toggle_failed_toast": "Thay đổi trạng thái kỹ năng kế thừa thất bại",
-      "runtime_missing": "Hãy gán một runtime cục bộ để khám phá các kỹ năng được kế thừa.",
-      "runtime_offline": "Runtime cục bộ đang ngoại tuyến. Kết nối lại để làm mới các kỹ năng được kế thừa.",
-      "runtime_discovering": "Đang khám phá kỹ năng từ runtime cục bộ…",
-      "runtime_failed": "Không khám phá được kỹ năng của runtime. Hãy thử lại.",
-      "runtime_forbidden": "Bạn không có quyền xem kỹ năng của runtime này.",
-      "runtime_unsupported": "Runtime này không công khai kỹ năng cục bộ.",
-      "runtime_empty": "Không tìm thấy kỹ năng cục bộ nào cho runtime này.",
-      "detail_title": "Chi tiết kỹ năng",
-      "detail_loading": "Đang tải chi tiết kỹ năng…",
+      "toggle_failed_toast": "Thay đổi trạng thái skill thất bại",
+      "runtime_toggle_aria": "Bật/tắt skill kế thừa {{name}}",
+      "runtime_toggle_failed_toast": "Thay đổi trạng thái skill kế thừa thất bại",
+      "runtime_missing": "Hãy gán một runtime cục bộ để khám phá các skill được kế thừa.",
+      "runtime_offline": "Runtime cục bộ đang ngoại tuyến. Kết nối lại để làm mới các skill được kế thừa.",
+      "runtime_discovering": "Đang khám phá skill từ runtime cục bộ…",
+      "runtime_failed": "Không khám phá được skill của runtime. Hãy thử lại.",
+      "runtime_forbidden": "Bạn không có quyền xem skill của runtime này.",
+      "runtime_unsupported": "Runtime này không công khai skill cục bộ.",
+      "runtime_empty": "Không tìm thấy skill cục bộ nào cho runtime này.",
+      "detail_title": "Chi tiết skill",
+      "detail_loading": "Đang tải chi tiết skill…",
       "detail_source": "Nguồn",
       "detail_provider": "Nhà cung cấp",
       "detail_plugin": "Plugin",
       "detail_files": "Tệp",
       "detail_supporting_files": "Tệp hỗ trợ",
-      "add_action": "Thêm kỹ năng",
-      "empty_title": "Chưa gán kỹ năng nào",
-      "remove_failed_toast": "Loại bỏ kỹ năng thất bại",
-      "add_dialog_title": "Thêm kỹ năng",
-      "add_dialog_search_placeholder": "Tìm kiếm kỹ năng",
-      "add_dialog_empty": "Mọi kỹ năng của không gian làm việc đều đã được gán.",
-      "add_dialog_no_match": "Không có kỹ năng nào khớp với tìm kiếm của bạn.",
-      "add_dialog_empty_partial": "Không còn kỹ năng để thêm — agent này đã có tất cả.",
+      "add_action": "Thêm skill",
+      "empty_title": "Chưa gán skill nào",
+      "remove_failed_toast": "Loại bỏ skill thất bại",
+      "add_dialog_title": "Thêm skill",
+      "add_dialog_search_placeholder": "Tìm kiếm skill",
+      "add_dialog_empty": "Mọi skill của không gian làm việc đều đã được gán.",
+      "add_dialog_no_match": "Không có skill nào khớp với tìm kiếm của bạn.",
+      "add_dialog_empty_partial": "Không còn skill để thêm — agent này đã có tất cả.",
       "add_dialog_saving": "Đang thêm…",
       "add_dialog_confirm_default": "Thêm",
-      "add_dialog_confirm_other": "Thêm {{count}} kỹ năng",
+      "add_dialog_confirm_other": "Thêm {{count}} skill",
       "add_dialog_cancel": "Hủy",
-      "add_failed_toast": "Thêm kỹ năng thất bại"
+      "add_failed_toast": "Thêm skill thất bại"
     },
     "integrations": {
       "members_note": "Chỉ chủ sở hữu và quản trị viên của không gian làm việc mới quản lý được kết nối này. Bạn có thể xem các bot đã kết nối trong Cài đặt → Tích hợp."
@@ -724,18 +724,18 @@
       "avg_duration_label": "thời lượng trung bình",
       "failed_count": "{{count}} thất bại",
       "failed_label": "thất bại",
-      "source_issue": "Issue",
+      "source_issue": "Công việc",
       "source_chat": "Trò chuyện",
       "source_autopilot": "Autopilot",
       "source_untracked": "Không theo dõi",
       "source_quick_create": "Tạo nhanh",
-      "source_creating_issue": "Đang tạo issue",
+      "source_creating_issue": "Đang tạo công việc",
       "source_chat_session": "Phiên trò chuyện",
       "source_autopilot_run": "Lượt chạy Autopilot",
-      "issue_short_fallback": "Issue {{prefix}}…",
+      "issue_short_fallback": "Công việc {{prefix}}…",
       "triggered_by": "Được kích hoạt bởi",
-      "open_issue_aria": "Mở issue",
-      "open_issue_tooltip": "Mở issue",
+      "open_issue_aria": "Mở công việc",
+      "open_issue_tooltip": "Mở công việc",
       "transcript_tooltip": "Xem bản ghi",
       "cancel_task_aria": "Hủy lượt chạy",
       "cancel_task_tooltip": "Hủy lượt chạy",
@@ -797,7 +797,7 @@
     "unavailable": "Agent không khả dụng",
     "detail_link": "Chi tiết →",
     "runtime_label": "Runtime",
-    "skills_label": "Kỹ năng",
+    "skills_label": "Skills",
     "owner_label": "Chủ sở hữu",
     "unknown_runtime": "Runtime không xác định",
     "model_label": "Model",
@@ -805,7 +805,7 @@
   },
   "live_peek": {
     "current_issue_label": "Đang xử lý",
-    "no_current_issue": "Không có issue",
+    "no_current_issue": "Không có công việc",
     "last_activity_label": "Thấy lần cuối",
     "no_recent_activity": "Không có hoạt động gần đây",
     "failed_indicator": "Thất bại"
@@ -909,7 +909,7 @@
       "iteration_limit": "Chạm giới hạn số vòng lặp",
       "agent_blocked": "Đang chờ thông tin từ con người",
       "api_invalid_request": "Bị API của model từ chối",
-      "skill_bundle_unavailable": "Không tải được kỹ năng của agent",
+      "skill_bundle_unavailable": "Không tải được skill của agent",
       "runtime_cli_timeout": "CLI của runtime cục bộ quá thời gian",
       "environment_prepare_failed": "Không chuẩn bị được môi trường thực thi",
       "runtime_access_denied": "Agent này không chạy được trên runtime riêng tư của nó, nên không thể trả lời. Hãy đặt runtime thành công khai, hoặc gắn lại/sao chép agent sang một runtime mà chủ sở hữu của nó dùng được.",

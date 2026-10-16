@@ -31,7 +31,7 @@
     "archived": "Đã lưu trữ"
   },
   "execution_mode": {
-    "create_issue": "Tạo Issue",
+    "create_issue": "Tạo Công việc",
     "run_only": "Chỉ chạy"
   },
   "relative_date": {
@@ -85,7 +85,7 @@
     "run_blocked_attribution": "Không kích hoạt — không xác định được thành viên chịu trách nhiệm cho lần chạy này",
     "run_blocked_already_active": "Không kích hoạt — một lần chạy gần đây đã bao quát việc này",
     "run_blocked_quota_exceeded": "Không kích hoạt — đã đạt giới hạn số lần chạy trong kỳ này",
-    "run_blocked_issue_limit_reached": "Không kích hoạt — không gian làm việc đã đạt giới hạn số issue",
+    "run_blocked_issue_limit_reached": "Không kích hoạt — không gian làm việc đã đạt giới hạn số công việc",
     "run_blocked_generic": "Không kích hoạt — lần chạy đã bị chặn",
     "section_properties": "Thuộc tính",
     "section_triggers": "Trigger",
@@ -129,7 +129,7 @@
     "owner_note": "Người tạo và quản trị viên của không gian làm việc luôn có quyền truy cập."
   },
   "run_status": {
-    "issue_created": "Đã tạo Issue",
+    "issue_created": "Đã tạo công việc",
     "running": "Đang chạy",
     "skipped": "Đã bỏ qua",
     "completed": "Hoàn thành",
@@ -142,7 +142,7 @@
     "api": "API"
   },
   "run": {
-    "issue_linked": "Đã liên kết Issue",
+    "issue_linked": "Đã liên kết công việc",
     "view_log": "Xem nhật ký thực thi",
     "skipped_group": {
       "label": "Đã bỏ qua",
@@ -302,7 +302,7 @@
     "no_project": "Không có dự án",
     "section_output_mode": "Chế độ đầu ra",
     "section_subscribers": "Người theo dõi",
-    "subscribers_hint": "Tự động theo dõi mọi issue mà autopilot này tạo",
+    "subscribers_hint": "Tự động theo dõi mọi công việc mà autopilot này tạo",
     "subscribers_empty": "Chưa có người theo dõi — thêm một đồng đội để thông báo cho họ mỗi lần chạy",
     "subscribers_add": "Thêm người theo dõi",
     "subscribers_search_placeholder": "Tìm thành viên theo tên…",
@@ -333,12 +333,12 @@
     "error_assignee_required": "Hãy chọn agent hoặc squad sẽ chạy autopilot này.",
     "output_modes": {
       "create_issue": {
-        "label": "Tạo issue",
-        "description": "Mỗi lần chạy tạo một issue được theo dõi"
+        "label": "Tạo công việc",
+        "description": "Mỗi lần chạy tạo một công việc được theo dõi"
       },
       "run_only": {
         "label": "Chỉ chạy",
-        "description": "Chạy ngầm, không tạo issue"
+        "description": "Chạy ngầm, không tạo công việc"
       }
     }
   },
@@ -472,9 +472,9 @@
     }
   },
   "wakeups": {
-    "title": "Các lần đánh thức issue",
+    "title": "Các lần đánh thức công việc",
     "scope": "Phạm vi",
-    "issue": "Issue",
+    "issue": "Công việc",
     "trigger": "Trigger",
     "enabled": "Đã bật",
     "all_triggers": "Tất cả trigger",
@@ -482,10 +482,10 @@
     "at": "Một lần",
     "recurring": "Lặp lại",
     "all_agents": "Tất cả agent",
-    "search": "Tìm issue hoặc agent",
+    "search": "Tìm công việc hoặc agent",
     "running": "Đang chạy",
     "active_runs": "{{count}} lần chạy đang hoạt động",
-    "issue_closed": "Issue đã đóng",
+    "issue_closed": "Công việc đã đóng",
     "read_only": "Chỉ người tạo hoặc quản trị viên của không gian làm việc mới quản lý được lần đánh thức này",
     "select_row": "Chọn {{issue}}, {{agent}}",
     "select_page": "Chọn các lần đánh thức đang bật trên trang này",
@@ -525,14 +525,14 @@
     },
     "runs_7d": "Số lần chạy (7 ngày)",
     "ends": "Kết thúc",
-    "until_issue_ends": "Cho đến khi issue kết thúc",
+    "until_issue_ends": "Cho đến khi công việc kết thúc",
     "fires_once": "Kích hoạt một lần",
     "assignee_target": "Người được giao · {{name}}",
     "no_target": "Không có agent được giao",
     "banner_other": "{{count}} lần đánh thức đã bị tạm dừng tự động. Gần nhất: {{issue}} “{{condition}}” — {{reason}}",
     "banner_view": "Xem",
     "create": "Lần đánh thức mới",
-    "create_pick_issue": "Chọn issue để thêm lần đánh thức",
-    "create_pick_issue_description": "Lần đánh thức thuộc về issue này và kết thúc cùng với nó."
+    "create_pick_issue": "Chọn công việc để thêm lần đánh thức",
+    "create_pick_issue_description": "Lần đánh thức thuộc về công việc này và kết thúc cùng với nó."
   }
 }
