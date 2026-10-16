@@ -14,6 +14,19 @@ const SETTINGS_KEYS = Object.keys(enSettings.mcp) as Array<
   keyof typeof enSettings.mcp
 >;
 
+function isPluralSuffixKey(
+  key: string,
+): key is `${string}_one` | `${string}_other` {
+  return key.endsWith("_one") || key.endsWith("_other");
+}
+
+function expandTokens(template: string, params: Record<string, string>) {
+  return template.replace(
+    /\{\{(\w+)\}\}/g,
+    (_, token: string) => params[token] ?? "",
+  );
+}
+
 describe("MCP locale contracts", () => {
   it.each(SUPPORTED_LOCALES)(
     "resolves every MCP message without fallback or unexpanded tokens in %s",
@@ -34,8 +47,18 @@ describe("MCP locale contracts", () => {
           namespace: "settings",
           key: `mcp.${key}`,
           source: enSettings.mcp[key],
-          resolve: (params: Record<string, string>) =>
-            i18n.t(($) => $.mcp[key], { ns: "settings", ...params }),
+          resolve: (params: Record<string, string>) => {
+            // Plural entries stay as `*_one` / `*_other` in the bundle. The
+            // selector type folds those into the base key, so expand the
+            // stored string instead of going through `t`.
+            if (isPluralSuffixKey(key)) {
+              const template = i18n.getResource(locale, "settings", `mcp.${key}`);
+              return typeof template === "string"
+                ? expandTokens(template, params)
+                : "";
+            }
+            return i18n.t(($) => $.mcp[key], { ns: "settings", ...params });
+          },
         })),
       ];
       for (const { namespace, key, source, resolve } of messages) {
