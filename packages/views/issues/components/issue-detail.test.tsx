@@ -2801,13 +2801,17 @@ describe("IssueDetail (shared)", () => {
         const seen: Array<() => void> = [];
         const disconnect = vi.fn();
         const observe = vi.fn();
-        vi.stubGlobal(
-          "ResizeObserver",
-          vi.fn((cb: () => void) => {
+        // A constructible stub: other components (minimap) also construct
+        // a ResizeObserver, so an arrow-function mock would crash them.
+        class StubResizeObserver {
+          constructor(cb: () => void) {
             seen.push(cb);
-            return { observe, unobserve: vi.fn(), disconnect };
-          }),
-        );
+          }
+          observe = observe;
+          unobserve = vi.fn();
+          disconnect = disconnect;
+        }
+        vi.stubGlobal("ResizeObserver", StubResizeObserver);
         try {
           mockApiObj.listTimeline.mockResolvedValue(bulkRoots(20));
           const { unmount } = renderVirtualDeepLink("bulk-5");
