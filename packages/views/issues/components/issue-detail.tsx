@@ -1790,6 +1790,20 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
     return items.findIndex((it) => it.id === rootId);
   }, [items, highlightCommentId, replyToRoot]);
 
+  // Root deep-link row index, or -1 when the anchor must stay on the flat
+  // path: replies (they render inside their root card), deleted-reply
+  // substitutes (the landing moves off the id), unknown ids, and in-page
+  // find. Only a real top-level row keeps Virtuoso mounted.
+  const rootDeepLinkIdx = useMemo(() => {
+    if (!highlightCommentId || find.open) return -1;
+    if (replyToRoot.has(highlightCommentId)) return -1;
+    const direct = items.findIndex((it) => it.id === highlightCommentId);
+    if (direct < 0) return -1;
+    const target = items[direct];
+    if (!target || target.kind === "activity-group") return -1;
+    return direct;
+  }, [highlightCommentId, find.open, items, replyToRoot]);
+
   // One entry per comment thread (folded resolved bars included), activity
   // groups skipped. Derived from the same flat `items` array Virtuoso renders
   // so the right-edge outline always matches the page order.
@@ -1819,10 +1833,29 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
     [items, timelineView.threadReplies],
   );
 
-  // When the timeline renders flat (deep-link or in-page find), there is no
-  // Virtuoso instance — minimap jumps drive the scroll container directly.
-  const isFlatTimeline = !!highlightCommentId || find.open;
+  // Request key identifying one deep-link landing attempt: a new issue, a new
+  // comment, or an explicit replay (Inbox re-click bumps the token) starts a
+  // new request and invalidates the previous one's frames/observers.
+  const deepLinkRequestKey = highlightCommentId
+    ? `${id}:${highlightCommentId}:${highlightRequestToken ?? 0}`
+    : null;
+  // One-shot escape hatch per request: when the virtualized target row fails
+  // to mount within its budget, this request (and only this request) falls
+  // back to the flat path below. Never retried, never carried over.
+  const [flatFallbackKey, setFlatFallbackKey] = useState<string | null>(null);
+  const useVirtualDeepLink =
+    rootDeepLinkIdx >= 0 &&
+    deepLinkRequestKey !== null &&
+    flatFallbackKey !== deepLinkRequestKey;
+  // When the timeline renders flat (non-root deep-link, unknown target, or
+  // in-page find), there is no Virtuoso instance — minimap jumps drive the
+  // scroll container directly. A root-comment deep link keeps Virtuoso
+  // mounted so only the visible rows (plus the scrollToIndex target) mount.
+  const isFlatTimeline = !useVirtualDeepLink && (!!highlightCommentId || find.open);
   const virtuosoRef = useRef<VirtuosoHandle>(null);
+  // Latest Virtuoso render range, for confirming the deep-link target row
+  // actually mounted (rangeChanged fires on every range commit).
+  const virtuosoRangeRef = useRef<{ startIndex: number; endIndex: number } | null>(null);
   // Scroll a freshly posted comment into view, aligned so its bottom sits just
   // above the sticky composer (never behind it). A reply lives inside its root
   // CommentCard, so the containing top-level row is the scroll target. Flat and
@@ -1922,7 +1955,9 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
   );
   const jumpToThread = useCallback(
     (threadId: string) => {
-      // Flat mode mounts every row, so the anchor is always in the DOM.
+      // Flat mode mounts every row, so the anchor is always in the DOM. A
+      // virtualized root deep link also has a mounted anchor once its
+      // landing effect scrolls the target row in.
       if (isFlatTimeline) return jumpToComment(threadId);
       // Virtualized mode: the target row may not be mounted, so scroll by
       // index and let Virtuoso mount it. Offset leaves a small top gap.
@@ -1931,7 +1966,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
       virtuosoRef.current?.scrollToIndex({ index, align: "start", offset: -16 });
       flashJumpTarget(threadId);
     },
-    [isFlatTimeline, items, jumpToComment, flashJumpTarget],
+    [isFlatTimeline, highlightCommentId, items, jumpToComment, flashJumpTarget],
   );
   // Minimap jump to a reply. A reply's anchor exists only while its thread is
   // open, so first undo whatever hides it — the reader's own collapse, a root
@@ -2120,11 +2155,166 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
 
   const loading = issueLoading;
 
+  // Virtualized root-comment landing. Runs only for real top-level rows:
+  // scrollToIndex mounts the target row, then the container scrollTop is
+  // driven from the row's measured DOM rect — never estimated heights,
+  // never native scrollIntoView.
+  //
+  // Request identity is (issue, comment, token): any change starts a new
+  // request and invalidates the previous one's rAF loop, ResizeObserver,
+  // and fallback. Timeline updates re-resolve the same comment's index but
+  // do not restart a settled landing; a mount miss falls back to the flat
+  // path exactly once per request.
+  useEffect(() => {
+    if (!useVirtualDeepLink || !highlightCommentId || !deepLinkRequestKey) return;
+    const requestKey = deepLinkRequestKey;
+    let index = rootDeepLinkIdx;
+    if (index < 0 || index >= items.length) return;
+    const item = items[index];
+    if (!item || item.id !== highlightCommentId) {
+      const resolved = items.findIndex((it) => it.id === highlightCommentId);
+      if (resolved < 0) return;
+      index = resolved;
+    }
+    const container = scrollContainerEl;
+    if (!container) return;
+    // A completed landing for this exact request survives timeline refreshes:
+    // re-resolving the index above is enough, no new scroll.
+    if (didHighlightRef.current === highlightCommentId) return;
+    // Tab-switch restore wins over a fresh jump for an already-consumed id.
+    // Inbox re-click clears the memento and bumps the token (new request
+    // key), so only a genuinely new request reaches past this gate.
+    if (consumedHighlightRef.current === highlightCommentId) {
+      didHighlightRef.current = highlightCommentId;
+      return;
+    }
+    let settled = false;
+    let rafId = 0;
+    let timeoutId: number | undefined;
+    let observer: ResizeObserver | null = null;
+    let userScrolled = false;
+    let frames = 0;
+    let lastTarget = -1;
+    const elId = `comment-${highlightCommentId}`;
+    const cleanup = () => {
+      cancelAnimationFrame(rafId);
+      if (timeoutId !== undefined) window.clearTimeout(timeoutId);
+      observer?.disconnect();
+      container.removeEventListener("wheel", markUserScroll);
+      container.removeEventListener("touchmove", markUserScroll);
+    };
+    const markUserScroll = () => {
+      userScrolled = true;
+    };
+    const markSettled = () => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      didHighlightRef.current = highlightCommentId;
+      writeViewState(issueHighlightMementoKey(id), highlightCommentId);
+    };
+    const centerOn = (el: HTMLElement) => {
+      const c = container.getBoundingClientRect();
+      const e = el.getBoundingClientRect();
+      const target = Math.max(
+        0,
+        container.scrollTop + (e.top - c.top) - (container.clientHeight - e.height) / 2,
+      );
+      container.scrollTop = target;
+      return target;
+    };
+    const settleLoop = (el: HTMLElement) => {
+      // Async content (markdown, code highlight, images) keeps moving the
+      // row for a few frames: re-center only while the computed target keeps
+      // shifting, then stop. Any manual scroll cancels the correction.
+      if (userScrolled) {
+        markSettled();
+        return;
+      }
+      const target = centerOn(el);
+      if (Math.abs(target - lastTarget) > 1 && ++frames < 12) {
+        lastTarget = target;
+        rafId = requestAnimationFrame(() => {
+          const next = document.getElementById(elId);
+          if (next instanceof HTMLElement) settleLoop(next);
+          else markSettled();
+        });
+        return;
+      }
+      markSettled();
+    };
+    const observeSize = (el: HTMLElement) => {
+      // Re-measure on size changes (container ref swap, late content): the
+      // scrollTop write above is idempotent, so a bounded observer only
+      // re-centers while the landing is still unsettled.
+      if (typeof ResizeObserver === "undefined") return;
+      observer = new ResizeObserver(() => {
+        if (settled || userScrolled) return;
+        const next = document.getElementById(elId);
+        if (next instanceof HTMLElement) centerOn(next);
+      });
+      observer.observe(el);
+      observer.observe(container);
+    };
+    const waitForMount = (attemptsLeft: number) => {
+      if (settled) return;
+      const el = document.getElementById(elId);
+      if (el instanceof HTMLElement) {
+        setHighlightedId(highlightCommentId);
+        if (jumpFlashTimerRef.current !== null) window.clearTimeout(jumpFlashTimerRef.current);
+        jumpFlashTimerRef.current = window.setTimeout(() => setHighlightedId(null), 2500);
+        observeSize(el);
+        settleLoop(el);
+        return;
+      }
+      // The range commit may lag one frame behind scrollToIndex: while
+      // Virtuoso hasn't reported the target in range yet, keep waiting
+      // without burning the mount budget. Mounting is confirmed via both
+      // the reported range and the real DOM node above.
+      const range = virtuosoRangeRef.current;
+      const converging =
+        !range || index < range.startIndex || index > range.endIndex;
+      if (converging) {
+        rafId = requestAnimationFrame(() => waitForMount(attemptsLeft));
+        return;
+      }
+      if (attemptsLeft <= 0) {
+        // Single escape hatch for this request: render the existing flat
+        // path once instead of waiting forever on a row Virtuoso never
+        // mounts.
+        cleanup();
+        setFlatFallbackKey(requestKey);
+        return;
+      }
+      rafId = requestAnimationFrame(() => waitForMount(attemptsLeft - 1));
+    };
+    container.addEventListener("wheel", markUserScroll, { passive: true });
+    container.addEventListener("touchmove", markUserScroll, { passive: true });
+    // Mount the row first; the first DOM read happens after Virtuoso's
+    // range commit lands it.
+    virtuosoRef.current?.scrollToIndex({ index, align: "center" });
+    rafId = requestAnimationFrame(() => waitForMount(30));
+    timeoutId = window.setTimeout(() => {
+      // Hard ceiling even where frames never run (background tab): one flat
+      // fallback per request, never a retry loop.
+      if (!settled) {
+        cleanup();
+        setFlatFallbackKey(requestKey);
+      }
+    }, 2500);
+    return () => {
+      // A superseded request must never settle the new one: only the still
+      // active (unsettled) wait may clear its own run.
+      cleanup();
+    };
+  }, [useVirtualDeepLink, deepLinkRequestKey, highlightCommentId, rootDeepLinkIdx, items, scrollContainerEl, id, writeViewState]);
+
   // Deep-link landing. Semantically equivalent to navigating to
   // `#comment-${id}`: find the element with that id, scrollIntoView it.
-  // When `highlightCommentId` is set the timeline below renders flat (no
-  // virtualization), so every comment id is in the DOM by the time this
-  // effect runs after commit.
+  // Non-root anchors (replies, deleted-reply substitutes, unknown ids) and
+  // in-page find render the timeline flat (no virtualization), so every
+  // comment id is in the DOM by the time this effect runs after commit.
+  // Root-comment anchors take the virtualized effect above instead.
   //
   // For a reply inside a folded resolved thread, the reply is not in items
   // (only the resolved-bar root is). Auto-expand the thread first; the
@@ -2135,7 +2325,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
   // ref populates only on the post-loading render, so it's the signal that
   // the timeline (and the deep-link target id) has actually rendered.
   useEffect(() => {
-    if (!highlightCommentId || items.length === 0) return;
+    if (!highlightCommentId || items.length === 0 || useVirtualDeepLink) return;
     // An explicit replay request (re-click on the already-open notification
     // row): the host cleared the memento entry and bumped the token, so
     // re-arm the landing guard and fall through to the jump.
@@ -2232,7 +2422,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
       cancelAnimationFrame(rafId);
       clearTimeout(fade);
     };
-  }, [highlightCommentId, highlightRequestToken, id, writeViewState, items, targetIdx, scrollContainerEl, replyToRoot, expandedResolved, timelineView, toggleResolvedExpand]);
+  }, [highlightCommentId, highlightRequestToken, id, writeViewState, items, targetIdx, scrollContainerEl, replyToRoot, expandedResolved, timelineView, toggleResolvedExpand, useVirtualDeepLink]);
 
   const descEditorRef = useRef<ContentEditorRef>(null);
   const descriptionEditingRef = useRef(false);
@@ -3776,14 +3966,15 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
               <TimelineSkeleton />
             ) : (
               // Two render modes:
-              //   - `highlightCommentId` set (came from inbox deep-link) →
-              //     render flat. Every comment mounts, every height is real,
-              //     the target id is in the DOM the instant the useEffect
-              //     above runs `scrollIntoView`. No virtualization estimate
-              //     errors, no spacer reflow drift. Pays cold-mount cost
-              //     proportional to items.length (markdown + lowlight per
-              //     comment), which is acceptable in the deep-link case —
-              //     the user has explicit intent to land on a specific item.
+              //   - non-root deep-link (`highlightCommentId` set but not a
+              //     real top-level row: reply, deleted-reply substitute,
+              //     unknown id) → render flat. Every comment mounts, every
+              //     height is real, the target id is in the DOM the instant
+              //     the effect above runs. Pays cold-mount cost proportional
+              //     to items.length (markdown + lowlight per comment).
+              //   - root-comment deep-link → Virtuoso stays mounted. The
+              //     landing effect scrolls the target row in by index, then
+              //     aligns from its measured DOM rect — no full mount.
               //   - `find.open` (in-page Cmd/Ctrl+F) → also render flat, so
               //     every comment is in the DOM for the find walk to match
               //     and highlight. Same explicit-intent cold-mount trade-off.
@@ -3794,7 +3985,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
               // on a target" have fundamentally opposed contracts (estimated
               // heights vs real heights). Trying to satisfy both in one
               // path is what produced the bug history this PR closes.
-              !highlightCommentId && !find.open ? (
+              !isFlatTimeline ? (
                 !scrollContainerEl ? (
                   // Skeleton while the callback ref populates so the gap
                   // between IssueDetail mount and Virtuoso mount doesn't
@@ -3811,6 +4002,9 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
                       increaseViewportBy={{ top: 800, bottom: 800 }}
                       computeItemKey={(_i, item) => `${item.kind}:${item.kind === "run" ? item.run.task.id : item.id}`}
                       skipAnimationFrameInResizeObserver
+                      rangeChanged={({ startIndex, endIndex }) => {
+                        virtuosoRangeRef.current = { startIndex, endIndex };
+                      }}
                       // followOutput intentionally NOT set. Virtuoso treats
                       // it as a sticky "is at bottom" flag and resets
                       // scrollTop to maxScrollTop on every height-change

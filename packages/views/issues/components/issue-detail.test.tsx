@@ -459,10 +459,10 @@ vi.mock("@multica/core/issues/stores", async () => ({
 }));
 
 // Mock react-virtuoso: jsdom has no real layout, so the real Virtuoso would
-// compute a 0-height viewport and render nothing. The mock renders every item
-// inline so id="comment-..." nodes are always present in the DOM — this
-// matches the production cold-path where `initialItemCount` force-mounts
-// items[0..targetIdx], giving the deep-link effect a real target node.
+// compute a 0-height viewport and render nothing. The mock renders only a
+// small visible window (first/last rows plus the scrollToIndex target) so
+// tests prove virtualization: the deep-link row must be mounted by an
+// explicit scrollToIndex call, not by mounting every item up front.
 //
 // scrollIntoViewSpy: the deep-link effect no longer calls native
 // scrollIntoView (it drives the timeline container's scrollTop directly to
@@ -473,13 +473,20 @@ vi.mock("@multica/core/issues/stores", async () => ({
 // layout.
 const scrollIntoViewSpy = vi.hoisted(() => vi.fn());
 const scrollToIndexSpy = vi.hoisted(() => vi.fn());
+const virtuosoWindow = vi.hoisted(() => ({
+  scrollTarget: null as number | null,
+  // When true, scrollToIndex is recorded but the target row never mounts —
+  // the mount-failure path (one flat fallback, no retry loop).
+  failScroll: false,
+}));
 
 vi.mock("react-virtuoso", () => ({
   Virtuoso: forwardRef(function MockVirtuoso(
-    { data, itemContent, computeItemKey }: {
+    { data, itemContent, computeItemKey, rangeChanged }: {
       data: unknown[];
       itemContent: (i: number, item: unknown) => unknown;
       computeItemKey: (i: number, item: unknown) => React.Key;
+      rangeChanged?: (range: { startIndex: number; endIndex: number }) => void;
     },
     ref: any,
   ) {
@@ -488,13 +495,29 @@ vi.mock("react-virtuoso", () => ({
       // since the deep-link cold-path drives the container's scrollTop on the
       // real DOM node, not Virtuoso's imperative API.
       scrollIntoView: vi.fn(),
-      scrollToIndex: scrollToIndexSpy,
+      scrollToIndex: (args: { index: number }) => {
+        if (!virtuosoWindow.failScroll) virtuosoWindow.scrollTarget = args.index;
+        scrollToIndexSpy(args);
+      },
     }));
+    const target = virtuosoWindow.scrollTarget;
+    const visible = new Set<number>([0, 1, data.length - 1]);
+    if (target !== null && target >= 0 && target < data.length) {
+      visible.add(target);
+      if (target - 1 >= 0) visible.add(target - 1);
+      if (target + 1 < data.length) visible.add(target + 1);
+    }
+    useEffect(() => {
+      const startIndex = target ?? 0;
+      rangeChanged?.({ startIndex, endIndex: Math.min(data.length - 1, startIndex + 2) });
+    }, [data.length, target, rangeChanged]);
     return (
       <div data-testid="virtuoso-mock">
-        {data.map((item, i) => (
-          <div key={computeItemKey(i, item)}>{itemContent(i, item) as React.ReactElement}</div>
-        ))}
+        {data.map((item, i) =>
+          visible.has(i) ? (
+            <div key={computeItemKey(i, item)}>{itemContent(i, item) as React.ReactElement}</div>
+          ) : null,
+        )}
       </div>
     );
   }),
@@ -505,6 +528,8 @@ vi.mock("react-virtuoso", () => ({
 beforeEach(() => {
   scrollIntoViewSpy.mockClear();
   scrollToIndexSpy.mockClear();
+  virtuosoWindow.scrollTarget = null;
+  virtuosoWindow.failScroll = false;
   Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
     configurable: true,
     writable: true,
@@ -2357,9 +2382,9 @@ describe("IssueDetail (shared)", () => {
       renderIssueDetailWithHighlight("comment-2");
 
       // Wait for the comment row to mount. With initialItemCount in
-      // production, items[0..targetIdx] are force-mounted on first commit;
-      // the mock unconditionally inline-renders every item, so this just
-      // waits for the regular render pass.
+      // production, the landing scrolls the target row in by index; the
+      // windowed mock mounts the rows around the scrollToIndex target, so
+      // this waits for that range commit.
       await waitFor(() => {
         expect(
           document.getElementById("comment-comment-2"),
@@ -2509,6 +2534,333 @@ describe("IssueDetail (shared)", () => {
         expect(
           document.getElementById("comment-reply-1")?.className,
         ).toContain("bg-[color-mix(in_srgb,var(--card)_95%,var(--brand)_5%)]");
+      });
+    });
+
+    describe("virtualized root deep-link", () => {
+      const bulkRoots = (count: number, prefix = "bulk"): TimelineEntry[] =>
+        Array.from({ length: count }, (_, i) => ({
+          type: "comment",
+          id: `${prefix}-${i}`,
+          actor_type: "member",
+          actor_id: "user-1",
+          content: `Bulk root ${i}`,
+          parent_id: null,
+          created_at: "2026-01-18T00:00:00Z",
+          updated_at: "2026-01-18T00:00:00Z",
+          comment_type: "comment",
+        }) as TimelineEntry);
+      const bulkTimelineWithActivities = (count: number): TimelineEntry[] => {
+        const out: TimelineEntry[] = [];
+        const actions = ["status_changed", "priority_changed", "due_date_changed"];
+        for (let i = 0; i < count; i++) {
+          out.push({
+            type: "comment",
+            id: `bulk-${i}`,
+            actor_type: "member",
+            actor_id: "user-1",
+            content: `Bulk root ${i}`,
+            parent_id: null,
+            created_at: "2026-01-18T00:00:00Z",
+            updated_at: "2026-01-18T00:00:00Z",
+            comment_type: "comment",
+          } as TimelineEntry);
+          if ((i + 1) % 100 === 0) {
+            out.push({
+              type: "activity",
+              id: `bulk-act-${i}`,
+              actor_type: "member",
+              actor_id: "user-1",
+              action: actions[((i + 1) / 100 - 1) % actions.length] as string,
+              details: { from: "todo", to: "in_progress" },
+              created_at: "2026-01-18T00:00:00Z",
+            } as TimelineEntry);
+          }
+        }
+        return out;
+      };
+      const mountedCommentCount = () =>
+        document.querySelectorAll('[id^="comment-"]').length;
+      function renderVirtualDeepLink(commentId: string, token?: number) {
+        const queryClient = createTestQueryClient();
+        const tree = (cid: string, t?: number) => (
+          <I18nProvider locale="en" resources={TEST_RESOURCES}>
+            <QueryClientProvider client={queryClient}>
+              <IssueDetail issueId="issue-1" highlightCommentId={cid} highlightRequestToken={t} />
+            </QueryClientProvider>
+          </I18nProvider>
+        );
+        const result = render(tree(commentId, token));
+        return {
+          ...result,
+          queryClient,
+          retarget: (cid: string, t?: number) => result.rerender(tree(cid, t)),
+        };
+      }
+
+      it("lands on a far root comment without mounting the whole timeline", async () => {
+        mockApiObj.listTimeline.mockResolvedValue(bulkRoots(1200));
+        renderVirtualDeepLink("bulk-800");
+        // The windowed mock only mounts rows around the scrollToIndex
+        // target: the far row must be mounted by that call, not up front.
+        await waitFor(() => {
+          expect(scrollToIndexSpy).toHaveBeenCalledWith(
+            expect.objectContaining({ index: 800 }),
+          );
+        });
+        await waitFor(() => {
+          expect(document.getElementById("comment-bulk-800")).not.toBeNull();
+        });
+        await waitFor(() => {
+          expect(
+            hasHighlightedCommentBackground(document.getElementById("comment-bulk-800")),
+          ).toBe(true);
+        });
+        // 1,200 rows in, only the window around the target mounts.
+        expect(mountedCommentCount()).toBeLessThanOrEqual(10);
+      });
+
+      it("lands with activity rows mixed into the timeline", async () => {
+        mockApiObj.listTimeline.mockResolvedValue(bulkTimelineWithActivities(400));
+        renderVirtualDeepLink("bulk-320");
+        await waitFor(() => {
+          expect(document.getElementById("comment-bulk-320")).not.toBeNull();
+        });
+        await waitFor(() => {
+          expect(
+            hasHighlightedCommentBackground(document.getElementById("comment-bulk-320")),
+          ).toBe(true);
+        });
+        expect(mountedCommentCount()).toBeLessThanOrEqual(12);
+      });
+
+      it("keeps reply deep links on the flat path", async () => {
+        mockApiObj.listTimeline.mockResolvedValue([
+          ...mockTimeline,
+          {
+            type: "comment",
+            id: "reply-9",
+            actor_type: "member",
+            actor_id: "user-1",
+            content: "A reply",
+            parent_id: "comment-1",
+            created_at: "2026-01-18T01:00:00Z",
+            updated_at: "2026-01-18T01:00:00Z",
+            comment_type: "comment",
+          } as TimelineEntry,
+        ]);
+        renderVirtualDeepLink("reply-9");
+        await waitFor(() => {
+          expect(document.getElementById("comment-reply-9")).not.toBeNull();
+        });
+        await waitFor(() => {
+          expect(
+            document.getElementById("comment-reply-9")?.className,
+          ).toContain("bg-[color-mix(in_srgb,var(--card)_95%,var(--brand)_5%)]");
+        });
+        // Flat mode mounts everything inline: no Virtuoso, no index scroll.
+        expect(screen.queryByTestId("virtuoso-mock")).toBeNull();
+        expect(scrollToIndexSpy).not.toHaveBeenCalled();
+      });
+
+      it("keeps unknown ids on the flat path without landing", async () => {
+        renderVirtualDeepLink("no-such-comment");
+        await waitFor(() => {
+          expect(document.getElementById("comment-comment-1")).not.toBeNull();
+        });
+        expect(screen.queryByTestId("virtuoso-mock")).toBeNull();
+        expect(scrollToIndexSpy).not.toHaveBeenCalled();
+        expect(hasHighlightedCommentBackground(document)).toBe(false);
+      });
+
+      it("replays the landing when the open notification is re-clicked", async () => {
+        mockApiObj.listTimeline.mockResolvedValue(bulkRoots(200));
+        const { retarget } = renderVirtualDeepLink("bulk-10", 0);
+        await waitFor(() => {
+          expect(
+            hasHighlightedCommentBackground(document.getElementById("comment-bulk-10")),
+          ).toBe(true);
+        });
+        scrollToIndexSpy.mockClear();
+        // Same comment, bumped token: the previous request must not block it.
+        retarget("bulk-10", 1);
+        await waitFor(() => {
+          expect(scrollToIndexSpy).toHaveBeenCalledWith(
+            expect.objectContaining({ index: 10 }),
+          );
+        });
+        await waitFor(() => {
+          expect(
+            hasHighlightedCommentBackground(document.getElementById("comment-bulk-10")),
+          ).toBe(true);
+        });
+      });
+
+      it("invalidates the old request when another notification is selected", async () => {
+        mockApiObj.listTimeline.mockResolvedValue(bulkRoots(200));
+        const { retarget } = renderVirtualDeepLink("bulk-50");
+        await waitFor(() => {
+          expect(
+            hasHighlightedCommentBackground(document.getElementById("comment-bulk-50")),
+          ).toBe(true);
+        });
+        scrollToIndexSpy.mockClear();
+        retarget("bulk-150");
+        await waitFor(() => {
+          expect(scrollToIndexSpy).toHaveBeenCalledWith(
+            expect.objectContaining({ index: 150 }),
+          );
+        });
+        await waitFor(() => {
+          expect(
+            hasHighlightedCommentBackground(document.getElementById("comment-bulk-150")),
+          ).toBe(true);
+        });
+        // The old target scrolled out of the window: its row unmounts.
+        expect(document.getElementById("comment-bulk-50")).toBeNull();
+      });
+
+      it("lands once late timeline data arrives", async () => {
+        mockApiObj.listTimeline.mockResolvedValue(bulkRoots(10));
+        const { queryClient } = renderVirtualDeepLink("bulk-150");
+        await waitFor(() => {
+          expect(document.getElementById("comment-bulk-0")).not.toBeNull();
+        });
+        // Unknown while the cache is small: flat, no index scroll.
+        expect(screen.queryByTestId("virtuoso-mock")).toBeNull();
+        expect(scrollToIndexSpy).not.toHaveBeenCalled();
+        queryClient.setQueryData(["issues", "timeline", "issue-1"], bulkRoots(200));
+        await waitFor(() => {
+          expect(scrollToIndexSpy).toHaveBeenCalledWith(
+            expect.objectContaining({ index: 150 }),
+          );
+        });
+        await waitFor(() => {
+          expect(
+            hasHighlightedCommentBackground(document.getElementById("comment-bulk-150")),
+          ).toBe(true);
+        });
+      });
+
+      it("falls back to flat exactly once when the row never mounts", async () => {
+        virtuosoWindow.failScroll = true;
+        mockApiObj.listTimeline.mockResolvedValue(bulkRoots(60));
+        renderVirtualDeepLink("bulk-50");
+        // The single escape hatch: the flat path mounts everything once,
+        // then lands with the pre-existing behavior. No retry loop.
+        await waitFor(
+          () => {
+            expect(screen.queryByTestId("virtuoso-mock")).toBeNull();
+          },
+          { timeout: 10000 },
+        );
+        await waitFor(
+          () => {
+            expect(
+              hasHighlightedCommentBackground(document.getElementById("comment-bulk-50")),
+            ).toBe(true);
+          },
+          { timeout: 10000 },
+        );
+        expect(scrollToIndexSpy).toHaveBeenCalledTimes(1);
+      }, 30000);
+
+      it("does not restart a settled landing on timeline refresh", async () => {
+        const timeline = bulkRoots(60);
+        mockApiObj.listTimeline.mockResolvedValue(timeline);
+        const { queryClient } = renderVirtualDeepLink("bulk-50");
+        await waitFor(() => {
+          expect(
+            hasHighlightedCommentBackground(document.getElementById("comment-bulk-50")),
+          ).toBe(true);
+        });
+        scrollToIndexSpy.mockClear();
+        const newer = {
+          type: "comment",
+          id: "bulk-new",
+          actor_type: "member",
+          actor_id: "user-1",
+          content: "Just arrived",
+          parent_id: null,
+          created_at: "2026-01-19T00:00:00Z",
+          updated_at: "2026-01-19T00:00:00Z",
+          comment_type: "comment",
+        } as TimelineEntry;
+        queryClient.setQueryData(["issues", "timeline", "issue-1"], [newer, ...timeline]);
+        await waitFor(() => {
+          expect(document.getElementById("comment-bulk-new")).not.toBeNull();
+        });
+        // Settled: the refresh re-resolves the index without a new scroll.
+        expect(scrollToIndexSpy).not.toHaveBeenCalled();
+        expect(
+          hasHighlightedCommentBackground(document.getElementById("comment-bulk-50")),
+        ).toBe(true);
+      });
+
+      it("wires and releases a resize observer around the landing", async () => {
+        const seen: Array<() => void> = [];
+        const disconnect = vi.fn();
+        const observe = vi.fn();
+        vi.stubGlobal(
+          "ResizeObserver",
+          vi.fn((cb: () => void) => {
+            seen.push(cb);
+            return { observe, unobserve: vi.fn(), disconnect };
+          }),
+        );
+        try {
+          mockApiObj.listTimeline.mockResolvedValue(bulkRoots(20));
+          const { unmount } = renderVirtualDeepLink("bulk-5");
+          await waitFor(() => {
+            expect(
+              hasHighlightedCommentBackground(document.getElementById("comment-bulk-5")),
+            ).toBe(true);
+          });
+          expect(observe).toHaveBeenCalled();
+          // A late size change must not restart the settled landing.
+          seen.forEach((cb) => cb());
+          expect(scrollToIndexSpy).toHaveBeenCalledTimes(1);
+          unmount();
+          expect(disconnect).toHaveBeenCalled();
+        } finally {
+          vi.unstubAllGlobals();
+        }
+      });
+
+      it("survives a user scroll during the landing", async () => {
+        mockApiObj.listTimeline.mockResolvedValue(bulkRoots(200));
+        renderVirtualDeepLink("bulk-150");
+        const scroller = document.querySelector(
+          "[data-tab-scroll-root]",
+        ) as HTMLElement | null;
+        // The landing listens on the scroll container itself; jsdom never
+        // scrolls for real, so drive the listener directly.
+        act(() => {
+          scroller?.dispatchEvent(new Event("wheel", { bubbles: true }));
+        });
+        await waitFor(() => {
+          expect(
+            hasHighlightedCommentBackground(document.getElementById("comment-bulk-150")),
+          ).toBe(true);
+        });
+        expect(scrollToIndexSpy).toHaveBeenCalledTimes(1);
+      });
+
+      it("lands on remount when unmounted before settling", async () => {
+        virtuosoWindow.failScroll = true;
+        mockApiObj.listTimeline.mockResolvedValue(bulkRoots(200));
+        const first = renderVirtualDeepLink("bulk-150");
+        await waitFor(() => {
+          expect(scrollToIndexSpy).toHaveBeenCalled();
+        });
+        first.unmount();
+        virtuosoWindow.failScroll = false;
+        renderVirtualDeepLink("bulk-150");
+        await waitFor(() => {
+          expect(
+            hasHighlightedCommentBackground(document.getElementById("comment-bulk-150")),
+          ).toBe(true);
+        });
       });
     });
   });
