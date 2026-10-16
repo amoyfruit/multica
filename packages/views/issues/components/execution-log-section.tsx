@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronRight, Loader2, Maximize2, Square } from "lucide-react";
 import { toast } from "sonner";
@@ -9,6 +9,8 @@ import { issueTasksOptions } from "@multica/core/issues/queries";
 import { useCustomPricingStore } from "@multica/core/runtimes/custom-pricing-store";
 import type { AgentTask } from "@multica/core/types";
 import { cn } from "@multica/ui/lib/utils";
+import { Checkbox } from "@multica/ui/components/ui/checkbox";
+import { Skeleton } from "@multica/ui/components/ui/skeleton";
 import { useLocale, useTimeAgo } from "../../i18n";
 import {
   Tooltip,
@@ -44,7 +46,8 @@ import { TaskStatusIcon } from "./task-status-icon";
 import { useStatusLabel, useTriggerText } from "./task-run-labels";
 import { WakeupRunLabel } from "./wakeup-source-chip";
 
-// Right-panel section that lists every agent run for this issue. Active
+// Right-panel section that lists every agent run in the selected issue scope.
+// Parents can include their entire descendant tree. Active
 // runs sit at the top (always visible when present); below them a spend
 // sparkline (the issue's cumulative cost over time, above a track of its runs)
 // and the latest few past runs. The full history lives in the Runs dialog the
@@ -76,6 +79,7 @@ interface ExecutionLogSectionProps {
   /** Shown in the Runs dialog's subtitle so it names the issue it lays out. */
   identifier?: string;
   issueTitle?: string;
+  hasChildren?: boolean;
 }
 
 // How many past runs the sidebar lists before deferring to the Runs dialog.
@@ -90,10 +94,18 @@ const PAST_STATUS_RANK: Record<string, number> = {
   completed: 2,
 };
 
-export function ExecutionLogSection({ issueId, identifier, issueTitle }: ExecutionLogSectionProps) {
+export function ExecutionLogSection({
+  issueId,
+  identifier,
+  issueTitle,
+  hasChildren = false,
+}: ExecutionLogSectionProps) {
   const { t } = useT("issues");
   const [open, setOpen] = useState(true);
   const [runsOpen, setRunsOpen] = useState(false);
+  const [includeChildren, setIncludeChildren] = useState(false);
+  const scopeLabelId = useId();
+  const includeDescendants = hasChildren && includeChildren;
   const pricings = useCustomPricingStore((s) => s.pricings);
 
   // Cache key registered in `issueKeys.tasks` (packages/core/issues/queries.ts)
@@ -101,7 +113,9 @@ export function ExecutionLogSection({ issueId, identifier, issueTitle }: Executi
   // a `["issues", "tasks"]` prefix-match — no local WS subscriptions
   // needed, and the cache stays fresh even when this component isn't
   // mounted (e.g. user cancels from agent-side, then navigates here).
-  const { data: tasks = [] } = useQuery(issueTasksOptions(issueId));
+  const { data: tasks = [], isPending, isError, refetch } = useQuery(
+    issueTasksOptions(issueId, includeDescendants),
+  );
 
   const activeTasks = useMemo(
     () =>
@@ -147,7 +161,7 @@ export function ExecutionLogSection({ issueId, identifier, issueTitle }: Executi
   );
   const pastRuns = useMemo(() => timeline.runs.filter((run) => !run.active), [timeline]);
 
-  if (activeTasks.length === 0 && pastTasks.length === 0) return null;
+  if (!hasChildren && activeTasks.length === 0 && pastTasks.length === 0) return null;
 
   const latest = pastTasks.slice(0, LATEST_PAST_RUNS);
   const hiddenCount = pastTasks.length - latest.length;
@@ -200,7 +214,7 @@ export function ExecutionLogSection({ issueId, identifier, issueTitle }: Executi
       {open && (
         <div className="space-y-0.5 pl-2">
           {activeTasks.map((task) => (
-            <ActiveTaskRow key={task.id} task={task} issueId={issueId} />
+            <ActiveTaskRow key={task.id} task={task} issueId={task.issue_id || issueId} showIssue={includeDescendants} />
           ))}
           {activeTasks.length > 0 && pastRuns.length > 0 && (
             <div className="my-1.5 border-t border-border/60" />
@@ -219,29 +233,51 @@ export function ExecutionLogSection({ issueId, identifier, issueTitle }: Executi
             </p>
           )}
 
-          {latest.length > 0 && (
-            <>
-              <div className="px-1 pt-2 pb-0.5 text-micro text-muted-foreground">
-                {t(($) => $.execution_log.latest)}
-              </div>
-              {latest.map((task) => (
-                <PastRow key={task.id} task={task} issueId={issueId} />
-              ))}
-            </>
+          {(latest.length > 0 || hasChildren) && (
+            <div className="flex min-h-7 items-center justify-between gap-2 px-1 pt-2 pb-0.5 text-micro text-muted-foreground">
+              <span>{t(($) => $.execution_log.latest)}</span>
+              {hasChildren && (
+                <label className="flex shrink-0 cursor-pointer items-center gap-1.5 whitespace-nowrap">
+                  <Checkbox
+                    aria-labelledby={scopeLabelId}
+                    checked={includeDescendants}
+                    onCheckedChange={setIncludeChildren}
+                    className="size-3 [&_svg]:size-2.5"
+                  />
+                  <span id={scopeLabelId}>{t(($) => $.execution_log.include_children)}</span>
+                </label>
+              )}
+            </div>
           )}
-          <button
-            type="button"
-            onClick={openRuns}
-            className="flex w-full items-center gap-1.5 rounded-xs px-1 py-1.5 text-caption transition-colors hover:bg-accent/40"
-          >
-            <Maximize2 aria-hidden className="size-3 shrink-0 text-muted-foreground" />
-            <span className="truncate">{t(($) => $.execution_log.open_timeline)}</span>
-            {hiddenCount > 0 && (
-              <span className="ml-auto shrink-0 text-muted-foreground tabular-nums">
-                {t(($) => $.execution_log.more_runs, { count: hiddenCount })}
-              </span>
-            )}
-          </button>
+          {isPending ? (
+            <div role="status" aria-label={t(($) => $.execution_log.loading)} className="space-y-2 px-1 py-1">
+              <Skeleton className="h-6 w-full" />
+              <Skeleton className="h-6 w-3/4" />
+            </div>
+          ) : isError ? (
+            <button type="button" onClick={() => void refetch()} className="px-1 py-1 text-caption text-destructive underline">
+              {t(($) => $.execution_log.load_failed_retry)}
+            </button>
+          ) : tasks.every((task) => task.status === "deferred") ? (
+            <p className="px-1 py-1 text-caption text-muted-foreground">{t(($) => $.execution_log.empty)}</p>
+          ) : latest.map((task) => (
+            <PastRow key={task.id} task={task} issueId={task.issue_id || issueId} showIssue={includeDescendants} />
+          ))}
+          {!isPending && !isError && timeline.runs.length > 0 && (
+            <button
+              type="button"
+              onClick={openRuns}
+              className="flex w-full items-center gap-1.5 rounded-xs px-1 py-1.5 text-caption transition-colors hover:bg-accent/40"
+            >
+              <Maximize2 aria-hidden className="size-3 shrink-0 text-muted-foreground" />
+              <span className="truncate">{t(($) => $.execution_log.open_timeline)}</span>
+              {hiddenCount > 0 && (
+                <span className="ml-auto shrink-0 text-muted-foreground tabular-nums">
+                  {t(($) => $.execution_log.more_runs, { count: hiddenCount })}
+                </span>
+              )}
+            </button>
+          )}
         </div>
       )}
       <IssueRunsDialog
@@ -250,7 +286,8 @@ export function ExecutionLogSection({ issueId, identifier, issueTitle }: Executi
         issueId={issueId}
         identifier={identifier ?? ""}
         issueTitle={issueTitle}
-        tasks={tasks}
+        hasChildren={hasChildren}
+        includeDescendants={includeDescendants}
       />
     </div>
   );
@@ -419,6 +456,7 @@ function SparklineRunSummary({ run }: { run: TimelineRun }) {
       </RunTriggerLabel>
       <span className="text-micro text-muted-foreground">
         {[
+          run.task.issue_identifier,
           // A run still going has not reported usage yet — that is not "none".
           cost != null ? formatUsd(cost) : run.active ? null : t(($) => $.execution_log.strip_no_usage),
           run.durationMs != null ? formatAgentTime(run.durationMs / 1000, "0s") : null,
@@ -558,10 +596,12 @@ export function ActiveTaskRow({
   task,
   issueId,
   onTranscriptOpenChange,
+  showIssue = false,
 }: {
   task: AgentTask;
   issueId: string;
   onTranscriptOpenChange?: (open: boolean, fromKeyboard?: boolean) => void;
+  showIssue?: boolean;
 }) {
   const { t } = useT("issues");
   const [cancelling, setCancelling] = useState(false);
@@ -615,7 +655,7 @@ export function ActiveTaskRow({
   // test that asserts a scenario production cannot produce. Restore it in the
   // same change that adds incremental reporting + cache invalidation.
   return (
-    <RowShell task={task}>
+    <RowShell task={task} showIssue={showIssue}>
       {task.wakeup_id ? (
         <WakeupRunLabel task={task} fallback={trigger} render={(label) => <TriggerText text={label} />} />
       ) : (
@@ -679,7 +719,7 @@ export function ActiveTaskRow({
 
 // ─── Past row ──────────────────────────────────────────────────────────────
 
-function PastRow({ task, issueId }: { task: AgentTask; issueId: string }) {
+function PastRow({ task, issueId, showIssue = false }: { task: AgentTask; issueId: string; showIssue?: boolean }) {
   const { t } = useT("issues");
   const { t: tAgents } = useT("agents");
   const timeAgo = useTimeAgo();
@@ -730,7 +770,7 @@ function PastRow({ task, issueId }: { task: AgentTask; issueId: string }) {
     .join(" · ");
 
   return (
-    <RowShell task={task} title={rowTitle}>
+    <RowShell task={task} title={rowTitle} showIssue={showIssue}>
       {task.wakeup_id ? (
         <WakeupRunLabel task={task} fallback={trigger} render={(label) => <TriggerText text={label} />} />
       ) : (
@@ -762,6 +802,7 @@ function RowShell({
   task,
   title,
   children,
+  showIssue = false,
 }: {
   task: AgentTask;
   /** Carries the details the right column no longer has room for (time,
@@ -770,6 +811,7 @@ function RowShell({
    *  disappear at exactly the moment the pointer arrives. */
   title?: string;
   children: React.ReactNode;
+  showIssue?: boolean;
 }) {
   return (
     <div
@@ -785,6 +827,11 @@ function RowShell({
         />
       ) : (
         <span className="inline-block h-5 w-5 shrink-0 rounded-full bg-muted" />
+      )}
+      {showIssue && (
+        <span className="max-w-20 shrink-0 truncate font-mono text-micro text-muted-foreground" title={task.issue_title}>
+          {task.issue_identifier || task.issue_id}
+        </span>
       )}
       {children}
     </div>

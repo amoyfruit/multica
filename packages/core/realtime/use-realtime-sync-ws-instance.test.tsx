@@ -245,6 +245,21 @@ describe("useRealtimeSync — ws instance change", () => {
     expect(calls).toContainEqual(["task-messages"]);
   });
 
+  it.each(["issue:updated", "issue:created", "issue:deleted"])(
+    "refreshes recursive execution logs when hierarchy changes through %s",
+    (event) => {
+      const ws = createMockWs();
+      renderHook(() => useRealtimeSync(ws, stores), { wrapper: createWrapper(qc) });
+      qc.setQueryData(issueKeys.tasks("parent"), []);
+      qc.setQueryData(issueKeys.subtreeTasks("parent"), []);
+      const handler = vi.mocked(ws.on).mock.calls.find(([name]) => name === event)?.[1];
+      expect(handler).toBeDefined();
+      handler!({ issue: { id: "child", parent_issue_id: "parent" }, issue_id: "child" } as never);
+      expect(qc.getQueryState(issueKeys.subtreeTasks("parent"))?.isInvalidated).toBe(true);
+      expect(qc.getQueryState(issueKeys.tasks("parent"))?.isInvalidated).toBe(false);
+    },
+  );
+
   it("invalidates per-chat-session caches after an established ws reconnects", () => {
     const ws = createMockWs();
     renderHook(() => useRealtimeSync(ws, stores), {
