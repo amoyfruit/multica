@@ -2339,7 +2339,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
   // ref populates only on the post-loading render, so it's the signal that
   // the timeline (and the deep-link target id) has actually rendered.
   useEffect(() => {
-    if (!highlightCommentId || items.length === 0 || useVirtualDeepLink) return;
+    if (!highlightCommentId || items.length === 0) return;
     // An explicit replay request (re-click on the already-open notification
     // row): the host cleared the memento entry and bumped the token, so
     // re-arm the landing guard and fall through to the jump.
@@ -2356,6 +2356,12 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
       didHighlightRef.current = highlightCommentId;
       return;
     }
+
+    // Root-comment anchors own the virtualized landing above: this flat pass
+    // must not consume the request (guards, memento, highlight) while the
+    // virtual row is still mounting. Unknown ids stay here until the
+    // timeline resolves them into a virtual target.
+    if (useVirtualDeepLink) return;
 
     const rootId = replyToRoot.get(highlightCommentId);
     if (rootId && rootId !== highlightCommentId) {
