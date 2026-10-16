@@ -1,11 +1,11 @@
 {
   "issue_statuses": {
-    "title": "Trạng thái issue",
+    "title": "Trạng thái công việc",
     "loading": "Đang tải trạng thái…",
     "add": "Thêm trạng thái",
     "show_archived": "Hiện đã lưu trữ ({{count}})",
     "archived_badge": "Đã lưu trữ",
-    "archived_hint": "Đã ngừng dùng cho phân công mới. Issue đang ở trạng thái này vẫn giữ nguyên.",
+    "archived_hint": "Đã ngừng dùng cho phân công mới. Công việc đang ở trạng thái này vẫn giữ nguyên.",
     "reorder_failed": "Không thể lưu thứ tự mới.",
     "actions": {
       "move_up": "Di chuyển lên",
@@ -48,10 +48,10 @@
     "archive_dialog": {
       "retry": "Thử lưu trữ lại",
       "title": "Lưu trữ trạng thái này?",
-      "description": "Chuyển mọi issue ra khỏi \"{{name}}\" trước khi lưu trữ. Khi không còn issue nào, trạng thái sẽ bị gỡ khỏi các bảng và bộ chọn trạng thái.",
-      "in_use_title": "Chuyển issue trước khi lưu trữ",
-      "in_use": "Số issue vẫn đang dùng trạng thái này: {{count}}. Chuyển chúng sang trạng thái khác, kể cả issue đã hoàn thành và đã hủy, rồi thử lại.",
-      "view_issues": "Xem các issue",
+      "description": "Chuyển mọi công việc ra khỏi \"{{name}}\" trước khi lưu trữ. Khi không còn công việc nào, trạng thái sẽ bị gỡ khỏi các bảng và bộ chọn trạng thái.",
+      "in_use_title": "Chuyển công việc trước khi lưu trữ",
+      "in_use": "Số công việc vẫn đang dùng trạng thái này: {{count}}. Chuyển chúng sang trạng thái khác, kể cả công việc đã hoàn thành và đã hủy, rồi thử lại.",
+      "view_issues": "Xem các công việc",
       "archiving": "Đang lưu trữ...",
       "cancel": "Hủy",
       "confirm": "Lưu trữ",
@@ -70,8 +70,8 @@
       "closed": "Công việc sẽ không được hoàn thành."
     },
     "built_in_descriptions": {
-      "backlog": "Tạm gác. Gán issue vào đây không bao giờ khởi chạy agent.",
-      "todo": "Đã vào hàng đợi. Chuyển issue vào đây sẽ khởi chạy agent được gán.",
+      "backlog": "Tạm gác. Gán công việc vào đây không bao giờ khởi chạy agent.",
+      "todo": "Đã vào hàng đợi. Chuyển công việc vào đây sẽ khởi chạy agent được gán.",
       "in_progress": "Đang được thực hiện.",
       "in_review": "Đã bàn giao, đang chờ người duyệt. Hoàn tất lượt chạy của autopilot.",
       "blocked": "Bị tắc vì phụ thuộc bên ngoài.",
@@ -82,9 +82,9 @@
     "built_in_locked": "Trạng thái tích hợp sẵn điều khiển hành vi hệ thống nên không thể chỉnh sửa hay lưu trữ. Bạn vẫn có thể sắp xếp lại chúng."
   },
   "wakeups": {
-    "description": "Quy tắc nền tảng áp dụng cho mọi issue. Mỗi issue có thể thay đổi chúng trong mục Wakeups của riêng nó.",
-    "child_done_title": "Khi issue con hoàn thành",
-    "child_done_description": "Đánh thức người được gán của issue cha khi một giai đoạn kết thúc và giai đoạn sau đang chờ, và một lần nữa khi mọi issue con đã đóng. Nếu người được gán là thành viên, họ sẽ nhận thông báo trong hộp thư đến thay thế.",
+    "description": "Quy tắc nền tảng áp dụng cho mọi công việc. Mỗi công việc có thể thay đổi chúng trong mục Wakeups của riêng nó.",
+    "child_done_title": "Khi công việc con hoàn thành",
+    "child_done_description": "Đánh thức người được gán của công việc cha khi một giai đoạn kết thúc và giai đoạn sau đang chờ, và một lần nữa khi mọi công việc con đã đóng. Nếu người được gán là thành viên, họ sẽ nhận thông báo trong hộp thư đến thay thế.",
     "enabled": "Bật theo mặc định",
     "instruction": "Chỉ dẫn mặc định",
     "instruction_hint": "Gửi tới agent được đánh thức. Để trống để dùng chỉ dẫn tích hợp bên dưới.",
@@ -94,13 +94,13 @@
     "save": "Lưu",
     "saving": "Đang lưu…",
     "save_error": "Không thể lưu giá trị mặc định.",
-    "customized_other": "{{count}} issue đang mở có cài đặt riêng và bỏ qua mặc định này.",
+    "customized_other": "{{count}} công việc đang mở có cài đặt riêng và bỏ qua mặc định này.",
     "admin_only": "Chỉ chủ sở hữu và quản trị viên mới thay đổi được các mặc định này.",
     "load_error": "Không thể tải mặc định wakeup."
   },
   "quick_actions": {
     "title": "Thao tác nhanh",
-    "description": "Chạy một agent và prompt đặt sẵn từ thanh bên của issue.",
+    "description": "Chạy một agent và prompt đặt sẵn từ thanh bên của công việc.",
     "add": "Thao tác nhanh mới",
     "search_placeholder": "Tìm thao tác nhanh",
     "loading": "Đang tải thao tác nhanh…",
@@ -134,16 +134,16 @@
     "used_count": "Đã dùng {{count}}×",
     "create_title": "Thao tác nhanh mới",
     "edit_title": "Chỉnh sửa thao tác nhanh",
-    "dialog_description": "Chạy dưới dạng một bình luận trên issue, giống như @mention.",
+    "dialog_description": "Chạy dưới dạng một bình luận trên công việc, giống như @mention.",
     "field_name": "Tên",
     "field_name_placeholder": "Code Review",
     "field_target": "Chạy với vai trò",
     "field_prompt": "Prompt",
-    "field_prompt_placeholder": "Review code liên quan tới issue này. Tập trung vào tính đúng đắn và các trường hợp biên.",
-    "prompt_hint": "Gửi nguyên văn. Agent đã nhìn thấy issue.",
-    "template_not_supported": "Biến chưa được hỗ trợ — hãy xóa {{token}}. Agent đã đọc issue này.",
+    "field_prompt_placeholder": "Review code liên quan tới công việc này. Tập trung vào tính đúng đắn và các trường hợp biên.",
+    "prompt_hint": "Gửi nguyên văn. Agent đã nhìn thấy công việc.",
+    "template_not_supported": "Biến chưa được hỗ trợ — hãy xóa {{token}}. Agent đã đọc công việc này.",
     "delete_title": "Xóa thao tác nhanh này?",
-    "delete_description": "Nó sẽ biến mất khỏi mọi thanh bên của issue. Các lượt chạy trước vẫn còn trong nhật ký thực thi. Hãy lưu trữ thay thế nếu bạn có thể muốn dùng lại."
+    "delete_description": "Nó sẽ biến mất khỏi mọi thanh bên của công việc. Các lượt chạy trước vẫn còn trong nhật ký thực thi. Hãy lưu trữ thay thế nếu bạn có thể muốn dùng lại."
   },
   "auto_save": {
     "saving": "Đang lưu…",
@@ -188,7 +188,7 @@
     "comments_title": "Bình luận & trò chuyện",
     "region_title": "Ngôn ngữ & khu vực",
     "appearance_title": "Giao diện",
-    "issue_fields_title": "Các trường hiển thị khi tạo issue",
+    "issue_fields_title": "Các trường hiển thị khi tạo công việc",
     "issue_fields": {
       "field": "Trường",
       "quick": "Tạo bằng agent",
@@ -231,8 +231,8 @@
         "description": "Tìm nội dung hoặc chạy lệnh."
       },
       "createIssue": {
-        "label": "Tạo issue",
-        "description": "Mở quy trình tạo issue ưa thích của bạn."
+        "label": "Tạo công việc",
+        "description": "Mở quy trình tạo công việc ưa thích của bạn."
       },
       "toggleSidebar": {
         "label": "Bật/tắt thanh bên trái",
@@ -247,8 +247,8 @@
         "description": "Mở hoặc đóng cửa sổ trò chuyện nổi. Khi mở, con trỏ sẽ tập trung vào ô nhập tin nhắn."
       },
       "findInIssue": {
-        "label": "Tìm trong issue",
-        "description": "Tìm trong chi tiết issue đang mở."
+        "label": "Tìm trong công việc",
+        "description": "Tìm trong chi tiết công việc đang mở."
       },
       "archiveInboxItem": {
         "label": "Lưu trữ thông báo",
@@ -256,7 +256,7 @@
       },
       "send": {
         "label": "Gửi",
-        "description": "Cũng dùng để gửi issue mới."
+        "description": "Cũng dùng để gửi công việc mới."
       },
       "goBack": {
         "label": "Quay lại",
@@ -275,12 +275,12 @@
         "description": "Mở trò chuyện của không gian làm việc."
       },
       "goMyIssues": {
-        "label": "Đi tới Issue của tôi",
-        "description": "Mở các issue được gán cho bạn."
+        "label": "Đi tới Công việc của tôi",
+        "description": "Mở các công việc được gán cho bạn."
       },
       "goIssues": {
-        "label": "Đi tới Issue",
-        "description": "Mở danh sách issue."
+        "label": "Đi tới Công việc",
+        "description": "Mở danh sách công việc."
       },
       "goProjects": {
         "label": "Đi tới Dự án",
@@ -307,8 +307,8 @@
         "description": "Mở cấu hình runtime."
       },
       "goSkills": {
-        "label": "Đi tới Kỹ năng",
-        "description": "Mở thư viện kỹ năng."
+        "label": "Đi tới Skills",
+        "description": "Mở thư viện skill."
       },
       "goSettings": {
         "label": "Đi tới Cài đặt",
@@ -334,7 +334,7 @@
   },
   "issue": {
     "opening": {
-      "title": "Mở issue",
+      "title": "Mở công việc",
       "click": "Nhấp vào thẻ hoặc hàng sẽ mở",
       "page": "Trang đầy đủ",
       "peek": "Xem trước bên cạnh",
@@ -388,7 +388,7 @@
       "profile": "Hồ sơ",
       "preferences": "Tùy chọn",
       "shortcuts": "Phím tắt",
-      "issue": "Issue",
+      "issue": "Công việc",
       "notifications": "Thông báo",
       "tokens": "Token API",
       "general": "Chung",
@@ -396,7 +396,7 @@
       "labs": "Labs",
       "members": "Thành viên",
       "labels": "Nhãn",
-      "issue_statuses": "Trạng thái issue",
+      "issue_statuses": "Trạng thái công việc",
       "wakeups": "Wakeups",
       "properties": "Thuộc tính",
       "quick_actions": "Thao tác nhanh",
@@ -410,7 +410,7 @@
     "groups": {
       "personal": "Cá nhân",
       "workspace": "Không gian làm việc",
-      "issues": "Issue & quy trình",
+      "issues": "Công việc & quy trình",
       "connections": "Kết nối & tiện ích mở rộng",
       "device": "Thiết bị này"
     },
@@ -473,8 +473,8 @@
       "secret_set": "Đã lưu — nhập giá trị mới để thay thế"
     },
     "scopes": {
-      "issues_read": "Đọc issue",
-      "issues_write": "Tạo và chỉnh sửa issue",
+      "issues_read": "Đọc công việc",
+      "issues_write": "Tạo và chỉnh sửa công việc",
       "comments_read": "Đọc bình luận",
       "comments_write": "Đăng bình luận",
       "tasks_read": "Đọc lượt chạy của agent",
@@ -513,7 +513,7 @@
   },
   "properties": {
     "title": "Thuộc tính",
-    "description": "Thêm trường tùy chỉnh vào issue.",
+    "description": "Thêm trường tùy chỉnh vào công việc.",
     "search_placeholder": "Lọc theo tên...",
     "new_property": "Thuộc tính mới",
     "show_archived": "Hiện đã lưu trữ",
@@ -524,7 +524,7 @@
       "usage": "Được dùng bởi",
       "updated": "Đã cập nhật"
     },
-    "usage_count_other": "{{count}} issue",
+    "usage_count_other": "{{count}} công việc",
     "loading": "Đang tải thuộc tính...",
     "empty": "Chưa có thuộc tính nào",
     "empty_hint": "Ví dụ: Mức độ nghiêm trọng hoặc Môi trường.",
@@ -574,7 +574,7 @@
     },
     "archive_dialog": {
       "title": "Lưu trữ thuộc tính?",
-      "description": "\"{{name}}\" sẽ bị ẩn khỏi bộ chọn và bộ lọc. Giá trị hiện có trên các issue được giữ nguyên. Bạn có thể khôi phục sau.",
+      "description": "\"{{name}}\" sẽ bị ẩn khỏi bộ chọn và bộ lọc. Giá trị hiện có trên các công việc được giữ nguyên. Bạn có thể khôi phục sau.",
       "cancel": "Hủy",
       "confirm": "Lưu trữ thuộc tính",
       "failed": "Không thể lưu trữ thuộc tính"
@@ -582,10 +582,10 @@
   },
   "labels": {
     "title": "Nhãn",
-    "description": "Nhãn issue và nhãn kỹ năng là hai hệ riêng.",
+    "description": "Nhãn công việc và nhãn skill là hai hệ riêng.",
     "scopes": {
-      "issue": "Issue",
-      "skill": "Kỹ năng"
+      "issue": "Công việc",
+      "skill": "Skills"
     },
     "search_placeholder": "Lọc theo tên hoặc mô tả...",
     "new_label": "Nhãn mới",
@@ -642,20 +642,20 @@
   },
   "notifications": {
     "title": "Thông báo hộp thư đến",
-    "description": "Các sự kiện bị tắt tiếng vẫn hiển thị trên issue.",
+    "description": "Các sự kiện bị tắt tiếng vẫn hiển thị trên công việc.",
     "toast_failed": "Không thể cập nhật cài đặt thông báo",
     "groups": {
       "assignments": {
         "label": "Phân công",
-        "description": "Khi bạn được gán vào hoặc bị gỡ khỏi một issue"
+        "description": "Khi bạn được gán vào hoặc bị gỡ khỏi một công việc"
       },
       "status_changes": {
         "label": "Thay đổi trạng thái",
-        "description": "Khi issue bạn theo dõi đổi trạng thái (ví dụ: todo, in progress, done)"
+        "description": "Khi công việc bạn theo dõi đổi trạng thái (ví dụ: todo, in progress, done)"
       },
       "comments": {
         "label": "Bình luận",
-        "description": "Bình luận mới trên các issue bạn theo dõi"
+        "description": "Bình luận mới trên các công việc bạn theo dõi"
       },
       "mentions": {
         "label": "Lượt nhắc",
@@ -663,7 +663,7 @@
       },
       "updates": {
         "label": "Mức ưu tiên & ngày đến hạn",
-        "description": "Khi mức ưu tiên hoặc ngày đến hạn thay đổi trên issue bạn theo dõi"
+        "description": "Khi mức ưu tiên hoặc ngày đến hạn thay đổi trên công việc bạn theo dõi"
       },
       "agent_activity": {
         "label": "Hoạt động của agent",
@@ -741,8 +741,8 @@
     "context_label": "Ngữ cảnh cho agent",
     "context_placeholder": "Thông tin nền và ngữ cảnh cho các agent AI làm việc trong không gian làm việc này",
     "slug_label": "Slug",
-    "issue_prefix_label": "Tiền tố issue",
-    "issue_prefix_hint": "Dùng trong số issue như {{example}}.",
+    "issue_prefix_label": "Tiền tố công việc",
+    "issue_prefix_hint": "Dùng trong số công việc như {{example}}.",
     "save": "Lưu",
     "saving": "Đang lưu...",
     "toast_save_failed": "Không thể lưu cài đặt không gian làm việc",
@@ -768,8 +768,8 @@
     "copy_slug": "Sao chép slug",
     "copy_failed": "Không thể sao chép vào bộ nhớ tạm",
     "change_prefix": "Đổi tiền tố...",
-    "prefix_dialog_title": "Đổi tiền tố issue",
-    "prefix_dialog_description": "Mọi issue được đánh số lại, kể cả issue đã hoàn thành và đã hủy.",
+    "prefix_dialog_title": "Đổi tiền tố công việc",
+    "prefix_dialog_description": "Mọi công việc được đánh số lại, kể cả công việc đã hoàn thành và đã hủy.",
     "prefix_new_label": "Tiền tố mới",
     "prefix_rule": "Chỉ chữ cái và số, tối đa 10 ký tự.",
     "prefix_confirm_action": "Đổi thành {{prefix}}",
@@ -777,7 +777,7 @@
   },
   "delete_workspace_dialog": {
     "title": "Xóa không gian làm việc",
-    "description": "Hành động này không thể hoàn tác. Mọi issue, agent, trò chuyện và lịch sử chạy sẽ bị xóa vĩnh viễn.",
+    "description": "Hành động này không thể hoàn tác. Mọi công việc, agent, trò chuyện và lịch sử chạy sẽ bị xóa vĩnh viễn.",
     "type_to_confirm_prefix": "Để xác nhận, hãy nhập",
     "type_to_confirm_suffix": " vào dưới đây.",
     "cancel": "Hủy",
@@ -809,20 +809,20 @@
     "toast_disconnect_failed": "Không thể ngắt kết nối GitHub App",
     "toast_disconnected": "Đã ngắt kết nối GitHub App",
     "feature_pr_sidebar_label": "Thanh bên Pull Request",
-    "feature_pr_sidebar_description": "Hiện các pull request đã liên kết trong thanh bên của chi tiết issue.",
+    "feature_pr_sidebar_description": "Hiện các pull request đã liên kết trong thanh bên của chi tiết công việc.",
     "feature_co_author_label": "Dòng ghi công Co-authored-by",
     "feature_co_author_description_prefix": "Thêm",
     "feature_co_author_description_suffix": "vào các commit do agent tạo.",
-    "feature_auto_link_label": "Tự động liên kết issue và PR",
+    "feature_auto_link_label": "Tự động liên kết công việc và PR",
     "toast_failed": "Không thể cập nhật cài đặt GitHub",
-    "feature_auto_link_description": "Liên kết một PR tới issue mà ID của nó, ví dụ {{example}}, nằm trong tiêu đề hoặc tên nhánh của PR, hoặc đứng sau “Closes” trong mô tả của nó.",
+    "feature_auto_link_description": "Liên kết một PR tới công việc mà ID của nó, ví dụ {{example}}, nằm trong tiêu đề hoặc tên nhánh của PR, hoặc đứng sau “Closes” trong mô tả của nó.",
     "status_paused": "Đã tạm dừng",
     "pause": "Tạm dừng tính năng GitHub",
     "resume": "Tiếp tục tính năng GitHub"
   },
   "vcs": {
     "section_title": "Git tự host",
-    "page_description": "Kết nối một instance Forgejo, Gitea hoặc GitLab tự host để phản chiếu pull request lên issue. Mỗi kết nối dùng một access token; agent đẩy nhánh và mở PR bằng thông tin xác thực Git của chính runtime.",
+    "page_description": "Kết nối một instance Forgejo, Gitea hoặc GitLab tự host để phản chiếu pull request lên công việc. Mỗi kết nối dùng một access token; agent đẩy nhánh và mở PR bằng thông tin xác thực Git của chính runtime.",
     "connect_title": "Kết nối một instance nhà cung cấp",
     "connected_as": "Đã kết nối với tư cách {{login}}",
     "form_provider_label": "Nhà cung cấp",
@@ -845,7 +845,7 @@
     "copied": "Đã sao chép vào bộ nhớ tạm",
     "copy_failed": "Không thể sao chép",
     "disconnect_confirm_title": "Ngắt kết nối nhà cung cấp này?",
-    "disconnect_confirm_description": "Các pull request đã phản chiếu và liên kết issue của kết nối này sẽ bị gỡ. Hành động này không thể hoàn tác.",
+    "disconnect_confirm_description": "Các pull request đã phản chiếu và liên kết công việc của kết nối này sẽ bị gỡ. Hành động này không thể hoàn tác.",
     "disconnect_confirm_cancel": "Hủy",
     "disconnect_confirm_action": "Ngắt kết nối",
     "toast_connect_failed": "Không thể kết nối tới nhà cung cấp",
@@ -865,7 +865,7 @@
   },
   "lark": {
     "section_title": "Lark",
-    "page_description": "Trò chuyện với agent trong Lark hoặc dùng /issue để tạo issue.",
+    "page_description": "Trò chuyện với agent trong Lark hoặc dùng /issue để tạo một công việc.",
     "not_enabled_title": "Tích hợp Lark chưa được bật",
     "not_enabled_description_prefix": "Đặt",
     "not_enabled_description_suffix": "trên máy chủ để bật cài đặt Lark Bot.",
@@ -969,7 +969,7 @@
   },
   "slack": {
     "section_title": "Slack",
-    "page_description": "Trò chuyện với agent trong Slack hoặc dùng /issue để tạo issue.",
+    "page_description": "Trò chuyện với agent trong Slack hoặc dùng /issue để tạo một công việc.",
     "not_enabled_title": "Tích hợp Slack chưa được bật",
     "not_enabled_description_prefix": "Đặt",
     "not_enabled_description_suffix": "trên máy chủ để bật cài đặt bot Slack.",
@@ -1012,8 +1012,8 @@
   },
   "dingtalk": {
     "section_title": "DingTalk",
-    "page_description": "Trò chuyện với agent trong DingTalk hoặc dùng /issue để tạo issue.",
-    "agent_page_description": "Trò chuyện với agent này trong DingTalk hoặc dùng /issue để tạo issue.",
+    "page_description": "Trò chuyện với agent trong DingTalk hoặc dùng /issue để tạo một công việc.",
+    "agent_page_description": "Trò chuyện với agent này trong DingTalk hoặc dùng /issue để tạo một công việc.",
     "groups_title": "Nhóm gần đây",
     "groups_description": "Một nhóm xuất hiện sau khi một thành viên của không gian làm việc liên kết tài khoản DingTalk của họ và @nhắc bot này ở đó. Mặc định hiển thị các nhóm hoạt động trong 90 ngày qua.",
     "groups_loading": "Đang tải nhóm…",
@@ -1075,7 +1075,7 @@
   },
   "wecom": {
     "section_title": "WeCom",
-    "page_description": "Trò chuyện với agent trong WeCom hoặc tạo issue bằng /issue. Không cần URL callback công khai.",
+    "page_description": "Trò chuyện với agent trong WeCom hoặc tạo công việc bằng /issue. Không cần URL callback công khai.",
     "not_enabled_title": "Tích hợp WeCom chưa được bật",
     "not_enabled_description_prefix": "Đặt",
     "not_enabled_description_suffix": "trên máy chủ để bật cài đặt bot thông minh WeCom.",
@@ -1125,7 +1125,7 @@
   },
   "telegram": {
     "section_title": "Telegram",
-    "page_description": "Trò chuyện với agent trong Telegram hoặc dùng /issue để tạo issue.",
+    "page_description": "Trò chuyện với agent trong Telegram hoặc dùng /issue để tạo một công việc.",
     "not_enabled_title": "Tích hợp Telegram chưa được bật",
     "not_enabled_description_prefix": "Đặt",
     "not_enabled_description_suffix": "trên máy chủ để bật cài đặt bot Telegram.",
@@ -1344,7 +1344,7 @@
       },
       "member": {
         "label": "Thành viên",
-        "description": "Tạo và làm việc trên issue"
+        "description": "Tạo và làm việc trên công việc"
       }
     },
     "share_links_create_title": "Tạo liên kết chia sẻ",
@@ -1390,8 +1390,8 @@
     "status_unknown": "Không rõ trạng thái"
   },
   "pr_merge_status": {
-    "label": "Sau khi PR được merge, chuyển issue tới",
-    "description": "Áp dụng khi mọi PR liên kết với một issue đã merge, và chỉ với các lượt merge từ nay trở đi.",
+    "label": "Sau khi PR được merge, chuyển công việc tới",
+    "description": "Áp dụng khi mọi PR liên kết với một công việc đã merge, và chỉ với các lượt merge từ nay trở đi.",
     "none": "Không thay đổi"
   },
   "layout": {
@@ -1411,7 +1411,7 @@
   },
   "code": {
     "hosting_title": "Lưu trữ code",
-    "pr_linking_title": "Pull request & issue",
+    "pr_linking_title": "Pull request & công việc",
     "github_actions": "Thao tác GitHub"
   },
   "channels": {
