@@ -3690,3 +3690,14 @@ export const RuntimeProfileSchema = z
     runtime_type: profile.runtime_type || profile.protocol_family,
   }));
 export const RuntimeProfileListSchema = z.array(RuntimeProfileSchema);
+
+// Pins are metadata; unknown item types must not be treated as issue pins.
+export const PinnedItemListSchema = z.array(z.object({
+  id: z.string(),
+  workspace_id: z.string(),
+  user_id: z.string(),
+  item_type: z.enum(["issue", "project", "view"]),
+  item_id: z.string(),
+  position: z.number(),
+  created_at: z.string(),
+}));

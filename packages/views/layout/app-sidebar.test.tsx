@@ -35,7 +35,7 @@ const { appForeground, chatSessions, chatStore, detail, deletePin, invitationApi
         id: "pin-1",
         workspace_id: "ws-1",
         user_id: "user-1",
-        item_type: "issue" as const,
+        item_type: "issue" as "issue" | "project",
         item_id: "issue-1",
         position: 0,
         created_at: "2026-05-06T00:00:00Z",
@@ -200,7 +200,7 @@ vi.mock("@tanstack/react-query", async (importOriginal) => ({
   },
   useQuery: ({ queryKey }: { queryKey: readonly unknown[] }) => {
     if (queryKey[0] === "pins") return { data: pins.current };
-    if (queryKey[0] === "issue") return detail.current;
+    if (queryKey[0] === "issue" || queryKey[0] === "project") return detail.current;
     if (queryKey[0] === "inbox" && queryKey[1] === "unread-summary") return { data: summary.current };
     if (queryKey[0] === "workspaces") return { data: workspaces.current };
     if (queryKey[0] === "chat" && queryKey[2] === "sessions") return { data: chatSessions.current };
@@ -218,10 +218,36 @@ describe("PinRow", () => {
     workspaces.current = [];
   });
 
-  it("unpins missing details", async () => {
-    detail.current = { isPending: false, isError: true, data: null, error: new ApiError("missing", 404, "Not Found") };
-    render(<AppSidebar />);
-    await waitFor(() => expect(deletePin).toHaveBeenCalledTimes(1));
+  it.each(["issue", "project"] as const)("retains a %s pin across a stale 404 and recovery", async (itemType) => {
+    const originalPins = pins.current;
+    pins.current = [{ ...originalPins[0]!, item_type: itemType }];
+    try {
+      detail.current = { isPending: false, isError: true, data: null, error: new ApiError("missing", 404, "Not Found") };
+      const { rerender } = render(<AppSidebar />);
+      expect(deletePin).not.toHaveBeenCalled();
+      detail.current = {
+        isPending: false, isError: false, error: null,
+        data: { identifier: "MUL-123", title: "Recovered pin", name: "Recovered pin", status: "todo" },
+      };
+      rerender(<AppSidebar />);
+      expect(await screen.findByText("Recovered pin")).toBeInTheDocument();
+      expect(deletePin).not.toHaveBeenCalled();
+    } finally {
+      pins.current = originalPins;
+    }
+  });
+
+  it("does not render pins belonging to another workspace", () => {
+    const originalPins = pins.current;
+    pins.current = [{ ...originalPins[0]!, workspace_id: "ws-2" }];
+    detail.current = { isPending: false, isError: false, data: { identifier: "OTHER-1", title: "Other workspace pin", status: "todo" }, error: null };
+    try {
+      render(<AppSidebar />);
+      expect(screen.queryByText("Other workspace pin")).not.toBeInTheDocument();
+      expect(deletePin).not.toHaveBeenCalled();
+    } finally {
+      pins.current = originalPins;
+    }
   });
 
   it("ignores non-404 errors", async () => {
