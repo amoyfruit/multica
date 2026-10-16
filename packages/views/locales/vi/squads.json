@@ -25,7 +25,7 @@
   },
   "archive_dialog": {
     "title": "Lưu trữ squad này?",
-    "description": "\"{{name}}\" sẽ được lưu trữ. Các issue hiện đang giao cho squad này sẽ được chuyển cho trưởng nhóm của nó. Hành động này không thể hoàn tác — hãy tạo squad mới nếu bạn cần khôi phục việc điều phối.",
+    "description": "\"{{name}}\" sẽ được lưu trữ. Các công việc hiện đang giao cho squad này sẽ được chuyển cho trưởng nhóm của nó. Hành động này không thể hoàn tác — hãy tạo squad mới nếu bạn cần khôi phục việc điều phối.",
     "cancel": "Hủy",
     "confirm": "Lưu trữ",
     "archiving": "Đang lưu trữ…",
@@ -86,7 +86,7 @@
     "status_unstable": "Không ổn định",
     "status_archived": "Đã lưu trữ",
     "issue_status_blocked": "bị chặn",
-    "active_issue_more": "và {{count}} issue nữa",
+    "active_issue_more": "và {{count}} công việc nữa",
     "last_active_label": "hoạt động lần cuối {{time}}"
   },
   "detail_tabs": {
@@ -121,7 +121,7 @@
     "more_members_other": "+{{count}} nữa"
   },
   "instructions_tab": {
-    "description": "Trưởng nhóm đọc các hướng dẫn này mỗi khi làm việc trên một issue được giao cho squad này.",
+    "description": "Trưởng nhóm đọc các hướng dẫn này mỗi khi làm việc trên một công việc được giao cho squad này.",
     "unsaved_changes": "Thay đổi chưa lưu",
     "save_button": "Lưu",
     "placeholder": "ví dụ: Luôn bắt đầu bằng cách viết một test đang lỗi. Ưu tiên các commit nhỏ, độc lập."

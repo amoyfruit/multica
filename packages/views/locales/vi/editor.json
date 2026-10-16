@@ -28,9 +28,9 @@
       "task_list": "Danh sách việc"
     },
     "sub_issue": {
-      "tooltip": "Tạo issue con từ vùng chọn",
+      "tooltip": "Tạo công việc con từ vùng chọn",
       "created": "Đã tạo {{identifier}}",
-      "create_failed": "Không tạo được issue con"
+      "create_failed": "Không tạo được công việc con"
     }
   },
   "image": {
@@ -97,7 +97,7 @@
   },
   "mention": {
     "group_users": "Người dùng",
-    "group_issues": "Issue",
+    "group_issues": "Công việc",
     "all_members": "Tất cả thành viên",
     "agent_badge": "Agent",
     "squad_badge": "Squad",
@@ -109,8 +109,8 @@
     "group_cancelled": "Đã hủy"
   },
   "slash_command": {
-    "no_skills_configured": "Chưa cấu hình kỹ năng nào",
-    "no_results": "Không có kỹ năng phù hợp",
+    "no_skills_configured": "Chưa cấu hình skill nào",
+    "no_results": "Không có skill phù hợp",
     "commands": {
       "note": "Thêm ghi chú — sẽ không kích hoạt agent nào"
     }

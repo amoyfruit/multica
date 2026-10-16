@@ -78,7 +78,7 @@
     "quick_create_failed": "Tạo bằng agent thất bại",
     "quick_create_unconfirmed": "Tạo bằng agent chưa được xác nhận",
     "autopilot_paused": "Autopilot đã tạm dừng",
-    "children_done": "Các issue con đã hoàn thành",
+    "children_done": "Các công việc con đã hoàn thành",
     "autopilot_quota_exceeded": "Đã đạt giới hạn số lần chạy autopilot"
   },
   "labels": {
@@ -94,7 +94,7 @@
     "created_with_agent": "Đã tạo bằng agent: {{identifier}}",
     "failed_with_detail": "Thất bại: {{detail}}",
     "autopilot_quota_blocked": "Lần chạy bị chặn vì đã đạt giới hạn",
-    "children_done_stage": "Các issue con của giai đoạn {{stage}} đã hoàn thành"
+    "children_done_stage": "Các công việc con của giai đoạn {{stage}} đã hoàn thành"
   },
   "toasts": {
     "source_context_retry_started": "Đã bắt đầu thử lại với ngữ cảnh gốc",
