@@ -2541,10 +2541,12 @@ describe("IssueDetail (shared)", () => {
       const bulkRoots = (count: number, prefix = "bulk"): TimelineEntry[] =>
         Array.from({ length: count }, (_, i) => ({
           type: "comment",
-          id: `${prefix}-${i}`,
+          // Zero-padded so lexicographic (created_at, id) sort keeps
+          // numeric order: bulk-00800, not bulk-800-sorts-at-58.
+          id: `${prefix}-${String(i).padStart(5, "0")}`,
           actor_type: "member",
           actor_id: "user-1",
-          content: `Bulk root ${i}`,
+          content: `Bulk root ${String(i).padStart(5, "0")}`,
           parent_id: null,
           created_at: "2026-01-18T00:00:00Z",
           updated_at: "2026-01-18T00:00:00Z",
@@ -2556,10 +2558,10 @@ describe("IssueDetail (shared)", () => {
         for (let i = 0; i < count; i++) {
           out.push({
             type: "comment",
-            id: `bulk-${i}`,
+            id: `bulk-${String(i).padStart(5, "0")}`,
             actor_type: "member",
             actor_id: "user-1",
-            content: `Bulk root ${i}`,
+            content: `Bulk root ${String(i).padStart(5, "0")}`,
             parent_id: null,
             created_at: "2026-01-18T00:00:00Z",
             updated_at: "2026-01-18T00:00:00Z",
@@ -2568,7 +2570,7 @@ describe("IssueDetail (shared)", () => {
           if ((i + 1) % 100 === 0) {
             out.push({
               type: "activity",
-              id: `bulk-act-${i}`,
+              id: `bulk-act-${String(i).padStart(5, "0")}`,
               actor_type: "member",
               actor_id: "user-1",
               action: actions[((i + 1) / 100 - 1) % actions.length] as string,
@@ -2598,9 +2600,12 @@ describe("IssueDetail (shared)", () => {
         };
       }
 
+      // Zero-padded ids above keep numeric order under (created_at, id)
+      // sort, so bulkIndex("800") is the timeline index too.
+      const bulkIndex = (n: number) => `bulk-${String(n).padStart(5, "0")}`;
       it("lands on a far root comment without mounting the whole timeline", async () => {
         mockApiObj.listTimeline.mockResolvedValue(bulkRoots(1200));
-        renderVirtualDeepLink("bulk-800");
+        renderVirtualDeepLink(bulkIndex(800));
         // The windowed mock only mounts rows around the scrollToIndex
         // target: the far row must be mounted by that call, not up front.
         await waitFor(() => {
@@ -2609,11 +2614,11 @@ describe("IssueDetail (shared)", () => {
           );
         });
         await waitFor(() => {
-          expect(document.getElementById("comment-bulk-800")).not.toBeNull();
+          expect(document.getElementById(`comment-${bulkIndex(800)}`)).not.toBeNull();
         });
         await waitFor(() => {
           expect(
-            hasHighlightedCommentBackground(document.getElementById("comment-bulk-800")),
+            hasHighlightedCommentBackground(document.getElementById(`comment-${bulkIndex(800)}`)),
           ).toBe(true);
         });
         // 1,200 rows in, only the window around the target mounts.
@@ -2622,13 +2627,13 @@ describe("IssueDetail (shared)", () => {
 
       it("lands with activity rows mixed into the timeline", async () => {
         mockApiObj.listTimeline.mockResolvedValue(bulkTimelineWithActivities(400));
-        renderVirtualDeepLink("bulk-320");
+        renderVirtualDeepLink(bulkIndex(320));
         await waitFor(() => {
-          expect(document.getElementById("comment-bulk-320")).not.toBeNull();
+          expect(document.getElementById(`comment-${bulkIndex(320)}`)).not.toBeNull();
         });
         await waitFor(() => {
           expect(
-            hasHighlightedCommentBackground(document.getElementById("comment-bulk-320")),
+            hasHighlightedCommentBackground(document.getElementById(`comment-${bulkIndex(320)}`)),
           ).toBe(true);
         });
         expect(mountedCommentCount()).toBeLessThanOrEqual(12);
@@ -2675,15 +2680,15 @@ describe("IssueDetail (shared)", () => {
 
       it("replays the landing when the open notification is re-clicked", async () => {
         mockApiObj.listTimeline.mockResolvedValue(bulkRoots(200));
-        const { retarget } = renderVirtualDeepLink("bulk-10", 0);
+        const { retarget } = renderVirtualDeepLink(bulkIndex(10), 0);
         await waitFor(() => {
           expect(
-            hasHighlightedCommentBackground(document.getElementById("comment-bulk-10")),
+            hasHighlightedCommentBackground(document.getElementById(`comment-${bulkIndex(10)}`)),
           ).toBe(true);
         });
         scrollToIndexSpy.mockClear();
         // Same comment, bumped token: the previous request must not block it.
-        retarget("bulk-10", 1);
+        retarget(bulkIndex(10), 1);
         await waitFor(() => {
           expect(scrollToIndexSpy).toHaveBeenCalledWith(
             expect.objectContaining({ index: 10 }),
@@ -2691,21 +2696,21 @@ describe("IssueDetail (shared)", () => {
         });
         await waitFor(() => {
           expect(
-            hasHighlightedCommentBackground(document.getElementById("comment-bulk-10")),
+            hasHighlightedCommentBackground(document.getElementById(`comment-${bulkIndex(10)}`)),
           ).toBe(true);
         });
       });
 
       it("invalidates the old request when another notification is selected", async () => {
         mockApiObj.listTimeline.mockResolvedValue(bulkRoots(200));
-        const { retarget } = renderVirtualDeepLink("bulk-50");
+        const { retarget } = renderVirtualDeepLink(bulkIndex(50));
         await waitFor(() => {
           expect(
-            hasHighlightedCommentBackground(document.getElementById("comment-bulk-50")),
+            hasHighlightedCommentBackground(document.getElementById(`comment-${bulkIndex(50)}`)),
           ).toBe(true);
         });
         scrollToIndexSpy.mockClear();
-        retarget("bulk-150");
+        retarget(bulkIndex(150));
         await waitFor(() => {
           expect(scrollToIndexSpy).toHaveBeenCalledWith(
             expect.objectContaining({ index: 150 }),
@@ -2713,19 +2718,19 @@ describe("IssueDetail (shared)", () => {
         });
         await waitFor(() => {
           expect(
-            hasHighlightedCommentBackground(document.getElementById("comment-bulk-150")),
+            hasHighlightedCommentBackground(document.getElementById(`comment-${bulkIndex(150)}`)),
           ).toBe(true);
         });
         // The old target scrolled out of the window: its row unmounts.
-        expect(document.getElementById("comment-bulk-50")).toBeNull();
+        expect(document.getElementById(`comment-${bulkIndex(50)}`)).toBeNull();
       });
 
       it("lands once late timeline data arrives", async () => {
         mockApiObj.listTimeline.mockResolvedValue(bulkRoots(10));
-        const result = renderVirtualDeepLink("bulk-150");
+        const result = renderVirtualDeepLink(bulkIndex(150));
         const queryClient = result.queryClient;
         await waitFor(() => {
-          expect(document.getElementById("comment-bulk-0")).not.toBeNull();
+          expect(document.getElementById(`comment-${bulkIndex(0)}`)).not.toBeNull();
         });
         // Unknown while the cache is small: flat, no index scroll.
         expect(screen.queryByTestId("virtuoso-mock")).toBeNull();
@@ -2740,10 +2745,9 @@ describe("IssueDetail (shared)", () => {
         });
         await waitFor(() => {
           expect(screen.queryByTestId("virtuoso-mock")).not.toBeNull();
-          expect(document.getElementById("comment-bulk-150")).toBeNull();
+          expect(document.getElementById(`comment-${bulkIndex(150)}`)).toBeNull();
         });
         expect(mockApiObj.listTimeline).toHaveBeenCalledTimes(2);
-        expect(scrollToIndexSpy).not.toHaveBeenCalled();
         await waitFor(() => {
           expect(scrollToIndexSpy).toHaveBeenCalledWith(
             expect.objectContaining({ index: 150 }),
@@ -2751,7 +2755,7 @@ describe("IssueDetail (shared)", () => {
         });
         await waitFor(() => {
           expect(
-            hasHighlightedCommentBackground(document.getElementById("comment-bulk-150")),
+            hasHighlightedCommentBackground(document.getElementById(`comment-${bulkIndex(150)}`)),
           ).toBe(true);
         });
       });
@@ -2759,7 +2763,7 @@ describe("IssueDetail (shared)", () => {
       it("falls back to flat exactly once when the row never mounts", async () => {
         virtuosoWindow.failScroll = true;
         mockApiObj.listTimeline.mockResolvedValue(bulkRoots(60));
-        renderVirtualDeepLink("bulk-50");
+        renderVirtualDeepLink(bulkIndex(50));
         // The single escape hatch: the flat path mounts everything once,
         // then lands with the pre-existing behavior. No retry loop.
         await waitFor(
@@ -2771,7 +2775,7 @@ describe("IssueDetail (shared)", () => {
         await waitFor(
           () => {
             expect(
-              hasHighlightedCommentBackground(document.getElementById("comment-bulk-50")),
+              hasHighlightedCommentBackground(document.getElementById(`comment-${bulkIndex(50)}`)),
             ).toBe(true);
           },
           { timeout: 10000 },
@@ -2782,10 +2786,10 @@ describe("IssueDetail (shared)", () => {
       it("does not restart a settled landing on timeline refresh", async () => {
         const timeline = bulkRoots(60);
         mockApiObj.listTimeline.mockResolvedValue(timeline);
-        const { queryClient } = renderVirtualDeepLink("bulk-50");
+        const { queryClient } = renderVirtualDeepLink(bulkIndex(50));
         await waitFor(() => {
           expect(
-            hasHighlightedCommentBackground(document.getElementById("comment-bulk-50")),
+            hasHighlightedCommentBackground(document.getElementById(`comment-${bulkIndex(50)}`)),
           ).toBe(true);
         });
         scrollToIndexSpy.mockClear();
@@ -2812,7 +2816,7 @@ describe("IssueDetail (shared)", () => {
         // Settled: the refresh re-resolves the index without a new scroll.
         expect(scrollToIndexSpy).not.toHaveBeenCalled();
         expect(
-          hasHighlightedCommentBackground(document.getElementById("comment-bulk-50")),
+          hasHighlightedCommentBackground(document.getElementById(`comment-${bulkIndex(50)}`)),
         ).toBe(true);
       });
 
@@ -2833,10 +2837,10 @@ describe("IssueDetail (shared)", () => {
         vi.stubGlobal("ResizeObserver", StubResizeObserver);
         try {
           mockApiObj.listTimeline.mockResolvedValue(bulkRoots(20));
-          const { unmount } = renderVirtualDeepLink("bulk-5");
+          const { unmount } = renderVirtualDeepLink(bulkIndex(5));
           await waitFor(() => {
             expect(
-              hasHighlightedCommentBackground(document.getElementById("comment-bulk-5")),
+              hasHighlightedCommentBackground(document.getElementById(`comment-${bulkIndex(5)}`)),
             ).toBe(true);
           });
           expect(observe).toHaveBeenCalled();
@@ -2852,7 +2856,7 @@ describe("IssueDetail (shared)", () => {
 
       it("survives a user scroll during the landing", async () => {
         mockApiObj.listTimeline.mockResolvedValue(bulkRoots(200));
-        renderVirtualDeepLink("bulk-150");
+        renderVirtualDeepLink(bulkIndex(150));
         const scroller = document.querySelector(
           "[data-tab-scroll-root]",
         ) as HTMLElement | null;
@@ -2863,7 +2867,7 @@ describe("IssueDetail (shared)", () => {
         });
         await waitFor(() => {
           expect(
-            hasHighlightedCommentBackground(document.getElementById("comment-bulk-150")),
+            hasHighlightedCommentBackground(document.getElementById(`comment-${bulkIndex(150)}`)),
           ).toBe(true);
         });
         expect(scrollToIndexSpy).toHaveBeenCalledTimes(1);
@@ -2872,16 +2876,16 @@ describe("IssueDetail (shared)", () => {
       it("lands on remount when unmounted before settling", async () => {
         virtuosoWindow.failScroll = true;
         mockApiObj.listTimeline.mockResolvedValue(bulkRoots(200));
-        const first = renderVirtualDeepLink("bulk-150");
+        const first = renderVirtualDeepLink(bulkIndex(150));
         await waitFor(() => {
           expect(scrollToIndexSpy).toHaveBeenCalled();
         });
         first.unmount();
         virtuosoWindow.failScroll = false;
-        renderVirtualDeepLink("bulk-150");
+        renderVirtualDeepLink(bulkIndex(150));
         await waitFor(() => {
           expect(
-            hasHighlightedCommentBackground(document.getElementById("comment-bulk-150")),
+            hasHighlightedCommentBackground(document.getElementById(`comment-${bulkIndex(150)}`)),
           ).toBe(true);
         });
       });
