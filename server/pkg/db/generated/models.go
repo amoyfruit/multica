@@ -867,6 +867,14 @@ type IssueDependency struct {
 	Type             string      `json:"type"`
 }
 
+type IssueKeyAlias struct {
+	SourceWorkspaceID pgtype.UUID        `json:"source_workspace_id"`
+	Prefix            string             `json:"prefix"`
+	Number            int32              `json:"number"`
+	IssueID           pgtype.UUID        `json:"issue_id"`
+	MovedAt           pgtype.Timestamptz `json:"moved_at"`
+}
+
 type IssueLabel struct {
 	ID           pgtype.UUID        `json:"id"`
 	WorkspaceID  pgtype.UUID        `json:"workspace_id"`
@@ -1333,6 +1341,16 @@ type Project struct {
 	Priority    string             `json:"priority"`
 	StartDate   pgtype.Date        `json:"start_date"`
 	DueDate     pgtype.Date        `json:"due_date"`
+}
+
+type ProjectMove struct {
+	ID                pgtype.UUID        `json:"id"`
+	ProjectID         pgtype.UUID        `json:"project_id"`
+	SourceWorkspaceID pgtype.UUID        `json:"source_workspace_id"`
+	TargetWorkspaceID pgtype.UUID        `json:"target_workspace_id"`
+	MovedBy           pgtype.UUID        `json:"moved_by"`
+	MovedAt           pgtype.Timestamptz `json:"moved_at"`
+	Summary           []byte             `json:"summary"`
 }
 
 type ProjectResource struct {
