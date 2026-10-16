@@ -2734,8 +2734,8 @@ describe("IssueDetail (shared)", () => {
         // write): the query refetches it, the timeline updates, and the
         // virtual landing starts from the new index.
         mockApiObj.listTimeline.mockResolvedValue(bulkRoots(200));
-        act(() => {
-          queryClient.invalidateQueries({ queryKey: issueKeys.timeline("issue-1") });
+        await act(async () => {
+          await queryClient.invalidateQueries({ queryKey: issueKeys.timeline("issue-1") });
         });
         await waitFor(() => {
           expect(scrollToIndexSpy).toHaveBeenCalledWith(
@@ -2796,8 +2796,8 @@ describe("IssueDetail (shared)", () => {
         // A timeline refresh that moves the target's index: the settled
         // landing re-resolves without a new scroll.
         mockApiObj.listTimeline.mockResolvedValue([newer, ...timeline]);
-        act(() => {
-          queryClient.invalidateQueries({ queryKey: issueKeys.timeline("issue-1") });
+        await act(async () => {
+          await queryClient.invalidateQueries({ queryKey: issueKeys.timeline("issue-1") });
         });
         await waitFor(() => {
           expect(document.getElementById("comment-bulk-new")).not.toBeNull();
