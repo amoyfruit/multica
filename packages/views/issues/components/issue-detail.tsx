@@ -2195,6 +2195,9 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
       return;
     }
     virtualRequestSeenRef.current = requestKey;
+    // A new request owns the highlight: clear the previous request's flash
+    // so two landings never share it (retarget, late data, re-click).
+    setHighlightedId(highlightCommentId);
     // Tab-switch restore wins over a fresh jump for an already-consumed id.
     // Inbox re-click clears the memento and bumps the token (new request
     // key), so only a genuinely new request reaches past this gate.
