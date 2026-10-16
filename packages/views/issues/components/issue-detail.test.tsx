@@ -2602,14 +2602,14 @@ describe("IssueDetail (shared)", () => {
       // sort, so bulkIndex("800") is the timeline index too.
       const bulkIndex = (n: number) => `bulk-${String(n).padStart(5, "0")}`;
       // Windowed mock mounts first/last rows plus target±1: 2 head + 2
-      // tail + 3 around the target. CommentCard bodies render through
-      // ReadonlyContent wrappers, so count rows by anchor id, not nodes.
-      const mountedRowCount = () =>
-        new Set(
-          Array.from(document.querySelectorAll('[id^="comment-"]')).map(
-            (el) => (el as HTMLElement).id,
-          ),
-        ).size;
+      // tail + 3 around the target, plus one highlight anchor per mounted
+      // card body. Count top-level timeline anchors via the scroll
+      // container's direct Virtuoso children instead of every id node.
+      const mountedRowCount = () => {
+        const mock = document.querySelector('[data-testid="virtuoso-mock"]');
+        if (!mock) return document.querySelectorAll('[id^="comment-"]').length;
+        return mock.childElementCount;
+      };
       it("lands on a far root comment without mounting the whole timeline", async () => {
         mockApiObj.listTimeline.mockResolvedValue(bulkRoots(1200));
         renderVirtualDeepLink(bulkIndex(800));
