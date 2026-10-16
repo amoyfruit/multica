@@ -1971,7 +1971,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
       virtuosoRef.current?.scrollToIndex({ index, align: "start", offset: -16 });
       flashJumpTarget(threadId);
     },
-    [isFlatTimeline, highlightCommentId, items, jumpToComment, flashJumpTarget],
+    [isFlatTimeline, items, jumpToComment, flashJumpTarget],
   );
   // Minimap jump to a reply. A reply's anchor exists only while its thread is
   // open, so first undo whatever hides it — the reader's own collapse, a root
@@ -2207,7 +2207,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
     }
     let settled = false;
     let rafId = 0;
-    let timeoutId: number | undefined;
+    let timeoutId = 0;
     let observer: ResizeObserver | null = null;
     let userScrolled = false;
     let frames = 0;
@@ -2215,7 +2215,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
     const elId = `comment-${highlightCommentId}`;
     const cleanup = () => {
       cancelAnimationFrame(rafId);
-      if (timeoutId !== undefined) window.clearTimeout(timeoutId);
+      window.clearTimeout(timeoutId);
       observer?.disconnect();
       container.removeEventListener("wheel", markUserScroll);
       container.removeEventListener("touchmove", markUserScroll);
