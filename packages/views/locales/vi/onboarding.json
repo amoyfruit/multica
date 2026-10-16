@@ -139,7 +139,7 @@
     "skip": {
       "loading": "Đang thiết lập không gian làm việc của bạn…",
       "title": "Chào mừng đến với Multica!",
-      "subtitle": "Chúng tôi đã thêm một issue để giúp bạn kết nối runtime. Khi sẵn sàng, hãy bắt đầu với Mika từ trang Runtimes.",
+      "subtitle": "Chúng tôi đã thêm một công việc để giúp bạn kết nối runtime. Khi sẵn sàng, hãy bắt đầu với Mika từ trang Runtimes.",
       "got_it": "Đã hiểu",
       "status_in_progress": "Đang tiến hành",
       "error_title": "Không thiết lập được",
@@ -159,17 +159,17 @@
     "eyebrow_resume": "Tiếp tục hoặc bắt đầu mới",
     "headline_first": "Đặt tên cho không gian làm việc của bạn.",
     "headline_resume": "Tiếp tục với {{name}}, hoặc bắt đầu một cái khác.",
-    "lede_first": "Không gian làm việc là nơi chứa các issue, agent và dự án của bạn. Bạn có thể mời đồng đội hoặc tạo thêm không gian làm việc sau.",
+    "lede_first": "Không gian làm việc là nơi chứa các công việc, agent và dự án của bạn. Bạn có thể mời đồng đội hoặc tạo thêm không gian làm việc sau.",
     "lede_resume": "Tiếp tục thiết lập với không gian làm việc bạn đã có, hoặc tạo một cái mới bên cạnh — bạn có thể thuộc về bao nhiêu không gian làm việc cũng được.",
     "name_label": "Tên không gian làm việc",
     "name_placeholder": "Acme Inc, My Lab, Side Projects…",
     "random_name": "Ngẫu nhiên",
     "url_label": "URL",
     "slug_placeholder": "acme",
-    "issue_prefix_label": "Tiền tố issue",
-    "issue_prefix_prefix": "Issue sẽ trông như ",
+    "issue_prefix_label": "Tiền tố công việc",
+    "issue_prefix_prefix": "Công việc sẽ trông như ",
     "issue_prefix_suffix": ". Bạn có thể thay đổi sau trong phần cài đặt.",
-    "issue_prefix_pending": "Đặt URL ở trên và số issue sẽ đi theo URL đó — hoặc nhập tiền tố tại đây.",
+    "issue_prefix_pending": "Đặt URL ở trên và số công việc sẽ đi theo URL đó — hoặc nhập tiền tố tại đây.",
     "create_new_title": "Tạo không gian làm việc mới",
     "hint_opening": "Đang mở {{name}}.",
     "hint_creating": "Đang tạo {{name}}.",
@@ -259,6 +259,6 @@
     "headline": "Gặp gỡ Mika, đồng đội agent đầu tiên của bạn.",
     "name": "Mika",
     "role": "Chánh văn phòng",
-    "blurb": "Hãy nói với Mika việc bạn muốn làm. Nó sẽ trở thành một issue, với đúng agent phụ trách."
+    "blurb": "Hãy nói với Mika việc bạn muốn làm. Nó sẽ trở thành một công việc, với đúng agent phụ trách."
   }
 }

@@ -60,7 +60,7 @@
       "runtime_access_denied": "Agent này không thể chạy trên runtime riêng tư của nó nên không thể trả lời. Hãy đặt runtime ở chế độ công khai, hoặc gắn lại/sao chép agent sang một runtime mà chủ sở hữu của nó có thể dùng.",
       "runtime_recovery": "Agent đã khởi động lại trước khi có thể hoàn thành. Hãy thử lại.",
       "manual": "Câu trả lời này đã bị hủy.",
-      "skill_bundle_unavailable": "Không tải được các kỹ năng của agent nên nó chưa bao giờ bắt đầu. Đây thường là sự cố kết nối — hãy thử lại.",
+      "skill_bundle_unavailable": "Không tải được các skill của agent nên nó chưa bao giờ bắt đầu. Đây thường là sự cố kết nối — hãy thử lại.",
       "runtime_cli_timeout": "OpenClaw CLI trên máy không phản hồi kịp thời nên lần chạy này chưa bao giờ bắt đầu. Đây là lỗi quá thời gian khởi động cục bộ, không phải sự cố mạng — thử lại cũng không ích gì cho đến khi CLI nhanh hơn hoặc thời gian chờ được tăng lên (MULTICA_OPENCLAW_CLI_TIMEOUT).",
       "environment_prepare_failed": "Máy chạy agent không thể thiết lập lần chạy này nên nó chưa bao giờ bắt đầu. Lỗi bên dưới cho biết điều gì đã thất bại tại đó — thường là dung lượng đĩa, quyền truy cập, một thư mục đang được sử dụng, hoặc một cấu hình cục bộ không đọc được. Đây không phải lỗi của agent hay nhà cung cấp model.",
       "provider_network": "Kết nối tới nhà cung cấp model đã bị ngắt trước khi câu trả lời hoàn thành. Hãy kiểm tra mạng của bạn và thử lại.",
@@ -142,7 +142,7 @@
   "empty_state": {
     "first_time_title": "Trò chuyện với các agent của bạn",
     "first_time_intro": "✨ Chúng hiểu không gian làm việc của bạn —",
-    "first_time_pillars": "issue, dự án, kỹ năng",
+    "first_time_pillars": "công việc, dự án, skill",
     "first_time_pillars_suffix": ".",
     "first_time_actions": "Yêu cầu một bản tóm tắt, lên kế hoạch cho ngày của bạn, hoặc giao một việc nhanh.",
     "returning_title_named": "Xin chào, tôi là {{name}}",
@@ -157,8 +157,8 @@
       "prompt": "Bạn giỏi nhất trong việc giúp đỡ điều gì? Hãy cho tôi một cái nhìn tổng quan ngắn gọn."
     },
     "first_task": {
-      "label": "Gợi ý một issue đầu tiên",
-      "prompt": "Hãy gợi ý ba issue hữu ích mà tôi có thể giao cho bạn."
+      "label": "Gợi ý một công việc đầu tiên",
+      "prompt": "Hãy gợi ý ba công việc hữu ích mà tôi có thể giao cho bạn."
     },
     "recommend": {
       "label": "Đề xuất một hành động",
@@ -173,12 +173,12 @@
     "cta": "Bắt đầu",
     "board": {
       "title": "Dựng một bảng công việc trong vài phút",
-      "desc": "Hãy nói cho tôi mục tiêu — tôi sẽ tạo dự án, chia nhỏ các issue và đặt mức ưu tiên.",
+      "desc": "Hãy nói cho tôi mục tiêu — tôi sẽ tạo dự án, chia nhỏ các công việc và đặt mức ưu tiên.",
       "prompt": "Biến các mục tiêu hiện tại của chúng ta thành một bảng dự án"
     },
     "delegate": {
       "title": "Hãy giao cho tôi một việc trước",
-      "desc": "Chẳng hạn một nghiên cứu nhanh — kết quả sẽ trở lại dưới dạng một issue và một báo cáo.",
+      "desc": "Chẳng hạn một nghiên cứu nhanh — kết quả sẽ trở lại dưới dạng một công việc và một báo cáo.",
       "prompt": "Hãy đỡ cho tôi một việc: thực hiện một nghiên cứu nhanh và gửi kết quả về dưới dạng báo cáo"
     },
     "digest": {

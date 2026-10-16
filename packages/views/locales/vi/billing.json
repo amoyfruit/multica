@@ -169,7 +169,7 @@
     },
     "limits": {
       "title": "Mức sử dụng và giới hạn",
-      "issues": "Issue",
+      "issues": "Công việc",
       "autopilots": "Lượt chạy automation",
       "unlimited": "Không giới hạn",
       "per_month": "{{count}} / tháng",

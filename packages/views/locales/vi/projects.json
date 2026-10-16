@@ -25,7 +25,7 @@
     "progress": "Tiến độ",
     "lead": "Phụ trách",
     "created": "Ngày tạo",
-    "issues": "Issue"
+    "issues": "Công việc"
   },
   "status": {
     "planned": "Đã lên kế hoạch",
@@ -73,13 +73,13 @@
     "no_due_date": "Không có ngày đến hạn",
     "description_placeholder": "Thêm mô tả...",
     "description_hint": "Được chia sẻ với agent làm ngữ cảnh cho mọi lần chạy trong dự án này.",
-    "empty_issues_title": "Chưa liên kết issue nào",
-    "empty_issues_hint": "Bạn cũng có thể thêm các issue hiện có vào dự án này.",
-    "empty_issues_new_button": "Issue mới",
-    "no_issues_yet": "Chưa có issue nào",
+    "empty_issues_title": "Chưa liên kết công việc nào",
+    "empty_issues_hint": "Bạn cũng có thể thêm các công việc hiện có vào dự án này.",
+    "empty_issues_new_button": "Công việc mới",
+    "no_issues_yet": "Chưa có công việc nào",
     "toast_link_copied": "Đã sao chép liên kết",
     "toast_project_deleted": "Đã xóa dự án",
-    "toast_move_issue_failed": "Không di chuyển được issue"
+    "toast_move_issue_failed": "Không di chuyển được công việc"
   },
   "resources": {
     "section_header": "Tài nguyên",
@@ -153,7 +153,7 @@
   },
   "delete_dialog": {
     "title": "Xóa dự án",
-    "description": "Thao tác này sẽ xóa dự án. Các issue sẽ không bị xóa nhưng sẽ bị gỡ liên kết.",
+    "description": "Thao tác này sẽ xóa dự án. Các công việc sẽ không bị xóa nhưng sẽ bị gỡ liên kết.",
     "confirm": "Xóa",
     "cancel": "Hủy"
   },

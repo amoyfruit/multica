@@ -8,16 +8,16 @@
   },
   "create_workspace": {
     "title": "Tạo không gian làm việc mới",
-    "description": "Không gian làm việc là môi trường dùng chung, nơi các nhóm cùng làm việc trên dự án và issue."
+    "description": "Không gian làm việc là môi trường dùng chung, nơi các nhóm cùng làm việc trên dự án và công việc."
   },
   "delete_issue": {
-    "title": "Xóa issue",
-    "description": "Thao tác này sẽ xóa vĩnh viễn issue này cùng toàn bộ bình luận của nó. Hành động này không thể hoàn tác.",
+    "title": "Xóa công việc",
+    "description": "Thao tác này sẽ xóa vĩnh viễn công việc này cùng toàn bộ bình luận của nó. Hành động này không thể hoàn tác.",
     "cancel": "Hủy",
     "confirm": "Xóa",
     "deleting": "Đang xóa...",
-    "toast_deleted": "Đã xóa issue",
-    "toast_delete_failed": "Không xóa được issue"
+    "toast_deleted": "Đã xóa công việc",
+    "toast_delete_failed": "Không xóa được công việc"
   },
   "feedback": {
     "title": "Phản hồi",
@@ -32,31 +32,31 @@
     "github_hint_link": "GitHub"
   },
   "issue_picker": {
-    "search_placeholder": "Tìm kiếm issue...",
+    "search_placeholder": "Tìm kiếm công việc...",
     "searching": "Đang tìm kiếm...",
-    "no_results": "Không tìm thấy issue nào.",
-    "prompt_to_search": "Nhập để tìm kiếm issue",
+    "no_results": "Không tìm thấy công việc nào.",
+    "prompt_to_search": "Nhập để tìm kiếm công việc",
     "suggested_similar": "Tiêu đề tương tự",
     "suggested_recent": "Đã xem gần đây"
   },
   "set_parent": {
-    "title": "Đặt issue cha",
-    "description": "Tìm kiếm một issue để đặt làm issue cha của issue này",
-    "toast_failed": "Không cập nhật được issue",
-    "toast_success": "Đã đặt {{identifier}} làm issue cha"
+    "title": "Đặt công việc cha",
+    "description": "Tìm kiếm một công việc để đặt làm công việc cha của công việc này",
+    "toast_failed": "Không cập nhật được công việc",
+    "toast_success": "Đã đặt {{identifier}} làm công việc cha"
   },
   "add_child": {
-    "title": "Thêm issue con",
-    "description": "Tìm kiếm một issue để thêm làm issue con",
-    "toast_failed": "Không thêm được issue con",
-    "toast_success": "Đã thêm {{identifier}} làm issue con"
+    "title": "Thêm công việc con",
+    "description": "Tìm kiếm một công việc để thêm làm công việc con",
+    "toast_failed": "Không thêm được công việc con",
+    "toast_success": "Đã thêm {{identifier}} làm công việc con"
   },
   "run_confirm": {
     "title_assign": "Xác nhận giao việc?",
-    "assign_single": "Giao issue này cho {{name}}. Họ sẽ bắt đầu ngay nếu đáp ứng điều kiện chạy.",
-    "assign_batch": "Giao {{count}} issue cho {{name}}. Họ sẽ bắt đầu ngay nếu đáp ứng điều kiện chạy.",
+    "assign_single": "Giao công việc này cho {{name}}. Họ sẽ bắt đầu ngay nếu đáp ứng điều kiện chạy.",
+    "assign_batch": "Giao {{count}} công việc cho {{name}}. Họ sẽ bắt đầu ngay nếu đáp ứng điều kiện chạy.",
     "title_promote": "Bắt đầu làm việc ngay?",
-    "promote_single": "Chuyển issue này sang {{status}}. {{name}} sẽ bắt đầu ngay nếu đáp ứng điều kiện chạy.",
+    "promote_single": "Chuyển công việc này sang {{status}}. {{name}} sẽ bắt đầu ngay nếu đáp ứng điều kiện chạy.",
     "confirm_assign": "Xác nhận giao việc",
     "confirm_promote": "Chuyển và bắt đầu",
     "dont_start": "Chưa bắt đầu",
@@ -73,11 +73,11 @@
     "description_label": "Mô tả",
     "description_placeholder": "Mô tả trách nhiệm của squad này...",
     "leader_label": "Agent trưởng nhóm",
-    "leader_hint": "Trưởng nhóm nhận mọi issue được giao cho squad này và điều phối nhóm.",
+    "leader_hint": "Trưởng nhóm nhận mọi công việc được giao cho squad này và điều phối nhóm.",
     "leader_placeholder": "Chọn agent trưởng nhóm",
     "members_label": "Thành viên bổ sung",
     "members_optional": "(không bắt buộc)",
-    "members_hint": "Trưởng nhóm có thể giao issue con cho các thành viên này.",
+    "members_hint": "Trưởng nhóm có thể giao công việc con cho các thành viên này.",
     "members_placeholder": "Thêm agent hoặc thành viên không gian làm việc",
     "members_selected_count_other": "{{count}} đã chọn",
     "members_more_count": "+{{count}}",
@@ -141,30 +141,30 @@
     "repos_ref_default": "Nhánh mặc định"
   },
   "create_issue": {
-    "sr_manual": "Issue mới",
-    "sr_agent": "Tạo issue nhanh",
+    "sr_manual": "Công việc mới",
+    "sr_agent": "Tạo công việc nhanh",
     "manual_breadcrumb": "Tạo thủ công",
     "agent_breadcrumb": "Tạo bằng agent",
-    "title_placeholder": "Tiêu đề issue",
+    "title_placeholder": "Tiêu đề công việc",
     "description_placeholder": "Thêm mô tả...",
     "more_options_aria": "Thêm tùy chọn",
     "title_required": "Nhập tiêu đề để tạo",
-    "submit": "Tạo issue",
+    "submit": "Tạo công việc",
     "submitting": "Đang tạo...",
-    "toast_created": "Đã tạo issue",
-    "view_issue": "Xem issue",
-    "toast_failed": "Không tạo được issue",
-    "toast_duplicate_title": "Issue trùng lặp",
-    "toast_duplicate_view": "Xem issue hiện có",
+    "toast_created": "Đã tạo công việc",
+    "view_issue": "Xem công việc",
+    "toast_failed": "Không tạo được công việc",
+    "toast_duplicate_title": "Công việc trùng lặp",
+    "toast_duplicate_view": "Xem công việc hiện có",
     "issue_limit": {
-      "title": "Không gian làm việc này đã đạt giới hạn issue",
+      "title": "Không gian làm việc này đã đạt giới hạn công việc",
       "checking_description": "Đang kiểm tra các thao tác thanh toán khả dụng cho không gian làm việc này…",
-      "upgrade_description": "Nâng cấp lên Pro để tiếp tục tạo issue.",
-      "portal_description": "Mở Cổng thanh toán để quản lý gói đăng ký của không gian làm việc này và khôi phục việc tạo issue.",
+      "upgrade_description": "Nâng cấp lên Pro để tiếp tục tạo công việc.",
+      "portal_description": "Mở Cổng thanh toán để quản lý gói đăng ký của không gian làm việc này và khôi phục việc tạo công việc.",
       "contact_description": "Hãy nhờ chủ sở hữu hoặc quản trị viên của không gian làm việc nâng cấp lên Pro.",
       "billing_description": "Mở Thanh toán để xem các lựa chọn nâng cấp khả dụng cho không gian làm việc này.",
       "billing_unavailable_description": "Không tải được các thao tác thanh toán. Mở Thanh toán để thử lại.",
-      "billing_disabled_description": "Xóa một issue hiện có để giải phóng dung lượng, hoặc liên hệ quản trị viên không gian làm việc của bạn.",
+      "billing_disabled_description": "Xóa một công việc hiện có để giải phóng dung lượng, hoặc liên hệ quản trị viên không gian làm việc của bạn.",
       "upgrade_action": "Nâng cấp lên Pro",
       "portal_action": "Mở Cổng thanh toán",
       "billing_action": "Xem Thanh toán"
@@ -182,25 +182,25 @@
       "portal_action": "Mở Cổng thanh toán",
       "billing_action": "Xem Thanh toán"
     },
-    "toast_link_subissues_all_failed": "Không liên kết được các issue con",
-    "toast_link_subissues_partial": "Không liên kết được {{failed}} trong số {{total}} issue con",
+    "toast_link_subissues_all_failed": "Không liên kết được các công việc con",
+    "toast_link_subissues_partial": "Không liên kết được {{failed}} trong số {{total}} công việc con",
     "toast_link_labels_failed": "Không đính kèm được nhãn",
     "toast_set_properties_failed": "Không đặt được {{count}} giá trị thuộc tính tùy chỉnh",
     "unavailable_property_removed": "Một thuộc tính tùy chỉnh không còn khả dụng đã bị loại khỏi bản nháp. Hãy xem lại trước khi gửi lại.",
     "switch_to_agent": "Chuyển sang Agent",
-    "switch_to_agent_tooltip": "Chuyển sang tạo bằng agent — mô tả trong một dòng và để agent tạo issue",
+    "switch_to_agent_tooltip": "Chuyển sang tạo bằng agent — mô tả trong một dòng và để agent tạo công việc",
     "switch_to_manual": "Chuyển sang Thủ công",
     "switch_to_manual_tooltip": "Chuyển sang tạo thủ công — tự điền các trường",
     "create_another": "Tạo thêm",
-    "remove_parent_aria": "Loại bỏ issue cha",
-    "remove_subissue_aria": "Loại bỏ issue con {{identifier}}",
-    "subissue_of": "Issue con của {{identifier}}",
-    "subissue_chip": "Issue con: {{identifier}}",
+    "remove_parent_aria": "Loại bỏ công việc cha",
+    "remove_subissue_aria": "Loại bỏ công việc con {{identifier}}",
+    "subissue_of": "Công việc con của {{identifier}}",
+    "subissue_chip": "Công việc con: {{identifier}}",
     "parent_with_id": "Cha: {{identifier}}",
     "set_due_date": "Đặt ngày đến hạn...",
     "set_start_date": "Đặt ngày bắt đầu...",
-    "set_parent": "Đặt issue cha...",
-    "add_subissue": "Thêm issue con...",
+    "set_parent": "Đặt công việc cha...",
+    "add_subissue": "Thêm công việc con...",
     "set_status": "Đặt trạng thái...",
     "set_priority": "Đặt mức ưu tiên...",
     "set_assignee": "Đặt người được giao...",
@@ -208,14 +208,14 @@
     "set_project": "Đặt dự án...",
     "customize_fields": "Tùy chỉnh trường...",
     "custom_properties": "Thuộc tính tùy chỉnh",
-    "remove_parent": "Loại bỏ issue cha",
+    "remove_parent": "Loại bỏ công việc cha",
     "set_parent_picker": {
-      "title": "Đặt issue cha",
-      "description": "Tìm kiếm một issue để đặt làm issue cha của issue mới"
+      "title": "Đặt công việc cha",
+      "description": "Tìm kiếm một công việc để đặt làm công việc cha của công việc mới"
     },
     "add_subissue_picker": {
-      "title": "Thêm issue con",
-      "description": "Tìm kiếm một issue để thêm làm issue con của issue mới"
+      "title": "Thêm công việc con",
+      "description": "Tìm kiếm một công việc để thêm làm công việc con của công việc mới"
     },
     "agent": {
       "created_by": "Được tạo bởi",
@@ -228,7 +228,7 @@
       "version_missing": "Daemon của agent này không báo cáo phiên bản CLI. Tạo bằng agent cần multica CLI ≥ {{min}}. Hãy nâng cấp daemon và kết nối lại, hoặc chuyển sang tạo thủ công.",
       "version_below": "CLI của daemon của agent này là {{current}} — Tạo bằng agent cần ≥ {{min}}. Hãy nâng cấp daemon, hoặc chuyển sang tạo thủ công.",
       "prompt_placeholder": "Cho agent biết việc cần làm, ví dụ: \"nhờ Bohan sửa lỗi tải hộp thư đến chậm trong dự án Web\"",
-      "source_context_prompt_placeholder": "Cho agent biết cần làm gì với ngữ cảnh này, ví dụ: \"tiếp tục điều tra và sửa issue được mô tả ở đây\"",
+      "source_context_prompt_placeholder": "Cho agent biết cần làm gì với ngữ cảnh này, ví dụ: \"tiếp tục điều tra và sửa công việc được mô tả ở đây\"",
       "more_fields_aria": "Thêm trường",
       "set_project": "Đặt dự án...",
       "set_priority": "Đặt mức ưu tiên...",
@@ -244,15 +244,15 @@
       "error_agent_unavailable_fallback": "Agent không khả dụng. Hãy chọn agent khác.",
       "error_daemon_version": "CLI của daemon của agent này ({{current}}) thấp hơn mức yêu cầu {{min}}. Hãy nâng cấp daemon để dùng Tạo bằng agent.",
       "error_unknown": "Không gửi được. Hãy thử lại.",
-      "sub_issue_of": "Issue con của {{identifier}}"
+      "sub_issue_of": "Công việc con của {{identifier}}"
     }
   },
   "mark_duplicate": {
     "title": "Đánh dấu trùng lặp",
-    "description": "Tìm kiếm issue gốc. Issue này sẽ bị hủy và liên kết tới issue đó.",
+    "description": "Tìm kiếm công việc gốc. Công việc này sẽ bị hủy và liên kết tới công việc đó.",
     "toast_success": "Đã đánh dấu trùng lặp với {{identifier}}",
     "toast_failed": "Không đánh dấu trùng lặp được",
-    "error_target_is_duplicate": "{{identifier}} tự nó cũng là bản trùng lặp. Hãy chọn issue gốc của nó.",
-    "error_has_duplicates": "Có các issue khác đang được đánh dấu trùng lặp với issue này. Hãy gỡ các đánh dấu đó trước."
+    "error_target_is_duplicate": "{{identifier}} tự nó cũng là bản trùng lặp. Hãy chọn công việc gốc của nó.",
+    "error_has_duplicates": "Có các công việc khác đang được đánh dấu trùng lặp với công việc này. Hãy gỡ các đánh dấu đó trước."
   }
 }
