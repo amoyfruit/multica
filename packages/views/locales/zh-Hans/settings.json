@@ -384,7 +384,6 @@
     "test_choose_runtime": "选择你的运行时",
     "test_ok": "在 {{runtime}} 上测试成功 · {{detail}}",
     "test_fail": "在 {{runtime}} 上测试失败：{{detail}}",
-    "test_tool_count_one": "{{count}} 个工具",
     "test_tool_count_other": "{{count}} 个工具",
     "test_failed_toast": "无法测试连接"
   },

@@ -10,22 +10,12 @@ import { RESOURCES } from "./index";
 const AGENT_KEYS = Object.keys(enAgents.tab_body.mcp_config) as Array<
   keyof typeof enAgents.tab_body.mcp_config
 >;
-const SETTINGS_KEYS = Object.keys(enSettings.mcp) as Array<
+const SETTINGS_KEYS = (Object.keys(enSettings.mcp) as Array<
   keyof typeof enSettings.mcp
->;
-
-function isPluralSuffixKey(
-  key: string,
-): key is `${string}_one` | `${string}_other` {
-  return key.endsWith("_one") || key.endsWith("_other");
-}
-
-function expandTokens(template: string, params: Record<string, string>) {
-  return template.replace(
-    /\{\{(\w+)\}\}/g,
-    (_, token: string) => params[token] ?? "",
-  );
-}
+>).filter(
+  (key): key is Exclude<keyof typeof enSettings.mcp, `${string}_one` | `${string}_other`> =>
+    !key.endsWith("_one") && !key.endsWith("_other"),
+);
 
 describe("MCP locale contracts", () => {
   it.each(SUPPORTED_LOCALES)(
@@ -47,18 +37,8 @@ describe("MCP locale contracts", () => {
           namespace: "settings",
           key: `mcp.${key}`,
           source: enSettings.mcp[key],
-          resolve: (params: Record<string, string>) => {
-            // Plural entries stay as `*_one` / `*_other` in the bundle. The
-            // selector type folds those into the base key, so expand the
-            // stored string instead of going through `t`.
-            if (isPluralSuffixKey(key)) {
-              const template = i18n.getResource(locale, "settings", `mcp.${key}`);
-              return typeof template === "string"
-                ? expandTokens(template, params)
-                : "";
-            }
-            return i18n.t(($) => $.mcp[key], { ns: "settings", ...params });
-          },
+          resolve: (params: Record<string, string>) =>
+            i18n.t(($) => $.mcp[key], { ns: "settings", ...params }),
         })),
       ];
       for (const { namespace, key, source, resolve } of messages) {
@@ -81,6 +61,21 @@ describe("MCP locale contracts", () => {
         for (const token of tokens) {
           expect(resolved, context).toContain(`test-${token}`);
         }
+      }
+    },
+  );
+
+  it.each(SUPPORTED_LOCALES)(
+    "resolves MCP tool counts using the locale's plural rules in %s",
+    (locale) => {
+      const i18n = createI18n(locale, RESOURCES);
+      for (const count of [0, 1, 2]) {
+        const category = new Intl.PluralRules(locale).select(count);
+        expect(i18n.getResource(locale, "settings", `mcp.test_tool_count_${category}`)).toBeTypeOf("string");
+        const resolved = i18n.t(($) => $.mcp.test_tool_count, { ns: "settings", count });
+        expect(resolved).toContain(String(count));
+        expect(resolved).not.toContain("{{");
+        expect(resolved).not.toContain("mcp.test_tool_count");
       }
     },
   );

@@ -384,7 +384,6 @@
     "test_choose_runtime": "내 런타임 선택",
     "test_ok": "{{runtime}}에서 성공 · {{detail}}",
     "test_fail": "{{runtime}}에서 실패: {{detail}}",
-    "test_tool_count_one": "도구 {{count}}개",
     "test_tool_count_other": "도구 {{count}}개",
     "test_failed_toast": "연결을 테스트하지 못했습니다"
   },

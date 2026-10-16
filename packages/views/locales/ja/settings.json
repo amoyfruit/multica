@@ -384,7 +384,6 @@
     "test_choose_runtime": "自分のランタイムを選択",
     "test_ok": "{{runtime}} で成功 · {{detail}}",
     "test_fail": "{{runtime}} で失敗: {{detail}}",
-    "test_tool_count_one": "ツール {{count}} 個",
     "test_tool_count_other": "ツール {{count}} 個",
     "test_failed_toast": "接続をテストできませんでした"
   },
