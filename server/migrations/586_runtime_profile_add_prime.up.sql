@@ -12,7 +12,7 @@
 -- versions out of order (see internal/migrations.AllVersions), so a prefix
 -- below 441 would run *after* codearts on any database that already applied
 -- it, and this rewritten CHECK would silently revoke the codearts family.
--- 576 is above every version currently on main.  440, 441, 444, 446, 451,
+-- 586 is above every version currently on main.  440, 441, 444, 446, 451,
 -- 457, 468, 491, 500, 535, 545, 548 and 567 were each free when this migration
 -- was renumbered onto them, and each was then taken: 440 by
 -- 440_github_pr_head_sha_index (#7695), 441 by
@@ -27,14 +27,13 @@
 -- 535_github_pr_address_index (#8636), 545 by
 -- 545_pr_auto_complete (#8758), which also added 546 and 547, 548 by
 -- 548_task_supplement_comment_task_index (#8760), and 567 by
--- 567_channel_typing_reaction_retry_idx (#8656).  main (804646324) still
--- reaches 572: 564 is 564_issue_property_list_types (#8559), and 565-572 are
--- the channel typing cleanup from #8656.  The sync through 804646324 added no
--- migration prefixes.  Open PR #8679 (feat/provider-plan-usage, 46dd7793c)
--- reserves 573-575, so 576 stays the next free prefix.  None of 442-575 is a
--- family migration (501 adds the runtime_type column but leaves this
--- constraint alone), so 441 remains this migration's predecessor in the chain
--- and the family list below is unchanged from the previous prefix.
+-- 567_channel_typing_reaction_retry_idx (#8656).  main at v0.6.3 reaches 582
+-- (issue workflow; 580 is unused), which took 573-579 and 581-582, including
+-- 576_issue_workflow_workspace_name_index.  Open PR #8679
+-- (feat/provider-plan-usage) reserves 583-585, so this migration is 586.
+-- None of 442-585 is a family migration (501 adds the runtime_type column
+-- but leaves this constraint alone), so 441 remains this migration's
+-- predecessor in the chain and the family list below is unchanged.
 ALTER TABLE runtime_profile DROP CONSTRAINT IF EXISTS runtime_profile_protocol_family_check;
 
 ALTER TABLE runtime_profile ADD CONSTRAINT runtime_profile_protocol_family_check
