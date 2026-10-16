@@ -1847,6 +1847,11 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
     rootDeepLinkIdx >= 0 &&
     deepLinkRequestKey !== null &&
     flatFallbackKey !== deepLinkRequestKey;
+  // The flat landing below consumes token bumps via lastHighlightRequestTokenRef.
+  // A late-arriving timeline can flip an unknown id into a virtual target on
+  // the SAME token: the virtual effect must still treat it as a new request
+  // even though the flat pass already synced the token ref.
+  const virtualRequestSeenRef = useRef<string | null>(null);
   // When the timeline renders flat (non-root deep-link, unknown target, or
   // in-page find), there is no Virtuoso instance — minimap jumps drive the
   // scroll container directly. A root-comment deep link keeps Virtuoso
@@ -2179,8 +2184,17 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
     const container = scrollContainerEl;
     if (!container) return;
     // A completed landing for this exact request survives timeline refreshes:
-    // re-resolving the index above is enough, no new scroll.
-    if (didHighlightRef.current === highlightCommentId) return;
+    // re-resolving the index above is enough, no new scroll. The seen-key
+    // check keeps the flat pass from eating a late virtual request: the flat
+    // effect syncs the token ref below, but this is still the request's
+    // first virtual run.
+    if (
+      didHighlightRef.current === highlightCommentId &&
+      virtualRequestSeenRef.current === requestKey
+    ) {
+      return;
+    }
+    virtualRequestSeenRef.current = requestKey;
     // Tab-switch restore wins over a fresh jump for an already-consumed id.
     // Inbox re-click clears the memento and bumps the token (new request
     // key), so only a genuinely new request reaches past this gate.
