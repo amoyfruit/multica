@@ -1,5 +1,6 @@
--- Table is 573. Concurrent indexes are 574 and 575. Upstream main owns
--- through 572 (channel typing abandoned index). Sibling PR #6641 takes 576.
+-- Table is 583. Concurrent indexes are 584 and 585. Upstream main owns
+-- through 582 (issue workflow default index; 580 is unused). Sibling PR
+-- #6641 takes 586.
 -- Derived plan-limit snapshots reported by a local daemon. Tokens, cookies,
 -- and auth.json contents are not columns on purpose: the daemon uploads
 -- only provider, window, percent, reset, plan, and collected_at.

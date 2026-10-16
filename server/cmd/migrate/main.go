@@ -150,6 +150,9 @@ var concurrentIndexCleanups = map[string]string{
 	"546_issue_pr_automation_workspace_index":                   "idx_issue_pr_automation_workspace",
 	"547_issue_pull_request_exclusion_workspace_index":          "idx_issue_pull_request_exclusion_workspace",
 	"548_task_supplement_comment_task_index":                    "task_supplement_comment_task_uidx",
+	"574_issue_workflow_pkey_index":                             "issue_workflow_pkey_uidx",
+	"576_issue_workflow_workspace_name_index":                   "idx_issue_workflow_workspace_name",
+	"582_issue_workflow_default_index":                          "idx_issue_workflow_workspace_default",
 	"554_wakeup_expiry_index":                                   "issue_wakeup_expiry_idx",
 	"556_wakeup_system_rule_index":                              "issue_wakeup_system_rule_idx",
 	"559_issue_child_event_id":                                  "issue_child_event_id_idx",
@@ -354,8 +357,8 @@ var concurrentIndexCleanups = map[string]string{
 	"482_agent_task_queue_telemetry_started_index":              "idx_agent_task_queue_telemetry_started",
 	"484_issue_triage_state_index":                              "idx_issue_triage_state",
 	"537_issue_duplicate_of_index":                              "idx_issue_duplicate_of",
-	"574_runtime_provider_usage_snapshot_key":                   "idx_runtime_provider_usage_snapshot_key",
-	"575_runtime_provider_usage_snapshot_workspace":             "idx_runtime_provider_usage_snapshot_workspace",
+	"584_runtime_provider_usage_snapshot_key":                   "idx_runtime_provider_usage_snapshot_key",
+	"585_runtime_provider_usage_snapshot_workspace":             "idx_runtime_provider_usage_snapshot_workspace",
 }
 
 // concurrentDownIndexCleanups covers every migration whose down direction
