@@ -2738,6 +2738,9 @@ describe("IssueDetail (shared)", () => {
         await act(async () => {
           await queryClient.refetchQueries({ queryKey: issueKeys.timeline("issue-1") });
         });
+        await waitFor(() => {
+          expect(screen.queryByTestId("virtuoso-mock")).not.toBeNull();
+        });
         expect(mockApiObj.listTimeline).toHaveBeenCalledTimes(2);
         await waitFor(() => {
           expect(scrollToIndexSpy).toHaveBeenCalledWith(
