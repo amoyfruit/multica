@@ -86,3 +86,23 @@ func TestRedisMcpProbeStore_TimeoutRemovesPendingJob(t *testing.T) {
 		t.Fatalf("pending=%v error=%v", pending, err)
 	}
 }
+
+func TestRedisMcpProbeStore_WithoutMultiPermission(t *testing.T) {
+	rdb := newRedisTestClientWithoutMulti(t)
+	ctx := context.Background()
+	store := NewRedisMcpProbeStore(rdb)
+	created, err := store.Create(ctx, McpProbeCreate{RuntimeID: "rt"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.PopPending(ctx, "rt"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Complete(ctx, created.ID, []string{"search"}, 42); err != nil {
+		t.Fatal(err)
+	}
+	result, err := store.Get(ctx, created.ID)
+	if err != nil || result.Status != McpProbeCompleted {
+		t.Fatalf("result=%+v error=%v", result, err)
+	}
+}

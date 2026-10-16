@@ -53,40 +53,50 @@ func (s *RedisMcpProbeStore) unmarshalRequest(raw []byte) (*McpProbeRequest, err
 	return env.Public, nil
 }
 
+var mcpProbeUpdateScript = redis.NewScript(`
+if redis.call('GET', KEYS[1]) ~= ARGV[1] then
+  return 0
+end
+redis.call('SET', KEYS[1], ARGV[2], 'EX', ARGV[3])
+if ARGV[4] == '1' then
+  redis.call('ZREM', KEYS[2], ARGV[5])
+end
+return 1
+`)
+
 func (s *RedisMcpProbeStore) updateRequest(ctx context.Context, id string, update func(*McpProbeRequest) bool) (*McpProbeRequest, error) {
 	for attempt := 0; attempt < mcpProbeRedisPopMaxRetries; attempt++ {
-		var result *McpProbeRequest
-		err := s.rdb.Watch(ctx, func(tx *redis.Tx) error {
-			raw, err := tx.Get(ctx, mcpProbeKey(id)).Bytes()
-			if errors.Is(err, redis.Nil) {
-				return nil
-			}
-			if err != nil {
-				return err
-			}
-			result, err = s.unmarshalRequest(raw)
-			if err != nil || !update(result) {
-				return err
-			}
-			data, err := s.marshalRequest(result)
-			if err != nil {
-				return err
-			}
-			_, err = tx.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
-				pipe.Set(ctx, mcpProbeKey(id), data, mcpProbeStoreRetention)
-				if mcpProbeRequestTerminal(result.Status) {
-					pipe.ZRem(ctx, mcpProbePendingKey(result.RuntimeID), id)
-				}
-				return nil
-			})
-			return err
-		}, mcpProbeKey(id))
-		if errors.Is(err, redis.TxFailedErr) {
-			continue
+		raw, err := s.rdb.Get(ctx, mcpProbeKey(id)).Bytes()
+		if errors.Is(err, redis.Nil) {
+			return nil, nil
 		}
-		return result, err
+		if err != nil {
+			return nil, err
+		}
+		result, err := s.unmarshalRequest(raw)
+		if err != nil || !update(result) {
+			return result, err
+		}
+		data, err := s.marshalRequest(result)
+		if err != nil {
+			return nil, err
+		}
+		terminal := 0
+		if mcpProbeRequestTerminal(result.Status) {
+			terminal = 1
+		}
+		updated, err := mcpProbeUpdateScript.Run(ctx, s.rdb,
+			[]string{mcpProbeKey(id), mcpProbePendingKey(result.RuntimeID)},
+			raw, data, int(mcpProbeStoreRetention.Seconds()), terminal, id,
+		).Int64()
+		if err != nil {
+			return nil, err
+		}
+		if updated == 1 {
+			return result, nil
+		}
 	}
-	return nil, redis.TxFailedErr
+	return nil, errors.New("MCP probe changed during update")
 }
 
 func (s *RedisMcpProbeStore) loadRequest(ctx context.Context, id string) (*McpProbeRequest, error) {
