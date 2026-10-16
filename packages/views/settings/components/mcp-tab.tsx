@@ -121,9 +121,10 @@ export function McpTab() {
   );
   const [probeRuntimeId, setProbeRuntimeId] = useState("");
   const [probingId, setProbingId] = useState<string | null>(null);
-  const [probeResults, setProbeResults] = useState<
-    Record<string, { result: WorkspaceMcpProbeRequest; configVersion: string }>
-  >({});
+  const [probeTarget, setProbeTarget] = useState<{
+    serverId: string;
+    configVersion: string;
+  } | null>(null);
   const selectedRuntimeId =
     ownedOnline.length === 1
       ? ownedOnline[0]?.id ?? ""
@@ -233,22 +234,11 @@ export function McpTab() {
     if (probingId || selectedRuntimeId === "") return;
     setProbingId(server.id);
     try {
-      const result = await probeServer.mutateAsync({
+      setProbeTarget({ serverId: server.id, configVersion: server.updated_at });
+      await probeServer.mutateAsync({
         serverId: server.id,
-        runtimeId: selectedRuntimeId || undefined,
+        runtimeId: selectedRuntimeId,
       });
-      const runtime = ownedOnline.find(
-        (runtime) => runtime.id === result.runtime_id,
-      );
-      setProbeResults((current) => ({
-        ...current,
-        [server.id]: {
-          result: runtime
-            ? { ...result, runtime_name: runtimeDisplayLabel(runtime) }
-            : result,
-          configVersion: server.updated_at,
-        },
-      }));
     } catch (error) {
       toast.error(
         error instanceof Error && error.message
@@ -344,97 +334,103 @@ export function McpTab() {
             </div>
           ) : (
             <ul className="divide-y divide-surface-border">
-              {servers.map((server) => (
-                <McpServerRow
-                  key={server.name}
-                  name={server.name}
-                  transport={server.transport}
-                  meta={mcpRowMeta(
-                    t,
-                    server.agent_count,
-                    probeResults[server.id]?.configVersion === server.updated_at
-                      ? probeResults[server.id]?.result
-                      : undefined,
-                  )}
-                  details={
-                    probeResults[server.id]?.configVersion === server.updated_at
-                      ? <ProbeDetails result={probeResults[server.id]!.result} />
-                      : undefined
-                  }
-                  extraAction={
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      aria-busy={probingId === server.id}
-                      disabled={
-                        probingId !== null ||
-                        renamePending ||
-                        ownedOnline.length === 0 ||
-                        (ownedOnline.length > 1 && selectedRuntimeId === "")
-                      }
-                      aria-label={`${t(($) => $.mcp.test_connection)} ${server.name}`}
-                      title={
-                        runtimesQuery.isFetched && ownedOnline.length === 0
-                          ? t(($) => $.mcp.test_no_runtime)
-                          : undefined
-                      }
-                      onClick={() => void handleProbe(server)}
-                    >
-                      {probingId === server.id ? (
-                        <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" />
-                      ) : (
-                        <Unplug className="h-4 w-4" />
-                      )}
-                      {t(($) => $.mcp.test_connection)}
-                    </Button>
-                  }
-                  status={
-                    server.enabled === false ? (
-                      <Badge variant="secondary">
-                        {t(($) => $.mcp.disabled_badge)}
-                      </Badge>
-                    ) : undefined
-                  }
-                  canManage={canManage}
-                  actionsDisabled={renamePending || probingId !== null}
-                  rename={
-                    renamingServer?.id === server.id
-                      ? {
-                          draft: renameDraft,
-                          error: renameError,
-                          pending: renamePending,
-                          onChange: (value) => {
-                            setRenameDraft(value);
-                            setRenameError("");
-                          },
-                          onCancel: cancelRename,
-                          onSubmit: () => void handleRename(),
+              {servers.map((server) => {
+                const result =
+                  probeTarget?.serverId === server.id &&
+                  probeTarget.configVersion === server.updated_at &&
+                  probingId === null
+                    ? probeServer.data
+                    : undefined;
+                const runtime = ownedOnline.find(
+                  (runtime) => runtime.id === result?.runtime_id,
+                );
+                return (
+                  <McpServerRow
+                    key={server.name}
+                    name={server.name}
+                    transport={server.transport}
+                    meta={mcpRowMeta(
+                      t,
+                      server.agent_count,
+                      result,
+                      runtime ? runtimeDisplayLabel(runtime) : undefined,
+                    )}
+                    details={result ? <ProbeDetails result={result} /> : undefined}
+                    extraAction={
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        aria-busy={probingId === server.id}
+                        disabled={
+                          probingId !== null ||
+                          renamePending ||
+                          ownedOnline.length === 0 ||
+                          (ownedOnline.length > 1 && selectedRuntimeId === "")
                         }
-                      : undefined
-                  }
-                  labels={{
-                    rename: t(($) => $.mcp.rename_action),
-                    renameAria: t(($) => $.mcp.rename_server),
-                    renameSave: t(($) => $.mcp.rename_save),
-                    renameCancel: t(($) => $.mcp.rename_cancel),
-                    configure: t(($) => $.mcp.replace_config),
-                    configureAria: t(($) => $.mcp.replace_config),
-                    remove: t(($) => $.mcp.remove_action),
-                    removeAria: t(($) => $.mcp.remove_server),
-                  }}
-                  onRenameStart={() => startRename(server)}
-                  onConfigure={() => {
-                    cancelRename();
-                    setEditingServer(server);
-                    setEditorOpen(true);
-                  }}
-                  onRemove={() => {
-                    cancelRename();
-                    setDeletingServer(server);
-                  }}
-                />
-              ))}
+                        aria-label={`${t(($) => $.mcp.test_connection)} ${server.name}`}
+                        title={
+                          runtimesQuery.isFetched && ownedOnline.length === 0
+                            ? t(($) => $.mcp.test_no_runtime)
+                            : undefined
+                        }
+                        onClick={() => void handleProbe(server)}
+                      >
+                        {probingId === server.id ? (
+                          <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" />
+                        ) : (
+                          <Unplug className="h-4 w-4" />
+                        )}
+                        {t(($) => $.mcp.test_connection)}
+                      </Button>
+                    }
+                    status={
+                      server.enabled === false ? (
+                        <Badge variant="secondary">
+                          {t(($) => $.mcp.disabled_badge)}
+                        </Badge>
+                      ) : undefined
+                    }
+                    canManage={canManage}
+                    actionsDisabled={renamePending || probingId !== null}
+                    rename={
+                      renamingServer?.id === server.id
+                        ? {
+                            draft: renameDraft,
+                            error: renameError,
+                            pending: renamePending,
+                            onChange: (value) => {
+                              setRenameDraft(value);
+                              setRenameError("");
+                            },
+                            onCancel: cancelRename,
+                            onSubmit: () => void handleRename(),
+                          }
+                        : undefined
+                    }
+                    labels={{
+                      rename: t(($) => $.mcp.rename_action),
+                      renameAria: t(($) => $.mcp.rename_server),
+                      renameSave: t(($) => $.mcp.rename_save),
+                      renameCancel: t(($) => $.mcp.rename_cancel),
+                      configure: t(($) => $.mcp.replace_config),
+                      configureAria: t(($) => $.mcp.replace_config),
+                      remove: t(($) => $.mcp.remove_action),
+                      removeAria: t(($) => $.mcp.remove_server),
+                    }}
+                    onRenameStart={() => startRename(server)}
+                    onConfigure={() => {
+                      cancelRename();
+                      setEditingServer(server);
+                      setEditorOpen(true);
+                    }}
+                    onRemove={() => {
+                      cancelRename();
+                      setDeletingServer(server);
+                    }}
+                  />
+                );
+              })}
             </ul>
           )}
         </SettingsCard>
@@ -489,6 +485,7 @@ function mcpRowMeta(
   t: TFunction<"settings">,
   agentCount: number | undefined,
   result: WorkspaceMcpProbeRequest | undefined,
+  runtimeLabel?: string,
 ) {
   const agentLabel =
     agentCount === undefined
@@ -496,7 +493,7 @@ function mcpRowMeta(
       : agentCount > 0
         ? t(($) => $.mcp_usage.agent_count, { count: agentCount })
         : t(($) => $.mcp_usage.none);
-  const probeLabel = result ? formatProbeResult(t, result) : null;
+  const probeLabel = result ? formatProbeResult(t, result, runtimeLabel) : null;
   if (!agentLabel && !probeLabel) return undefined;
   return (
     <>
@@ -510,8 +507,9 @@ function mcpRowMeta(
 function formatProbeResult(
   t: TFunction<"settings">,
   result: WorkspaceMcpProbeRequest,
+  runtimeLabel?: string,
 ) {
-  const runtime = result.runtime_name || result.runtime_id;
+  const runtime = runtimeLabel || result.runtime_name || result.runtime_id;
   if (result.status === "completed") {
     return t(($) => $.mcp.test_ok, {
       runtime,

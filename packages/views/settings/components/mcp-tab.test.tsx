@@ -28,6 +28,7 @@ const data = vi.hoisted(() => ({
   servers: [] as Array<Record<string, unknown>>,
   runtimes: [] as Array<Record<string, unknown>>,
   isLoading: false,
+  probeResult: undefined as Record<string, unknown> | undefined,
   role: "owner" as "owner" | "admin" | "member",
 }));
 
@@ -51,7 +52,16 @@ vi.mock("@multica/core/workspace/mutations", () => ({
   useCreateWorkspaceMcpServer: () => ({ mutateAsync: mockCreate, isPending: false }),
   useUpdateWorkspaceMcpServer: () => ({ mutateAsync: mockUpdate, isPending: false }),
   useDeleteWorkspaceMcpServer: () => ({ mutateAsync: mockDelete, isPending: false }),
-  useProbeWorkspaceMcpServer: () => ({ mutateAsync: mockProbe, isPending: false }),
+  useProbeWorkspaceMcpServer: () => ({
+    data: data.probeResult,
+    mutateAsync: async (input: unknown) => {
+      data.probeResult = undefined;
+      const result = await mockProbe(input);
+      data.probeResult = result;
+      return result;
+    },
+    isPending: false,
+  }),
 }));
 
 vi.mock("@multica/core/paths", () => ({
@@ -83,6 +93,7 @@ describe("McpTab", () => {
     vi.clearAllMocks();
     data.role = "owner";
     data.isLoading = false;
+    data.probeResult = undefined;
     data.servers = [
       server({ id: "srv-1", name: "linear", transport: "http" }),
       server({ id: "srv-2", name: "local-tool", transport: "stdio" }),
