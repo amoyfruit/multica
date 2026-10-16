@@ -478,6 +478,10 @@ const virtuosoWindow = vi.hoisted(() => ({
   // When true, scrollToIndex is recorded but the target row never mounts —
   // the mount-failure path (one flat fallback, no retry loop).
   failScroll: false,
+  // Drop the target row for the next N renders: Virtuoso re-measure /
+  // timeline refresh unmounting the anchor for a frame. Losing the row is
+  // not a landing — the request must re-search, not settle.
+  dropTargetRenders: 0,
 }));
 
 vi.mock("react-virtuoso", () => ({
@@ -507,6 +511,10 @@ vi.mock("react-virtuoso", () => ({
       if (target - 1 >= 0) visible.add(target - 1);
       if (target + 1 < data.length) visible.add(target + 1);
     }
+    if (virtuosoWindow.dropTargetRenders > 0 && target !== null) {
+      virtuosoWindow.dropTargetRenders -= 1;
+      visible.delete(target);
+    }
     useEffect(() => {
       const startIndex = target ?? 0;
       rangeChanged?.({ startIndex, endIndex: Math.min(data.length - 1, startIndex + 2) });
@@ -530,6 +538,7 @@ beforeEach(() => {
   scrollToIndexSpy.mockClear();
   virtuosoWindow.scrollTarget = null;
   virtuosoWindow.failScroll = false;
+  virtuosoWindow.dropTargetRenders = 0;
   Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
     configurable: true,
     writable: true,
@@ -2866,22 +2875,41 @@ describe("IssueDetail (shared)", () => {
       });
 
       it("survives a user scroll during the landing", async () => {
+        // A reader scroll mid-flight interrupts the request: no guard, no
+        // memento, no auto-retry on this mount. A remount (new browser
+        // session state, tab return) may attempt the landing again.
         mockApiObj.listTimeline.mockResolvedValue(bulkRoots(200));
-        renderVirtualDeepLink(bulkIndex(150));
-        const scroller = document.querySelector(
-          "[data-tab-scroll-root]",
-        ) as HTMLElement | null;
+        const target = bulkIndex(150);
+        const first = renderVirtualDeepLink(target);
+        const scroller = () =>
+          document.querySelector("[data-tab-scroll-root]") as HTMLElement | null;
+        await waitFor(() => {
+          expect(scroller()).not.toBeNull();
+        });
         // The landing listens on the scroll container itself; jsdom never
         // scrolls for real, so drive the listener directly.
         act(() => {
-          scroller?.dispatchEvent(new Event("wheel", { bubbles: true }));
+          scroller()?.dispatchEvent(new Event("wheel", { bubbles: true }));
         });
+        // Give the interrupted rAF chain a chance to (incorrectly) settle.
+        await act(async () => {
+          await new Promise((resolve) => setTimeout(resolve, 50));
+        });
+        // Interrupted, not landed: still no flat fallback, still virtual.
+        expect(screen.queryByTestId("virtuoso-mock")).not.toBeNull();
+        expect(scrollToIndexSpy).toHaveBeenCalledTimes(1);
+        first.unmount();
+        // Cleanup to avoid cross-test act() warnings from the 40s timer.
+        await act(async () => {
+          await new Promise((resolve) => setTimeout(resolve, 0));
+        });
+        renderVirtualDeepLink(target);
         await waitFor(() => {
           expect(
-            hasHighlightedCommentBackground(document.getElementById(`comment-${bulkIndex(150)}`)),
+            hasHighlightedCommentBackground(document.getElementById(`comment-${target}`)),
           ).toBe(true);
         });
-        expect(scrollToIndexSpy).toHaveBeenCalledTimes(1);
+        expect(scrollToIndexSpy).toHaveBeenCalledTimes(2);
       });
 
       it("lands on remount when unmounted before settling", async () => {
@@ -2899,6 +2927,28 @@ describe("IssueDetail (shared)", () => {
             hasHighlightedCommentBackground(document.getElementById(`comment-${bulkIndex(150)}`)),
           ).toBe(true);
         });
+      });
+
+      it("re-searches when the target row unmounts mid-settle", async () => {
+        // Virtuoso re-measures or a timeline refresh can drop the row for
+        // a few frames after scrollToIndex: losing the anchor is not a
+        // landing. The request re-searches instead of settling, and the
+        // highlight only appears once a real row lands.
+        virtuosoWindow.dropTargetRenders = 3;
+        mockApiObj.listTimeline.mockResolvedValue(bulkRoots(200));
+        const target = bulkIndex(150);
+        renderVirtualDeepLink(target);
+        await waitFor(() => {
+          expect(scrollToIndexSpy).toHaveBeenCalledWith(
+            expect.objectContaining({ index: 150 }),
+          );
+        });
+        await waitFor(() => {
+          expect(
+            hasHighlightedCommentBackground(document.getElementById(`comment-${target}`)),
+          ).toBe(true);
+        });
+        expect(screen.queryByTestId("virtuoso-mock")).not.toBeNull();
       });
     });
   });

@@ -1852,6 +1852,12 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
   // the SAME token: the virtual effect must still treat it as a new request
   // even though the flat pass already synced the token ref.
   const virtualRequestSeenRef = useRef<string | null>(null);
+  // Requests the reader cancelled mid-flight (wheel/touchmove). They must
+  // not retry on this mount: a re-run would fight the user's own scroll.
+  // A new request key (re-click with a token bump, another notification)
+  // still lands. Unlike the memento, this records nothing persistent — an
+  // interrupted landing may be attempted again after a remount.
+  const cancelledDeepLinkRef = useRef<string | null>(null);
   // When the timeline renders flat (non-root deep-link, unknown target, or
   // in-page find), there is no Virtuoso instance — minimap jumps drive the
   // scroll container directly. A root-comment deep link keeps Virtuoso
@@ -2194,10 +2200,10 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
     ) {
       return;
     }
+    // The reader cancelled this exact request mid-flight: don't fight their
+    // scroll by retrying on this mount. A new request key still lands.
+    if (cancelledDeepLinkRef.current === requestKey) return;
     virtualRequestSeenRef.current = requestKey;
-    // A new request owns the highlight: clear the previous request's flash
-    // so two landings never share it (retarget, late data, re-click).
-    setHighlightedId(highlightCommentId);
     // Tab-switch restore wins over a fresh jump for an already-consumed id.
     // Inbox re-click clears the memento and bumps the token (new request
     // key), so only a genuinely new request reaches past this gate.
@@ -2205,6 +2211,11 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
       didHighlightRef.current = highlightCommentId;
       return;
     }
+    // A new request owns the highlight: clear the previous request's flash
+    // so two landings never share it (retarget, late data, re-click).
+    // Settled restores return above first, so a tab return never starts a
+    // highlight without its clearing timer.
+    setHighlightedId(highlightCommentId);
     let settled = false;
     let rafId = 0;
     let timeoutId = 0;
@@ -2230,6 +2241,16 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
       didHighlightRef.current = highlightCommentId;
       writeViewState(issueHighlightMementoKey(id), highlightCommentId);
     };
+    // The reader took over mid-flight: stop correcting, record nothing.
+    // This request stays unlanded (no guard, no memento) so a remount may
+    // try again; on this mount the effect must not restart and fight the
+    // user's own scroll.
+    const cancelForUserScroll = () => {
+      if (settled) return;
+      settled = true;
+      cancelledDeepLinkRef.current = requestKey;
+      cleanup();
+    };
     const centerOn = (el: HTMLElement) => {
       const c = container.getBoundingClientRect();
       const e = el.getBoundingClientRect();
@@ -2243,9 +2264,10 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
     const settleLoop = (el: HTMLElement) => {
       // Async content (markdown, code highlight, images) keeps moving the
       // row for a few frames: re-center only while the computed target keeps
-      // shifting, then stop. Any manual scroll cancels the correction.
+      // shifting, then stop. Any manual scroll cancels without claiming
+      // the landing: the request is interrupted, not completed.
       if (userScrolled) {
-        markSettled();
+        cancelForUserScroll();
         return;
       }
       const target = centerOn(el);
@@ -2253,8 +2275,20 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
         lastTarget = target;
         rafId = requestAnimationFrame(() => {
           const next = document.getElementById(elId);
-          if (next instanceof HTMLElement) settleLoop(next);
-          else markSettled();
+          // The row unmounted mid-settle (Virtuoso re-measure, timeline
+          // refresh): losing the anchor is not a landing. Bounded
+          // re-search while the request is still valid; otherwise the
+          // single flat fallback below.
+          if (next instanceof HTMLElement) {
+            settleLoop(next);
+            return;
+          }
+          const current = items.findIndex((it) => it.id === highlightCommentId);
+          if (current >= 0 && current !== index) {
+            index = current;
+            virtuosoRef.current?.scrollToIndex({ index, align: "center" });
+          }
+          rafId = requestAnimationFrame(() => waitForMount(10));
         });
         return;
       }
