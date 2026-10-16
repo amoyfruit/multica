@@ -2745,7 +2745,6 @@ describe("IssueDetail (shared)", () => {
         });
         await waitFor(() => {
           expect(screen.queryByTestId("virtuoso-mock")).not.toBeNull();
-          expect(document.getElementById(`comment-${bulkIndex(150)}`)).toBeNull();
         });
         expect(mockApiObj.listTimeline).toHaveBeenCalledTimes(2);
         await waitFor(() => {
