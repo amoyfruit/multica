@@ -2581,8 +2581,6 @@ describe("IssueDetail (shared)", () => {
         }
         return out;
       };
-      const mountedCommentCount = () =>
-        document.querySelectorAll('[id^="comment-"]').length;
       function renderVirtualDeepLink(commentId: string, token?: number) {
         const queryClient = createTestQueryClient();
         const tree = (cid: string, t?: number) => (
@@ -2603,6 +2601,15 @@ describe("IssueDetail (shared)", () => {
       // Zero-padded ids above keep numeric order under (created_at, id)
       // sort, so bulkIndex("800") is the timeline index too.
       const bulkIndex = (n: number) => `bulk-${String(n).padStart(5, "0")}`;
+      // Windowed mock mounts first/last rows plus target±1: 2 head + 2
+      // tail + 3 around the target. CommentCard bodies render through
+      // ReadonlyContent wrappers, so count rows by anchor id, not nodes.
+      const mountedRowCount = () =>
+        new Set(
+          Array.from(document.querySelectorAll('[id^="comment-"]')).map(
+            (el) => (el as HTMLElement).id,
+          ),
+        ).size;
       it("lands on a far root comment without mounting the whole timeline", async () => {
         mockApiObj.listTimeline.mockResolvedValue(bulkRoots(1200));
         renderVirtualDeepLink(bulkIndex(800));
@@ -2622,7 +2629,7 @@ describe("IssueDetail (shared)", () => {
           ).toBe(true);
         });
         // 1,200 rows in, only the window around the target mounts.
-        expect(mountedCommentCount()).toBeLessThanOrEqual(10);
+        expect(mountedRowCount()).toBeLessThanOrEqual(7);
       });
 
       it("lands with activity rows mixed into the timeline", async () => {
@@ -2636,7 +2643,7 @@ describe("IssueDetail (shared)", () => {
             hasHighlightedCommentBackground(document.getElementById(`comment-${bulkIndex(320)}`)),
           ).toBe(true);
         });
-        expect(mountedCommentCount()).toBeLessThanOrEqual(12);
+        expect(mountedRowCount()).toBeLessThanOrEqual(9);
       });
 
       it("keeps reply deep links on the flat path", async () => {
@@ -2721,8 +2728,13 @@ describe("IssueDetail (shared)", () => {
             hasHighlightedCommentBackground(document.getElementById(`comment-${bulkIndex(150)}`)),
           ).toBe(true);
         });
-        // The old target scrolled out of the window: its row unmounts.
-        expect(document.getElementById(`comment-${bulkIndex(50)}`)).toBeNull();
+        // The old request must not re-highlight its row: the new request's
+        // landing owns the highlight. (Its row also scrolls out of the
+        // window, but the highlight assertion is the request-identity
+        // proof that survives highlight-fade timing.)
+        expect(
+          hasHighlightedCommentBackground(document.getElementById(`comment-${bulkIndex(50)}`)),
+        ).toBe(false);
       });
 
       it("lands once late timeline data arrives", async () => {
