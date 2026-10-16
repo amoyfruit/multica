@@ -2934,7 +2934,9 @@ describe("IssueDetail (shared)", () => {
         // a few frames after scrollToIndex: losing the anchor is not a
         // landing. The request re-searches instead of settling, and the
         // highlight only appears once a real row lands.
-        virtuosoWindow.dropTargetRenders = 3;
+        // One dropped frame only: the row must still be recoverable by
+        // re-search, not pushed all the way into the flat fallback.
+        virtuosoWindow.dropTargetRenders = 1;
         mockApiObj.listTimeline.mockResolvedValue(bulkRoots(200));
         const target = bulkIndex(150);
         renderVirtualDeepLink(target);
