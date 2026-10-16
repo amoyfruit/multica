@@ -170,7 +170,9 @@ describe("Board drag with nested sub-issues", () => {
       defaultOptions: { queries: { retry: false, staleTime: Infinity } },
     });
     onMoveIssue = vi.fn();
-    batchUpdate = vi.fn<IssueSurfaceActions["batchUpdate"]>(() => Promise.resolve());
+    batchUpdate = vi.fn<IssueSurfaceActions["batchUpdate"]>((ids) =>
+      Promise.resolve({ updated: ids.length }),
+    );
   });
 
   afterEach(() => {
