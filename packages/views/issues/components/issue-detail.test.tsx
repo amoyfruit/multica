@@ -2734,9 +2734,11 @@ describe("IssueDetail (shared)", () => {
         // write): the query refetches it, the timeline updates, and the
         // virtual landing starts from the new index.
         mockApiObj.listTimeline.mockResolvedValue(bulkRoots(200));
+        expect(mockApiObj.listTimeline).toHaveBeenCalledTimes(1);
         await act(async () => {
-          await queryClient.invalidateQueries({ queryKey: issueKeys.timeline("issue-1") });
+          await queryClient.refetchQueries({ queryKey: issueKeys.timeline("issue-1") });
         });
+        expect(mockApiObj.listTimeline).toHaveBeenCalledTimes(2);
         await waitFor(() => {
           expect(scrollToIndexSpy).toHaveBeenCalledWith(
             expect.objectContaining({ index: 150 }),
