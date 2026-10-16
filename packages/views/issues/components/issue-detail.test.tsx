@@ -2743,6 +2743,7 @@ describe("IssueDetail (shared)", () => {
           expect(document.getElementById("comment-bulk-150")).toBeNull();
         });
         expect(mockApiObj.listTimeline).toHaveBeenCalledTimes(2);
+        expect(scrollToIndexSpy).not.toHaveBeenCalled();
         await waitFor(() => {
           expect(scrollToIndexSpy).toHaveBeenCalledWith(
             expect.objectContaining({ index: 150 }),
