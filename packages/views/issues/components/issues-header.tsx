@@ -134,9 +134,7 @@ type LocalDateRange = {
   to?: Date;
 };
 
-// ---------------------------------------------------------------------------
 // Helpers
-// ---------------------------------------------------------------------------
 
 function getActiveFilterCount(
   state: {
@@ -306,15 +304,11 @@ function useIssueCounts(
   }, [allIssues, serverFacets]);
 }
 
-// ---------------------------------------------------------------------------
 // Scope config
-// ---------------------------------------------------------------------------
 
 const SCOPE_VALUES: IssuesScope[] = ["all", "members", "agents"];
 
-// ---------------------------------------------------------------------------
 // Actor sub-menu content (shared between Assignee and Creator)
-// ---------------------------------------------------------------------------
 
 function ActorSubContent({
   counts,
@@ -499,9 +493,7 @@ function ActorSubContent({
   );
 }
 
-// ---------------------------------------------------------------------------
 // Project sub-menu content
-// ---------------------------------------------------------------------------
 
 function ProjectSubContent({
   counts,
@@ -600,9 +592,7 @@ function ProjectSubContent({
   );
 }
 
-// ---------------------------------------------------------------------------
 // Project status sub-menu content
-// ---------------------------------------------------------------------------
 
 function ProjectStatusSubContent({
   selected,
@@ -642,9 +632,7 @@ function ProjectStatusSubContent({
   );
 }
 
-// ---------------------------------------------------------------------------
 // Label sub-menu content
-// ---------------------------------------------------------------------------
 
 function LabelSubContent({
   counts,
@@ -1041,9 +1029,7 @@ function PropertyFilterOptions({
   );
 }
 
-// ---------------------------------------------------------------------------
 // Date sub-menu content
-// ---------------------------------------------------------------------------
 
 function DateSubContent({
   value,
@@ -1165,9 +1151,7 @@ function DateSubContent({
   );
 }
 
-// ---------------------------------------------------------------------------
 // ViewRefreshIndicator
-// ---------------------------------------------------------------------------
 
 /**
  * Neutral "view is revalidating" slot for the header controls cluster.
@@ -1192,9 +1176,7 @@ export function ViewRefreshIndicator({ active }: { active: boolean }) {
   );
 }
 
-// ---------------------------------------------------------------------------
 // IssuesHeader
-// ---------------------------------------------------------------------------
 
 export function IssuesHeader({
   scopedIssues,
