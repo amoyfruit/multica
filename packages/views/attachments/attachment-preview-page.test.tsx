@@ -138,7 +138,7 @@ describe("AttachmentPreviewPage", () => {
     renderPage(<AttachmentPreviewPage attachmentId="att-1" initialAddress="?s=ia" />);
     const iframe = await screen.findByTitle("report.html");
     expect(iframe.getAttribute("srcdoc")).toBe(
-      withLocationBridge(withFragmentNavShim(htmlText), "?s=ia"),
+      withFindShim(withLocationBridge(withFragmentNavShim(htmlText), "?s=ia")),
     );
     expect(screen.getByRole("textbox", { name: "Address" })).toHaveValue("?s=ia");
   });
@@ -157,7 +157,7 @@ describe("AttachmentPreviewPage", () => {
     );
     const iframe = await screen.findByTitle("report.html");
     expect(iframe.getAttribute("srcdoc")).toBe(
-      withLocationBridge(withFragmentNavShim(htmlText), "?s=kept"),
+      withFindShim(withLocationBridge(withFragmentNavShim(htmlText), "?s=kept")),
     );
 
     const input = screen.getByRole("textbox", { name: "Address" });
