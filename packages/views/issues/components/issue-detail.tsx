@@ -2319,7 +2319,14 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
       const { aligned, geometry } = centerOn(el);
       if (!aligned || geometry !== lastGeometry) stableSince = performance.now();
       lastGeometry = geometry;
-      const pendingImages = Array.from(el.querySelectorAll("img")).some((img) => !img.complete);
+      const viewport = container.getBoundingClientRect();
+      const pendingImages = Array.from(el.querySelectorAll("img")).some((img) => {
+        if (img.complete) return false;
+        if (img.loading !== "lazy") return true;
+        const rect = img.getBoundingClientRect();
+        return rect.bottom >= viewport.top + container.clientTop &&
+          rect.top <= viewport.top + container.clientTop + container.clientHeight;
+      });
       // A quiet geometry window catches async layout; the existing deadline bounds observation.
       if (!aligned || pendingImages || performance.now() - stableSince < 160) {
         rafId = requestAnimationFrame(() => {

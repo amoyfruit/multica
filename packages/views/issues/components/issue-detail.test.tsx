@@ -2681,6 +2681,49 @@ describe("IssueDetail (shared)", () => {
         } finally { view.unmount(); vi.useRealTimers(); geometry.restore(); }
       });
 
+      it.each([false, true])("handles a pending lazy reply image with visible=%s", async (visible) => {
+        const target = bulkIndex(50);
+        const geometry = controlLandingGeometry(target);
+        const setViewState = vi.fn();
+        const roots = bulkRoots(60);
+        const replies = Array.from({ length: 40 }, (_, i) => ({
+          ...roots[0], id: `image-reply-${i}`, parent_id: target,
+          content: `Long thread reply ${i}`, created_at: `2026-01-19T00:00:${String(i).padStart(2, "0")}Z`,
+        } as TimelineEntry));
+        mockApiObj.listTimeline.mockResolvedValue([...roots, ...replies]);
+        vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "requestAnimationFrame", "cancelAnimationFrame", "performance"] });
+        const view = renderVirtualDeepLink(target, 0, { get: () => undefined, setViewState });
+        try {
+          await act(async () => { await vi.waitFor(() => expect(scrollToIndexSpy).toHaveBeenCalled()); });
+          const container = geometry.attach();
+          const reply = document.getElementById("comment-image-reply-39")!;
+          expect(reply).not.toBeNull();
+          const image = document.createElement("img");
+          image.loading = "lazy";
+          let complete = false;
+          Object.defineProperty(image, "complete", { get: () => complete });
+          image.getBoundingClientRect = () => ({ top: visible ? 300 : 1800, bottom: visible ? 400 : 1900, height: 100 } as DOMRect);
+          reply.append(image);
+          await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+          if (visible) {
+            expect(setViewState).not.toHaveBeenCalled();
+            geometry.move(2200);
+            complete = true;
+            fireEvent.load(image);
+            await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+            expect(container.scrollTop).toBe(1950);
+          } else {
+            await act(async () => { await vi.advanceTimersByTimeAsync(2800); });
+            expect(container.scrollTop).toBe(1550);
+          }
+          expect(setViewState).toHaveBeenCalledExactlyOnceWith("highlight:issue-1", target);
+          expect(document.getElementById(`comment-${target}`)!.getBoundingClientRect().top).toBe(250);
+          await act(async () => { await vi.advanceTimersByTimeAsync(2800); });
+          expect(setViewState).toHaveBeenCalledTimes(1);
+          expect(screen.queryByTestId("virtuoso-mock")).not.toBeNull();
+        } finally { view.unmount(); vi.useRealTimers(); geometry.restore(); }
+      });
+
       it("ignores pending images outside the landing comment", async () => {
         const target = bulkIndex(50);
         const geometry = controlLandingGeometry(target);
