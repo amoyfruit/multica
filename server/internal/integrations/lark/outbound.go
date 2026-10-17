@@ -290,6 +290,11 @@ func (p *Patcher) handleInboxNew(e events.Event) {
 	if rt, _ := item["recipient_type"].(string); rt != "member" {
 		return
 	}
+	// Not every inbox type earns an interruption. See
+	// inboxNotifiableTypes for which do and why.
+	if t, _ := item["type"].(string); !inboxNotifiable(t) {
+		return
+	}
 	recipientIDStr, _ := item["recipient_id"].(string)
 	workspaceIDStr, _ := item["workspace_id"].(string)
 	if recipientIDStr == "" || workspaceIDStr == "" {

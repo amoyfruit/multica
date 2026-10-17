@@ -189,3 +189,38 @@ func TestPatcherRegistersInboxNew(t *testing.T) {
 		t.Fatalf("open_id sends = %d, want 1 — is inbox:new subscribed?", len(c.openIDSent))
 	}
 }
+
+// The notification filter is the difference between a useful channel and
+// one people mute. Only the three interrupting types may push.
+func TestInboxNewPushesOnlyInterruptingTypes(t *testing.T) {
+	pushed := []string{"issue_assigned", "mentioned", "task_failed"}
+	silent := []string{"new_comment", "status_changed", "unassigned", "assignee_changed", "issue_subscribed"}
+
+	for _, typ := range pushed {
+		item := assignedItem()
+		item["type"] = typ
+		q := &fakePatcherQueries{
+			memberBinding: db.ChannelUserBinding{ChannelUserID: "ou_abc"},
+			installation:  Installation{AppID: "cli_1"},
+		}
+		c := &fakeAPIClient{}
+		inboxTestPatcher(q, c).handleInboxNew(inboxEvent(item))
+		if len(c.openIDSent) != 1 {
+			t.Errorf("%s: sends = %d, want 1", typ, len(c.openIDSent))
+		}
+	}
+
+	for _, typ := range silent {
+		item := assignedItem()
+		item["type"] = typ
+		q := &fakePatcherQueries{
+			memberBinding: db.ChannelUserBinding{ChannelUserID: "ou_abc"},
+			installation:  Installation{AppID: "cli_1"},
+		}
+		c := &fakeAPIClient{}
+		inboxTestPatcher(q, c).handleInboxNew(inboxEvent(item))
+		if len(c.openIDSent) != 0 {
+			t.Errorf("%s: sends = %d, want 0 — this type must stay in the inbox", typ, len(c.openIDSent))
+		}
+	}
+}

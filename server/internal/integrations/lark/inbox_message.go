@@ -11,6 +11,25 @@ import (
 	"unicode/utf8"
 )
 
+// inboxNotifiableTypes are the notification types that reach a member in
+// Lark. Everything else stays in the in-app inbox.
+//
+// The filter exists because a chat channel and an inbox have different
+// noise budgets: the inbox is a place a member goes to catch up, so a
+// comment on every issue they touch is useful there; a Lark push
+// interrupts, and pushing new_comment would make the channel something
+// people mute. What earns an interruption is work that lands on the
+// member (issue_assigned), someone addressing them directly (mentioned),
+// and an agent failing on their work (task_failed).
+var inboxNotifiableTypes = map[string]bool{
+	"issue_assigned": true,
+	"mentioned":      true,
+	"task_failed":    true,
+}
+
+// inboxNotifiable reports whether an item of this type is pushed to Lark.
+func inboxNotifiable(t string) bool { return inboxNotifiableTypes[t] }
+
 // inboxMarkdownMaxLen bounds the card as a product choice, not a protocol
 // limit: an inbox card is a pointer to the item, not the item. Lark's own
 // cap on one interactive card body is far larger, and the binding prompt
