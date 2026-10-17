@@ -1836,9 +1836,16 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
   // Request key identifying one deep-link landing attempt: a new issue, a new
   // comment, or an explicit replay (Inbox re-click bumps the token) starts a
   // new request and invalidates the previous one's frames/observers.
-  const deepLinkRequestKey = highlightCommentId
+  const deepLinkIdentity = highlightCommentId
     ? `${id}:${highlightCommentId}:${highlightRequestToken ?? 0}`
     : null;
+  const [deepLinkSelection, setDeepLinkSelection] = useState({ identity: deepLinkIdentity, sequence: 0 });
+  if (deepLinkSelection.identity !== deepLinkIdentity) {
+    setDeepLinkSelection({ identity: deepLinkIdentity, sequence: deepLinkSelection.sequence + 1 });
+  }
+  const deepLinkRequestKey = deepLinkIdentity === null
+    ? null
+    : `${deepLinkIdentity}:${deepLinkSelection.sequence}`;
   // One-shot escape hatch per request: when the virtualized target row fails
   // to mount within its budget, this request (and only this request) falls
   // back to the flat path below. Never retried, never carried over.
@@ -1858,6 +1865,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
   // still lands. Unlike the memento, this records nothing persistent — an
   // interrupted landing may be attempted again after a remount.
   const cancelledDeepLinkRef = useRef<string | null>(null);
+  const cancelDeepLinkRef = useRef<(() => void) | null>(null);
   // When the timeline renders flat (non-root deep-link, unknown target, or
   // in-page find), there is no Virtuoso instance — minimap jumps drive the
   // scroll container directly. A root-comment deep link keeps Virtuoso
@@ -1938,6 +1946,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
   useEffect(
     () => () => {
       if (jumpFlashTimerRef.current !== null) window.clearTimeout(jumpFlashTimerRef.current);
+      cancelDeepLinkRef.current = null;
     },
     [],
   );
@@ -1954,6 +1963,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
   // scrollIntoView, which also scrolls the desktop shell (#3929).
   const jumpToComment = useCallback(
     (commentId: string) => {
+      cancelDeepLinkRef.current?.();
       const el = document.getElementById(`comment-${commentId}`);
       const container = scrollContainerEl;
       if (!el || !container) return;
@@ -1966,6 +1976,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
   );
   const jumpToThread = useCallback(
     (threadId: string) => {
+      cancelDeepLinkRef.current?.();
       // Flat mode mounts every row, so the anchor is always in the DOM. A
       // virtualized root deep link also has a mounted anchor once its
       // landing effect scrolls the target row in.
@@ -1987,6 +1998,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
   const [pendingReplyJump, setPendingReplyJump] = useState<{ replyId: string; rootId: string } | null>(null);
   const jumpToReply = useCallback(
     (replyId: string) => {
+      cancelDeepLinkRef.current?.();
       const rootId = replyToRoot.get(replyId);
       const index = rootId ? items.findIndex((it) => it.id === rootId) : -1;
       const rootItem = items[index];
@@ -2171,13 +2183,14 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
   // driven from the row's measured DOM rect — never estimated heights,
   // never native scrollIntoView.
   //
-  // Request identity is (issue, comment, token): any change starts a new
+  // Request identity includes the selection sequence: A → B → A is new intent.
+  // Any change starts a new
   // request and invalidates the previous one's rAF loop, ResizeObserver,
   // and fallback. Timeline updates re-resolve the same comment's index but
   // do not restart a settled landing; a mount miss falls back to the flat
   // path exactly once per request.
   useEffect(() => {
-    if (!useVirtualDeepLink || !highlightCommentId || !deepLinkRequestKey) return;
+    if (rootDeepLinkIdx < 0 || !highlightCommentId || !deepLinkRequestKey) return;
     const requestKey = deepLinkRequestKey;
     let index = rootDeepLinkIdx;
     if (index < 0 || index >= items.length) return;
@@ -2205,9 +2218,8 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
     if (cancelledDeepLinkRef.current === requestKey) return;
     virtualRequestSeenRef.current = requestKey;
     // Tab-switch restore wins over a fresh jump for an already-consumed id.
-    // Inbox re-click clears the memento and bumps the token (new request
-    // key), so only a genuinely new request reaches past this gate.
-    if (consumedHighlightRef.current === highlightCommentId) {
+    // Only the initial selection restores; later selections are fresh intent.
+    if (deepLinkSelection.sequence === 0 && consumedHighlightRef.current === highlightCommentId) {
       didHighlightRef.current = highlightCommentId;
       return;
     }
@@ -2215,45 +2227,52 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
     // so two landings never share it (retarget, late data, re-click).
     // Settled restores return above first, so a tab return never starts a
     // highlight without its clearing timer.
+    cancelDeepLinkRef.current?.();
+    if (jumpFlashTimerRef.current !== null) window.clearTimeout(jumpFlashTimerRef.current);
     setHighlightedId(highlightCommentId);
     let settled = false;
+    let completed = false;
     let rafId = 0;
     let timeoutId = 0;
     let observer: ResizeObserver | null = null;
-    let userScrolled = false;
-    let frames = 0;
-    let lastTarget = -1;
+    let stableSince = performance.now();
+    let lastGeometry = "";
+    let mounted = false;
+    let fade: number | null = null;
     const elId = `comment-${highlightCommentId}`;
     const cleanup = () => {
       cancelAnimationFrame(rafId);
       window.clearTimeout(timeoutId);
       observer?.disconnect();
+      observer = null;
       container.removeEventListener("wheel", markUserScroll);
       container.removeEventListener("touchmove", markUserScroll);
+    };
+    const clearHighlight = () => {
+      if (fade !== null) window.clearTimeout(fade);
+      if (cancelDeepLinkRef.current === cancelForUserScroll) {
+        setHighlightedId((current) => current === highlightCommentId ? null : current);
+      }
     };
     // The reader took over mid-flight: stop correcting, record nothing.
     // This request stays unlanded (no guard, no memento) so a remount may
     // try again; on this mount the effect must not restart and fight the
     // user's own scroll.
     const cancelForUserScroll = () => {
+      clearHighlight();
       if (settled) return;
       settled = true;
       cancelledDeepLinkRef.current = requestKey;
-      // The request pre-lights the highlight before the row mounts (and
-      // re-arms its fade timer on mount): take both back so a cancelled
-      // request leaves no flash behind.
-      if (jumpFlashTimerRef.current !== null) window.clearTimeout(jumpFlashTimerRef.current);
-      jumpFlashTimerRef.current = null;
-      setHighlightedId(null);
       cleanup();
     };
+    cancelDeepLinkRef.current = cancelForUserScroll;
     const markUserScroll = () => {
-      userScrolled = true;
       cancelForUserScroll();
     };
     const markSettled = () => {
       if (settled) return;
       settled = true;
+      completed = true;
       cleanup();
       didHighlightRef.current = highlightCommentId;
       writeViewState(issueHighlightMementoKey(id), highlightCommentId);
@@ -2262,26 +2281,28 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
     const centerOn = (el: HTMLElement) => {
       const c = container.getBoundingClientRect();
       const e = el.getBoundingClientRect();
-      const target = Math.max(
-        0,
-        container.scrollTop + (e.top - c.top) - (container.clientHeight - e.height) / 2,
-      );
+      const max = Math.max(0, container.scrollHeight - container.clientHeight);
+      const target = Math.min(max, Math.max(0,
+        container.scrollTop + (e.top - c.top) - container.clientTop - (container.clientHeight - e.height) / 2,
+      ));
       container.scrollTop = target;
-      return target;
+      const actual = el.getBoundingClientRect();
+      const correction = (actual.top - container.getBoundingClientRect().top - container.clientTop) - (container.clientHeight - actual.height) / 2;
+      const aligned = el.isConnected && Number.isFinite(correction) && (Math.abs(correction) <= 1 ||
+        (container.scrollTop <= 1 && correction < 0) ||
+        (Math.abs(container.scrollTop - max) <= 1 && correction > 0));
+      return { aligned, geometry: [container.scrollTop, actual.top - c.top, actual.height, container.clientHeight, container.scrollHeight].map(Math.round).join(":") };
     };
     const settleLoop = (el: HTMLElement) => {
-      // Async content (markdown, code highlight, images) keeps moving the
-      // row for a few frames: re-center only while the computed target keeps
-      // shifting, then stop. Any manual scroll cancels without claiming
-      // the landing: the request is interrupted, not completed.
-      if (userScrolled) {
-        cancelForUserScroll();
-        return;
-      }
-      const target = centerOn(el);
-      if (Math.abs(target - lastTarget) > 1 && ++frames < 12) {
-        lastTarget = target;
+      if (settled) return;
+      const { aligned, geometry } = centerOn(el);
+      if (!aligned || geometry !== lastGeometry) stableSince = performance.now();
+      lastGeometry = geometry;
+      const pendingImages = Array.from(container.querySelectorAll("img")).some((img) => !img.complete);
+      // A quiet geometry window catches async layout; the existing deadline bounds observation.
+      if (!aligned || pendingImages || performance.now() - stableSince < 160) {
         rafId = requestAnimationFrame(() => {
+          if (settled) return;
           const next = document.getElementById(elId);
           // The row unmounted mid-settle (Virtuoso re-measure, timeline
           // refresh): losing the anchor is not a landing. Bounded
@@ -2308,20 +2329,23 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
       // re-centers while the landing is still unsettled.
       if (typeof ResizeObserver === "undefined") return;
       observer = new ResizeObserver(() => {
-        if (settled || userScrolled) return;
-        const next = document.getElementById(elId);
-        if (next instanceof HTMLElement) centerOn(next);
+        if (settled) return;
+        stableSince = performance.now();
       });
       observer.observe(el);
       observer.observe(container);
+      if (container.firstElementChild) observer.observe(container.firstElementChild);
     };
     const waitForMount = (attemptsLeft: number) => {
       if (settled) return;
       const el = document.getElementById(elId);
       if (el instanceof HTMLElement) {
+        mounted = true;
         setHighlightedId(highlightCommentId);
-        if (jumpFlashTimerRef.current !== null) window.clearTimeout(jumpFlashTimerRef.current);
-        jumpFlashTimerRef.current = window.setTimeout(() => setHighlightedId(null), 2500);
+        if (fade !== null) window.clearTimeout(fade);
+        fade = window.setTimeout(clearHighlight, 2500);
+        jumpFlashTimerRef.current = fade;
+        observer?.disconnect();
         observeSize(el);
         settleLoop(el);
         return;
@@ -2341,8 +2365,11 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
         // Single escape hatch for this request: render the existing flat
         // path once instead of waiting forever on a row Virtuoso never
         // mounts.
+        settled = true;
+        clearHighlight();
         cleanup();
-        setFlatFallbackKey(requestKey);
+        if (useVirtualDeepLink) setFlatFallbackKey(requestKey);
+        else cancelledDeepLinkRef.current = requestKey;
         return;
       }
       rafId = requestAnimationFrame(() => waitForMount(attemptsLeft - 1));
@@ -2351,22 +2378,31 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
     container.addEventListener("touchmove", markUserScroll, { passive: true });
     // Mount the row first; the first DOM read happens after Virtuoso's
     // range commit lands it.
-    virtuosoRef.current?.scrollToIndex({ index, align: "center" });
+    if (useVirtualDeepLink) virtuosoRef.current?.scrollToIndex({ index, align: "center" });
     rafId = requestAnimationFrame(() => waitForMount(30));
     timeoutId = window.setTimeout(() => {
       // Hard ceiling even where frames never run (background tab): one flat
       // fallback per request, never a retry loop.
       if (!settled) {
+        if (mounted) {
+          cancelForUserScroll();
+          return;
+        }
+        settled = true;
+        clearHighlight();
         cleanup();
-        setFlatFallbackKey(requestKey);
+        if (useVirtualDeepLink) setFlatFallbackKey(requestKey);
+        else cancelledDeepLinkRef.current = requestKey;
       }
     }, 2500);
     return () => {
       // A superseded request must never settle the new one: only the still
       // active (unsettled) wait may clear its own run.
+      settled = true;
       cleanup();
+      if (!completed) clearHighlight();
     };
-  }, [useVirtualDeepLink, deepLinkRequestKey, highlightCommentId, rootDeepLinkIdx, items, scrollContainerEl, id, writeViewState]);
+  }, [useVirtualDeepLink, deepLinkRequestKey, deepLinkSelection.sequence, highlightCommentId, rootDeepLinkIdx, items, scrollContainerEl, id, writeViewState]);
 
   // Deep-link landing. Semantically equivalent to navigating to
   // `#comment-${id}`: find the element with that id, scrollIntoView it.
@@ -2385,6 +2421,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
   // the timeline (and the deep-link target id) has actually rendered.
   useEffect(() => {
     if (!highlightCommentId || items.length === 0) return;
+    if (rootDeepLinkIdx >= 0 || cancelledDeepLinkRef.current === deepLinkRequestKey) return;
     // An explicit replay request (re-click on the already-open notification
     // row): the host cleared the memento entry and bumped the token, so
     // re-arm the landing guard and fall through to the jump.
@@ -2444,6 +2481,8 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
     const container = scrollContainerEl;
     if (!el || !container) return;
 
+    cancelDeepLinkRef.current?.();
+    cancelDeepLinkRef.current = null;
     didHighlightRef.current = highlightCommentId;
     // Record the landing in the memento so a remount that merely restores
     // this view (tab switch back) skips the jump instead of replaying it
@@ -2487,7 +2526,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
       cancelAnimationFrame(rafId);
       clearTimeout(fade);
     };
-  }, [highlightCommentId, highlightRequestToken, id, writeViewState, items, targetIdx, scrollContainerEl, replyToRoot, expandedResolved, timelineView, toggleResolvedExpand, useVirtualDeepLink]);
+  }, [highlightCommentId, highlightRequestToken, deepLinkRequestKey, rootDeepLinkIdx, id, writeViewState, items, targetIdx, scrollContainerEl, replyToRoot, expandedResolved, timelineView, toggleResolvedExpand, useVirtualDeepLink]);
 
   const descEditorRef = useRef<ContentEditorRef>(null);
   const descriptionEditingRef = useRef(false);
@@ -2600,6 +2639,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
   const [locateRootRequest, setLocateRootRequest] = useState<string | null>(null);
   const locateOrigin = useCallback(
     (origin: DeliverableOrigin) => {
+      cancelDeepLinkRef.current?.();
       if (origin.kind === "description") {
         scrollContainerEl?.scrollTo({ top: 0, behavior: "smooth" });
         return;

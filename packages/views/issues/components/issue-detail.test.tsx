@@ -2623,6 +2623,223 @@ describe("IssueDetail (shared)", () => {
         if (!mock) return document.querySelectorAll('[id^="comment-"]').length;
         return mock.childElementCount;
       };
+
+      function controlLandingGeometry(target: string, blocked = false) {
+        let offset = 1800;
+        const original = HTMLElement.prototype.getBoundingClientRect;
+        const rect = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+          const container = document.querySelector<HTMLElement>("[data-tab-scroll-root]");
+          const top = this.id === `comment-${target}` ? offset - (container?.scrollTop ?? 0) : 0;
+          if (this === container || this.id === `comment-${target}`) {
+            return { x: 0, y: top, top, bottom: top + (this === container ? 600 : 100), left: 0, right: 800, width: 800, height: this === container ? 600 : 100, toJSON() {} };
+          }
+          return original.call(this);
+        });
+        return {
+          attach() {
+            const container = document.querySelector<HTMLElement>("[data-tab-scroll-root]")!;
+            Object.defineProperties(container, {
+              clientHeight: { configurable: true, value: 600 },
+              scrollHeight: { configurable: true, get: () => 3000 },
+            });
+            if (blocked) Object.defineProperty(container, "scrollTop", { configurable: true, get: () => 0, set: () => {} });
+            return container;
+          },
+          move(next: number) { offset = next; },
+          restore: () => rect.mockRestore(),
+        };
+      }
+
+      it("waits for delayed layout before recording a measured landing", async () => {
+        const target = bulkIndex(50);
+        const geometry = controlLandingGeometry(target);
+        const setViewState = vi.fn();
+        mockApiObj.listTimeline.mockResolvedValue(bulkRoots(60));
+        vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "requestAnimationFrame", "cancelAnimationFrame", "performance"] });
+        const view = renderVirtualDeepLink(target, 0, { get: () => undefined, setViewState });
+        try {
+          await act(async () => { await vi.waitFor(() => expect(scrollToIndexSpy).toHaveBeenCalled()); });
+          const container = geometry.attach();
+          await act(async () => { await vi.advanceTimersByTimeAsync(64); });
+          expect(setViewState).not.toHaveBeenCalled();
+          const image = document.createElement("img");
+          let complete = false;
+          Object.defineProperty(image, "complete", { get: () => complete });
+          document.getElementById(`comment-${target}`)!.append(image);
+          await act(async () => { await vi.advanceTimersByTimeAsync(600); });
+          expect(setViewState).not.toHaveBeenCalled();
+          geometry.move(2200);
+          complete = true;
+          fireEvent.load(image);
+          await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+          expect(container.scrollTop).toBe(1950);
+          expect(document.getElementById(`comment-${target}`)!.getBoundingClientRect().top).toBe(250);
+          expect(setViewState).toHaveBeenCalledTimes(1);
+          container.scrollTop = 123;
+          await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+          expect(container.scrollTop).toBe(123);
+        } finally { view.unmount(); vi.useRealTimers(); geometry.restore(); }
+      });
+
+      it("does not consume a mounted target that never reaches its coordinates", async () => {
+        const target = bulkIndex(50);
+        const geometry = controlLandingGeometry(target, true);
+        const setViewState = vi.fn();
+        mockApiObj.listTimeline.mockResolvedValue(bulkRoots(60));
+        vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "requestAnimationFrame", "cancelAnimationFrame", "performance"] });
+        const view = renderVirtualDeepLink(target, 0, { get: () => undefined, setViewState });
+        try {
+          await act(async () => { await vi.waitFor(() => expect(scrollToIndexSpy).toHaveBeenCalled()); });
+          geometry.attach();
+          await act(async () => { await vi.advanceTimersByTimeAsync(2800); });
+          expect(setViewState).not.toHaveBeenCalled();
+          expect(screen.queryByTestId("virtuoso-mock")).not.toBeNull();
+          expect(hasHighlightedCommentBackground(document)).toBe(false);
+        } finally { view.unmount(); vi.useRealTimers(); geometry.restore(); }
+      });
+
+      it("gives a minimap jump ownership over an unfinished landing", async () => {
+        virtuosoWindow.failScroll = true;
+        const target = bulkIndex(50);
+        const geometry = controlLandingGeometry(target);
+        const setViewState = vi.fn();
+        mockApiObj.listTimeline.mockResolvedValue(bulkRoots(60));
+        const view = renderVirtualDeepLink(target, 0, { get: () => undefined, setViewState });
+        try {
+          await waitFor(() => expect(scrollToIndexSpy).toHaveBeenCalled());
+          const container = geometry.attach();
+          expect(document.getElementById(`comment-${target}`)).toBeNull();
+          fireEvent.click(within(screen.getByRole("navigation", { name: "Jump to comment thread" })).getByRole("button", { name: "Bulk root 00001" }));
+          expect(hasHighlightedCommentBackground(document.getElementById(`comment-${bulkIndex(1)}`))).toBe(true);
+          container.scrollTop = 321;
+          await act(async () => { await new Promise((resolve) => setTimeout(resolve, 2800)); });
+          expect(container.scrollTop).toBe(321);
+          expect(screen.queryByTestId("virtuoso-mock")).not.toBeNull();
+          expect(setViewState).not.toHaveBeenCalled();
+        } finally { view.unmount(); geometry.restore(); }
+      });
+
+      it("accepts centering clamped at the end of the scroll range", async () => {
+        const target = bulkIndex(59);
+        const geometry = controlLandingGeometry(target);
+        geometry.move(2900);
+        const setViewState = vi.fn();
+        mockApiObj.listTimeline.mockResolvedValue(bulkRoots(60));
+        const view = renderVirtualDeepLink(target, 0, { get: () => undefined, setViewState });
+        try {
+          await waitFor(() => expect(scrollToIndexSpy).toHaveBeenCalled());
+          const container = geometry.attach();
+          await waitFor(() => expect(setViewState).toHaveBeenCalledTimes(1));
+          expect(container.scrollTop).toBe(2400);
+          expect(document.getElementById(`comment-${target}`)!.getBoundingClientRect().bottom).toBe(600);
+        } finally { view.unmount(); geometry.restore(); }
+      });
+
+      it("keeps a new jump highlighted after the settled deep-link timer expires", async () => {
+        mockApiObj.listTimeline.mockResolvedValue(bulkRoots(60));
+        const setViewState = vi.fn();
+        vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "requestAnimationFrame", "cancelAnimationFrame", "performance"] });
+        const view = renderVirtualDeepLink(bulkIndex(50), 0, { get: () => undefined, setViewState });
+        try {
+          await act(async () => { await vi.waitFor(() => expect(setViewState).toHaveBeenCalledTimes(1)); });
+          await act(async () => { await vi.advanceTimersByTimeAsync(1500); });
+          fireEvent.click(within(screen.getByRole("navigation", { name: "Jump to comment thread" })).getByRole("button", { name: "Bulk root 00001" }));
+          await act(async () => { await vi.advanceTimersByTimeAsync(1200); });
+          expect(hasHighlightedCommentBackground(document.getElementById(`comment-${bulkIndex(1)}`))).toBe(true);
+          await act(async () => { await vi.advanceTimersByTimeAsync(900); });
+          expect(hasHighlightedCommentBackground(document)).toBe(false);
+        } finally { view.unmount(); vi.useRealTimers(); }
+      });
+
+      it("gives a reply jump ownership over an unfinished root landing", async () => {
+        virtuosoWindow.failScroll = true;
+        const target = bulkIndex(50);
+        const setViewState = vi.fn();
+        const timeline = bulkRoots(60);
+        timeline.push({ ...timeline[1], id: "rail-reply", parent_id: bulkIndex(1), content: "Reply destination" } as TimelineEntry);
+        mockApiObj.listTimeline.mockResolvedValue(timeline);
+        const view = renderVirtualDeepLink(target, 0, { get: () => undefined, setViewState });
+        try {
+          await waitFor(() => expect(scrollToIndexSpy).toHaveBeenCalled());
+          expect(document.getElementById(`comment-${target}`)).toBeNull();
+          fireEvent.click(within(screen.getByRole("navigation", { name: "Jump to comment thread" })).getByRole("button", { name: /: Reply destination$/ }));
+          await waitFor(() => expect(hasHighlightedCommentBackground(document.getElementById("comment-rail-reply"))).toBe(true));
+          await act(async () => { await new Promise((resolve) => setTimeout(resolve, 2800)); });
+          expect(screen.queryByTestId("virtuoso-mock")).not.toBeNull();
+          expect(setViewState).not.toHaveBeenCalled();
+          expect(scrollToIndexSpy).toHaveBeenLastCalledWith(expect.objectContaining({ index: 1, align: "start" }));
+        } finally { view.unmount(); }
+      });
+
+      it("releases the unfinished request resources on touch takeover", async () => {
+        const target = bulkIndex(50);
+        const disconnect = vi.fn();
+        const observed: Array<{ callback: () => void; targets: Element[] }> = [];
+        class LandingResizeObserver {
+          record: { callback: () => void; targets: Element[] };
+          constructor(callback: () => void) {
+            this.record = { callback, targets: [] };
+            observed.push(this.record);
+          }
+          observe = (el: Element) => { this.record.targets.push(el); };
+          unobserve = vi.fn();
+          disconnect = () => { disconnect(this.record); };
+        }
+        vi.stubGlobal("ResizeObserver", LandingResizeObserver);
+        const setViewState = vi.fn();
+        mockApiObj.listTimeline.mockResolvedValue(bulkRoots(60));
+        const view = renderVirtualDeepLink(target, 0, { get: () => undefined, setViewState });
+        try {
+          await waitFor(() => expect(observed.some((entry) => entry.targets.some((el) => el.id === `comment-${target}`))).toBe(true));
+          const container = document.querySelector<HTMLElement>("[data-tab-scroll-root]")!;
+          const remove = vi.spyOn(container, "removeEventListener");
+          const cancelFrame = vi.spyOn(window, "cancelAnimationFrame");
+          const clearTimer = vi.spyOn(window, "clearTimeout");
+          const landing = observed.find((entry) => entry.targets.some((el) => el.id === `comment-${target}`))!;
+          fireEvent.touchMove(container);
+          expect(disconnect).toHaveBeenCalledWith(landing);
+          expect(remove).toHaveBeenCalledWith("wheel", expect.any(Function));
+          expect(remove).toHaveBeenCalledWith("touchmove", expect.any(Function));
+          expect(cancelFrame).toHaveBeenCalled();
+          expect(clearTimer).toHaveBeenCalled();
+          container.scrollTop = 117;
+          act(() => { landing.callback(); });
+          expect(container.scrollTop).toBe(117);
+          expect(hasHighlightedCommentBackground(document)).toBe(false);
+          expect(setViewState).not.toHaveBeenCalled();
+          remove.mockRestore(); cancelFrame.mockRestore(); clearTimer.mockRestore();
+        } finally { view.unmount(); vi.unstubAllGlobals(); }
+      });
+
+      it("treats A to B to A as new intent after cancelling A", async () => {
+        virtuosoWindow.failScroll = true;
+        mockApiObj.listTimeline.mockResolvedValue(bulkRoots(60));
+        const view = renderVirtualDeepLink(bulkIndex(50));
+        await waitFor(() => expect(scrollToIndexSpy).toHaveBeenCalledTimes(1));
+        fireEvent.wheel(document.querySelector("[data-tab-scroll-root]")!);
+        view.retarget(bulkIndex(40));
+        await waitFor(() => expect(scrollToIndexSpy).toHaveBeenCalledTimes(2));
+        virtuosoWindow.failScroll = false;
+        view.retarget(bulkIndex(50));
+        await waitFor(() => expect(scrollToIndexSpy).toHaveBeenCalledTimes(3));
+        await waitFor(() => expect(hasHighlightedCommentBackground(document.getElementById(`comment-${bulkIndex(50)}`))).toBe(true));
+      });
+      it("reselects a completed A after B without replaying a stored mount restore", async () => {
+        const state = new Map<string, string>();
+        const setViewState = vi.fn((key: string, value: string) => { state.set(key, value); });
+        mockApiObj.listTimeline.mockResolvedValue(bulkRoots(60));
+        const view = renderVirtualDeepLink(bulkIndex(50), 0, { get: () => undefined, getViewState: (key) => state.get(key), setViewState });
+        await waitFor(() => expect(setViewState).toHaveBeenCalledTimes(1));
+        virtuosoWindow.failScroll = true;
+        view.retarget(bulkIndex(40), 0);
+        await waitFor(() => expect(scrollToIndexSpy).toHaveBeenCalledTimes(2));
+        fireEvent.wheel(document.querySelector("[data-tab-scroll-root]")!);
+        virtuosoWindow.failScroll = false;
+        view.retarget(bulkIndex(50), 0);
+        await waitFor(() => expect(scrollToIndexSpy).toHaveBeenCalledTimes(3));
+        await waitFor(() => expect(setViewState).toHaveBeenCalledTimes(2));
+      });
+
       it("lands on a far root comment without mounting the whole timeline", async () => {
         mockApiObj.listTimeline.mockResolvedValue(bulkRoots(1200));
         renderVirtualDeepLink(bulkIndex(800));
@@ -2810,12 +3027,9 @@ describe("IssueDetail (shared)", () => {
       it("does not restart a settled landing on timeline refresh", async () => {
         const timeline = bulkRoots(60);
         mockApiObj.listTimeline.mockResolvedValue(timeline);
-        const { queryClient } = renderVirtualDeepLink(bulkIndex(50));
-        await waitFor(() => {
-          expect(
-            hasHighlightedCommentBackground(document.getElementById(`comment-${bulkIndex(50)}`)),
-          ).toBe(true);
-        });
+        const setViewState = vi.fn();
+        const { queryClient } = renderVirtualDeepLink(bulkIndex(50), 0, { get: () => undefined, setViewState });
+        await waitFor(() => expect(setViewState).toHaveBeenCalledTimes(1));
         scrollToIndexSpy.mockClear();
         const newer = {
           type: "comment",
@@ -2934,31 +3148,39 @@ describe("IssueDetail (shared)", () => {
         await waitFor(() => {
           expect(scrollToIndexSpy).toHaveBeenCalledTimes(1);
         });
-        // The row never mounts under failScroll: this wheel is pre-mount.
-        expect(document.getElementById("comment-" + target)).toBeNull();
-        act(() => {
-          scroller()?.dispatchEvent(new Event("wheel", { bubbles: true }));
-        });
-        // The 30-frame mount budget and the 2.5s ceiling both expire here.
-        await act(async () => {
-          await new Promise((resolve) => setTimeout(resolve, 3000));
-        });
-        // Still virtual: the cancelled request never took the flat escape hatch.
-        expect(screen.queryByTestId("virtuoso-mock")).not.toBeNull();
-        // Never retried on this mount: the scrolled request stays dead.
-        expect(scrollToIndexSpy).toHaveBeenCalledTimes(1);
-        // The pre-mount flash is taken back and nothing was recorded.
-        expect(hasHighlightedCommentBackground(document)).toBe(false);
-        expect(setViewState).not.toHaveBeenCalled();
-        // A new request token for the same comment lands normally.
-        virtuosoWindow.failScroll = false;
-        view.retarget(target, 1);
-        await waitFor(() => {
-          expect(
-            hasHighlightedCommentBackground(document.getElementById("comment-" + target)),
-          ).toBe(true);
-        });
-        expect(scrollToIndexSpy).toHaveBeenCalledTimes(2);
+        vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "requestAnimationFrame", "cancelAnimationFrame", "performance"] });
+        try {
+          // The row never mounts under failScroll: this wheel is pre-mount.
+          expect(document.getElementById("comment-" + target)).toBeNull();
+          act(() => {
+            scroller()?.dispatchEvent(new Event("wheel", { bubbles: true }));
+          });
+          // The 30-frame mount budget and the 2.5s ceiling both expire here.
+          await act(async () => {
+            await vi.advanceTimersByTimeAsync(3000);
+          });
+          // Still virtual: the cancelled request never took the flat escape hatch.
+          expect(screen.queryByTestId("virtuoso-mock")).not.toBeNull();
+          // Never retried on this mount: the scrolled request stays dead.
+          expect(scrollToIndexSpy).toHaveBeenCalledTimes(1);
+          // The pre-mount flash is taken back and nothing was recorded.
+          expect(hasHighlightedCommentBackground(document)).toBe(false);
+          expect(setViewState).not.toHaveBeenCalled();
+          await act(async () => {
+            await view.queryClient.refetchQueries({ queryKey: issueKeys.timeline("issue-1") });
+          });
+          expect(scrollToIndexSpy).toHaveBeenCalledTimes(1);
+          vi.useRealTimers();
+          // A new request token for the same comment lands normally.
+          virtuosoWindow.failScroll = false;
+          view.retarget(target, 1);
+          await waitFor(() => {
+            expect(
+              hasHighlightedCommentBackground(document.getElementById("comment-" + target)),
+            ).toBe(true);
+          });
+          expect(scrollToIndexSpy).toHaveBeenCalledTimes(2);
+        } finally { vi.useRealTimers(); }
       }, 30000);
 
       it("lands on remount when unmounted before settling", async () => {
