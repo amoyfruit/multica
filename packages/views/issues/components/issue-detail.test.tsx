@@ -2681,6 +2681,111 @@ describe("IssueDetail (shared)", () => {
         } finally { view.unmount(); vi.useRealTimers(); geometry.restore(); }
       });
 
+      it("ignores pending images outside the landing comment", async () => {
+        const target = bulkIndex(50);
+        const geometry = controlLandingGeometry(target);
+        const setViewState = vi.fn();
+        mockApiObj.listTimeline.mockResolvedValue(bulkRoots(60));
+        vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "requestAnimationFrame", "cancelAnimationFrame", "performance"] });
+        const view = renderVirtualDeepLink(target, 0, { get: () => undefined, setViewState });
+        try {
+          await act(async () => { await vi.waitFor(() => expect(scrollToIndexSpy).toHaveBeenCalled()); });
+          const container = geometry.attach();
+          const image = document.createElement("img");
+          image.loading = "lazy";
+          Object.defineProperty(image, "complete", { value: false });
+          document.getElementById(`comment-${bulkIndex(59)}`)!.append(image);
+          await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+          expect(container.scrollTop).toBe(1550);
+          expect(document.getElementById(`comment-${target}`)!.getBoundingClientRect().top).toBe(250);
+          expect(setViewState).toHaveBeenCalledExactlyOnceWith("highlight:issue-1", target);
+          await act(async () => { await vi.advanceTimersByTimeAsync(2600); });
+          expect(setViewState).toHaveBeenCalledTimes(1);
+          expect(screen.queryByTestId("virtuoso-mock")).not.toBeNull();
+        } finally { view.unmount(); vi.useRealTimers(); geometry.restore(); }
+      });
+
+      it("gives a newly posted comment priority over an unfinished landing", async () => {
+        const target = bulkIndex(50);
+        const geometry = controlLandingGeometry(target, true);
+        const setViewState = vi.fn();
+        mockApiObj.listTimeline.mockResolvedValue(bulkRoots(60));
+        mockApiObj.createComment.mockResolvedValue({
+          id: "comment-new", issue_id: "issue-1", content: "A new update",
+          author_type: "member", author_id: "user-1", parent_id: null, type: "comment",
+          created_at: "2026-08-13T00:00:00Z", updated_at: "2026-08-13T00:00:00Z",
+        });
+        const view = renderVirtualDeepLink(target, 0, { get: () => undefined, setViewState });
+        try {
+          await waitFor(() => expect(scrollToIndexSpy).toHaveBeenCalled());
+          const container = geometry.attach();
+          fireEvent.click(screen.getByTestId("comment-composer-shell"));
+          const editor = await screen.findByPlaceholderText("Leave a comment...");
+          fireEvent.change(editor, { target: { value: "A new update" } });
+          const composer = editor.closest<HTMLElement>("[aria-busy], .relative.flex.flex-col.rounded-lg")!;
+          fireEvent.click(within(composer).getByRole("button", { name: "Send" }));
+          await waitFor(() => expect(scrollToIndexSpy).toHaveBeenCalledWith(expect.objectContaining({ align: "end" })));
+          expect(hasHighlightedCommentBackground(document.getElementById(`comment-${target}`))).toBe(false);
+          expect(setViewState).not.toHaveBeenCalled();
+          Object.defineProperty(container, "scrollTop", { configurable: true, writable: true, value: 2111 });
+          await act(async () => { await new Promise((resolve) => setTimeout(resolve, 2800)); });
+          expect(container.scrollTop).toBe(2111);
+          expect(setViewState).not.toHaveBeenCalled();
+          expect(screen.queryByTestId("virtuoso-mock")).not.toBeNull();
+          expect(scrollToIndexSpy).toHaveBeenLastCalledWith(expect.objectContaining({ align: "end" }));
+        } finally { view.unmount(); geometry.restore(); }
+      });
+
+      it.each(["keyboard", "scrollbar"])("does not undo a %s scroll during landing", async (input) => {
+        const target = bulkIndex(50);
+        const geometry = controlLandingGeometry(target);
+        const setViewState = vi.fn();
+        mockApiObj.listTimeline.mockResolvedValue(bulkRoots(60));
+        vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "requestAnimationFrame", "cancelAnimationFrame", "performance"] });
+        const view = renderVirtualDeepLink(target, 0, { get: () => undefined, setViewState });
+        try {
+          await act(async () => { await vi.waitFor(() => expect(scrollToIndexSpy).toHaveBeenCalled()); });
+          const container = geometry.attach();
+          await act(async () => { await vi.advanceTimersByTimeAsync(32); });
+          if (input === "keyboard") fireEvent.keyDown(container, { key: "PageDown" });
+          else {
+            Object.defineProperties(container, {
+              clientWidth: { configurable: true, value: 780 },
+              offsetWidth: { configurable: true, value: 800 },
+            });
+            fireEvent.pointerDown(container, { clientX: 795, button: 0 });
+          }
+          container.scrollTop = 2000;
+          fireEvent.scroll(container);
+          await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
+          expect(container.scrollTop).toBe(2000);
+          expect(setViewState).not.toHaveBeenCalled();
+          expect(hasHighlightedCommentBackground(document)).toBe(false);
+          expect(screen.queryByTestId("virtuoso-mock")).not.toBeNull();
+        } finally { view.unmount(); vi.useRealTimers(); geometry.restore(); }
+      });
+
+      it("keeps landing active for editing keys and content clicks", async () => {
+        const target = bulkIndex(50);
+        const geometry = controlLandingGeometry(target);
+        const setViewState = vi.fn();
+        mockApiObj.listTimeline.mockResolvedValue(bulkRoots(60));
+        vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "requestAnimationFrame", "cancelAnimationFrame", "performance"] });
+        const view = renderVirtualDeepLink(target, 0, { get: () => undefined, setViewState });
+        try {
+          await act(async () => { await vi.waitFor(() => expect(scrollToIndexSpy).toHaveBeenCalled()); });
+          const container = geometry.attach();
+          const input = document.createElement("textarea");
+          container.append(input);
+          fireEvent.keyDown(input, { key: "ArrowDown" });
+          fireEvent.keyDown(container, { key: "f", ctrlKey: true });
+          fireEvent.pointerDown(container, { clientX: 300, button: 0 });
+          await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+          expect(container.scrollTop).toBe(1550);
+          expect(setViewState).toHaveBeenCalledExactlyOnceWith("highlight:issue-1", target);
+        } finally { view.unmount(); vi.useRealTimers(); geometry.restore(); }
+      });
+
       it("does not consume a mounted target that never reaches its coordinates", async () => {
         const target = bulkIndex(50);
         const geometry = controlLandingGeometry(target, true);
@@ -2800,6 +2905,8 @@ describe("IssueDetail (shared)", () => {
           expect(disconnect).toHaveBeenCalledWith(landing);
           expect(remove).toHaveBeenCalledWith("wheel", expect.any(Function));
           expect(remove).toHaveBeenCalledWith("touchmove", expect.any(Function));
+          expect(remove).toHaveBeenCalledWith("keydown", expect.any(Function));
+          expect(remove).toHaveBeenCalledWith("pointerdown", expect.any(Function));
           expect(cancelFrame).toHaveBeenCalled();
           expect(clearTimer).toHaveBeenCalled();
           container.scrollTop = 117;

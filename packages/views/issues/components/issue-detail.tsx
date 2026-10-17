@@ -1423,6 +1423,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
   );
   const [pendingPostedCommentId, setPendingPostedCommentId] = useState<string | null>(null);
   const scrollToTimelineBottom = useCallback((commentId: string) => {
+    cancelDeepLinkRef.current?.();
     setPendingPostedCommentId(commentId);
   }, []);
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
@@ -2247,6 +2248,8 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
       observer = null;
       container.removeEventListener("wheel", markUserScroll);
       container.removeEventListener("touchmove", markUserScroll);
+      container.removeEventListener("keydown", markScrollKey);
+      container.removeEventListener("pointerdown", markScrollbar);
     };
     const clearHighlight = () => {
       if (fade !== null) window.clearTimeout(fade);
@@ -2268,6 +2271,23 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
     cancelDeepLinkRef.current = cancelForUserScroll;
     const markUserScroll = () => {
       cancelForUserScroll();
+    };
+    const markScrollKey = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey) return;
+      if (event.target instanceof Element && event.target.closest("input, textarea, select, button, [contenteditable]:not([contenteditable='false'])")) return;
+      if (["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "].includes(event.key)) {
+        cancelForUserScroll();
+      }
+    };
+    const markScrollbar = (event: PointerEvent) => {
+      if (event.target !== container || event.button !== 0) return;
+      const rect = container.getBoundingClientRect();
+      const x = event.clientX - rect.left;
+      // A classic scrollbar occupies the gutter outside the client area.
+      if (container.offsetWidth > container.clientWidth &&
+        (x < container.clientLeft || x >= container.clientLeft + container.clientWidth)) {
+        cancelForUserScroll();
+      }
     };
     const markSettled = () => {
       if (settled) return;
@@ -2298,7 +2318,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
       const { aligned, geometry } = centerOn(el);
       if (!aligned || geometry !== lastGeometry) stableSince = performance.now();
       lastGeometry = geometry;
-      const pendingImages = Array.from(container.querySelectorAll("img")).some((img) => !img.complete);
+      const pendingImages = Array.from(el.querySelectorAll("img")).some((img) => !img.complete);
       // A quiet geometry window catches async layout; the existing deadline bounds observation.
       if (!aligned || pendingImages || performance.now() - stableSince < 160) {
         rafId = requestAnimationFrame(() => {
@@ -2376,6 +2396,8 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
     };
     container.addEventListener("wheel", markUserScroll, { passive: true });
     container.addEventListener("touchmove", markUserScroll, { passive: true });
+    container.addEventListener("keydown", markScrollKey);
+    container.addEventListener("pointerdown", markScrollbar, { passive: true });
     // Mount the row first; the first DOM read happens after Virtuoso's
     // range commit lands it.
     if (useVirtualDeepLink) virtuosoRef.current?.scrollToIndex({ index, align: "center" });
