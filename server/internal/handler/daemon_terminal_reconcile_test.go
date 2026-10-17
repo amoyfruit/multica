@@ -179,6 +179,13 @@ func seedDroppedAgentMention(t *testing.T, issueNumber int32) (issueID, taskID, 
 	`, issueID, testWorkspaceID, agentA, mention).Scan(&mentionCommentID); err != nil {
 		t.Fatalf("setup: agent @B comment: %v", err)
 	}
+	// Put the mention in the trigger comment's thread. Since #8131 the
+	// active/pending-task checks are thread-scoped, so a mention that starts
+	// its own thread does not see B's dispatched task and is enqueued instead
+	// of dropped — which is the state this fixture needs to reproduce.
+	if _, err := testPool.Exec(ctx, `UPDATE comment SET parent_id = $2 WHERE id = $1`, mentionCommentID, triggerCommentID); err != nil {
+		t.Fatalf("setup: thread the mention under the trigger comment: %v", err)
+	}
 	mentionComment, err := testHandler.Queries.GetComment(ctx, util.MustParseUUID(mentionCommentID))
 	if err != nil {
 		t.Fatalf("setup: load mention comment: %v", err)
