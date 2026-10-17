@@ -2217,6 +2217,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
     // The reader cancelled this exact request mid-flight: don't fight their
     // scroll by retrying on this mount. A new request key still lands.
     if (cancelledDeepLinkRef.current === requestKey) return;
+    if (virtualRequestSeenRef.current !== requestKey) didHighlightRef.current = null;
     virtualRequestSeenRef.current = requestKey;
     // Tab-switch restore wins over a fresh jump for an already-consumed id.
     // Only the initial selection restores; later selections are fresh intent.

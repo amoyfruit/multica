@@ -3022,6 +3022,29 @@ describe("IssueDetail (shared)", () => {
         expect(hasHighlightedCommentBackground(document)).toBe(false);
       });
 
+      it("finishes a replay after timeline refresh before settlement", async () => {
+        const target = bulkIndex(50);
+        const geometry = controlLandingGeometry(target);
+        const setViewState = vi.fn();
+        mockApiObj.listTimeline.mockResolvedValue(bulkRoots(60));
+        const view = renderVirtualDeepLink(target, 0, { get: () => undefined, setViewState });
+        try {
+          await waitFor(() => expect(scrollToIndexSpy).toHaveBeenCalled());
+          geometry.attach();
+          await waitFor(() => expect(setViewState).toHaveBeenCalledTimes(1));
+          vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "requestAnimationFrame", "cancelAnimationFrame", "performance"] });
+          geometry.move(2200);
+          view.retarget(target, 1);
+          await act(async () => { await vi.advanceTimersByTimeAsync(32); });
+          await act(async () => {
+            view.queryClient.setQueryData(issueKeys.timeline("issue-1"), bulkRoots(61));
+          });
+          await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+          expect(setViewState).toHaveBeenCalledTimes(2);
+          expect(document.getElementById(`comment-${target}`)!.getBoundingClientRect().top).toBe(250);
+        } finally { view.unmount(); vi.useRealTimers(); geometry.restore(); }
+      });
+
       it("replays the landing when the open notification is re-clicked", async () => {
         mockApiObj.listTimeline.mockResolvedValue(bulkRoots(200));
         const { retarget } = renderVirtualDeepLink(bulkIndex(10), 0);
