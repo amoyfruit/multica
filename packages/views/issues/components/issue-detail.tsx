@@ -2231,16 +2231,6 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
       container.removeEventListener("wheel", markUserScroll);
       container.removeEventListener("touchmove", markUserScroll);
     };
-    const markUserScroll = () => {
-      userScrolled = true;
-    };
-    const markSettled = () => {
-      if (settled) return;
-      settled = true;
-      cleanup();
-      didHighlightRef.current = highlightCommentId;
-      writeViewState(issueHighlightMementoKey(id), highlightCommentId);
-    };
     // The reader took over mid-flight: stop correcting, record nothing.
     // This request stays unlanded (no guard, no memento) so a remount may
     // try again; on this mount the effect must not restart and fight the
@@ -2249,8 +2239,26 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
       if (settled) return;
       settled = true;
       cancelledDeepLinkRef.current = requestKey;
+      // The request pre-lights the highlight before the row mounts (and
+      // re-arms its fade timer on mount): take both back so a cancelled
+      // request leaves no flash behind.
+      if (jumpFlashTimerRef.current !== null) window.clearTimeout(jumpFlashTimerRef.current);
+      jumpFlashTimerRef.current = null;
+      setHighlightedId(null);
       cleanup();
     };
+    const markUserScroll = () => {
+      userScrolled = true;
+      cancelForUserScroll();
+    };
+    const markSettled = () => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      didHighlightRef.current = highlightCommentId;
+      writeViewState(issueHighlightMementoKey(id), highlightCommentId);
+    };
+
     const centerOn = (el: HTMLElement) => {
       const c = container.getBoundingClientRect();
       const e = el.getBoundingClientRect();

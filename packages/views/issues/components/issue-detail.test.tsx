@@ -650,6 +650,8 @@ const mockTimeline: TimelineEntry[] = [
 // ---------------------------------------------------------------------------
 
 import { IssueDetail, groupSubIssuesByStage } from "./issue-detail";
+import { ScrollRestorationProvider } from "../../platform/scroll-restoration";
+import type { ScrollRestorationAdapter } from "../../platform/scroll-restoration";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -2590,12 +2592,14 @@ describe("IssueDetail (shared)", () => {
         }
         return out;
       };
-      function renderVirtualDeepLink(commentId: string, token?: number) {
+      function renderVirtualDeepLink(commentId: string, token?: number, adapter?: ScrollRestorationAdapter) {
         const queryClient = createTestQueryClient();
         const tree = (cid: string, t?: number) => (
           <I18nProvider locale="en" resources={TEST_RESOURCES}>
             <QueryClientProvider client={queryClient}>
-              <IssueDetail issueId="issue-1" highlightCommentId={cid} highlightRequestToken={t} />
+              <ScrollRestorationProvider adapter={adapter ?? { get: () => undefined }}>
+                <IssueDetail issueId="issue-1" highlightCommentId={cid} highlightRequestToken={t} />
+              </ScrollRestorationProvider>
             </QueryClientProvider>
           </I18nProvider>
         );
@@ -2911,6 +2915,51 @@ describe("IssueDetail (shared)", () => {
         });
         expect(scrollToIndexSpy).toHaveBeenCalledTimes(2);
       });
+
+      it("cancels on pre-mount wheel with no fallback, no highlight, no memento", async () => {
+        // The reader scrolls before the virtual row mounts: the request
+        // must die immediately. Past the 2.5s hard ceiling there is still
+        // no flat fallback, no flash, and no memento - and a fresh token
+        // for the same comment lands normally.
+        virtuosoWindow.failScroll = true;
+        mockApiObj.listTimeline.mockResolvedValue(bulkRoots(200));
+        const target = bulkIndex(150);
+        const setViewState = vi.fn();
+        const view = renderVirtualDeepLink(target, 0, { get: () => undefined, setViewState });
+        const scroller = () =>
+          document.querySelector("[data-tab-scroll-root]") as HTMLElement | null;
+        await waitFor(() => {
+          expect(scroller()).not.toBeNull();
+        });
+        await waitFor(() => {
+          expect(scrollToIndexSpy).toHaveBeenCalledTimes(1);
+        });
+        // The row never mounts under failScroll: this wheel is pre-mount.
+        expect(document.getElementById("comment-" + target)).toBeNull();
+        act(() => {
+          scroller()?.dispatchEvent(new Event("wheel", { bubbles: true }));
+        });
+        // The 30-frame mount budget and the 2.5s ceiling both expire here.
+        await act(async () => {
+          await new Promise((resolve) => setTimeout(resolve, 3000));
+        });
+        // Still virtual: the cancelled request never took the flat escape hatch.
+        expect(screen.queryByTestId("virtuoso-mock")).not.toBeNull();
+        // Never retried on this mount: the scrolled request stays dead.
+        expect(scrollToIndexSpy).toHaveBeenCalledTimes(1);
+        // The pre-mount flash is taken back and nothing was recorded.
+        expect(hasHighlightedCommentBackground(document)).toBe(false);
+        expect(setViewState).not.toHaveBeenCalled();
+        // A new request token for the same comment lands normally.
+        virtuosoWindow.failScroll = false;
+        view.retarget(target, 1);
+        await waitFor(() => {
+          expect(
+            hasHighlightedCommentBackground(document.getElementById("comment-" + target)),
+          ).toBe(true);
+        });
+        expect(scrollToIndexSpy).toHaveBeenCalledTimes(2);
+      }, 30000);
 
       it("lands on remount when unmounted before settling", async () => {
         virtuosoWindow.failScroll = true;
