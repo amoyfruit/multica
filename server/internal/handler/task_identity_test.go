@@ -12,7 +12,7 @@ import (
 )
 
 func TestCurrentTaskIdentityAuthBoundary(t *testing.T) {
-	agentID := dbfx.Agent(t, "Identity test", "")
+	agentID := dbfx.Agent(t, "Identity test", testRuntimeID)
 	for i, tc := range []struct {
 		name, status, source, kind             string
 		expired, crossWorkspace, missingMember bool
@@ -24,6 +24,7 @@ func TestCurrentTaskIdentityAuthBoundary(t *testing.T) {
 		{"expired token", "running", "direct_human", "", true, false, false},
 		{"fallback is not consent", "running", "owner_fallback", "", false, false, false},
 		{"task in another workspace", "running", "direct_human", "", false, true, false},
+		{"delegated parent in another workspace", "running", "delegation", "", false, false, false},
 		{"requester left workspace", "running", "direct_human", "", false, false, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -36,9 +37,15 @@ func TestCurrentTaskIdentityAuthBoundary(t *testing.T) {
 			if tc.missingMember {
 				requester = dbfx.User(t, "Former member", "identity-former@example.com")
 			}
-			cols := testutil.Cols{"status": tc.status, "originator_source": tc.source, "accountable_user_id": requester}
+			cols := testutil.Cols{"status": tc.status, "runtime_id": testRuntimeID, "originator_source": tc.source, "accountable_user_id": requester}
 			if tc.source != "owner_fallback" {
 				cols["originator_user_id"] = requester
+			}
+			if tc.source == "delegation" {
+				ws := dbfx.Workspace(t, "Foreign parent workspace", "identity-parent-workspace")
+				runtime := dbfx.Runtime(t, "Foreign parent runtime", testutil.Cols{"workspace_id": ws})
+				parentAgent := dbfx.Agent(t, "Foreign parent agent", runtime, testutil.Cols{"workspace_id": ws})
+				cols["delegated_from_task_id"] = dbfx.Task(t, parentAgent, testutil.Cols{"runtime_id": runtime, "status": "completed", "originator_source": "direct_human", "originator_user_id": requester, "accountable_user_id": requester})
 			}
 			taskID := dbfx.Task(t, taskAgent, cols)
 			token := fmt.Sprintf("mat_identity_test_%d", i)
@@ -46,7 +53,7 @@ func TestCurrentTaskIdentityAuthBoundary(t *testing.T) {
 			if tc.expired {
 				expiry = testutil.Raw("now() - interval '1 hour'")
 			}
-			dbfx.Insert(t, "task_token", testutil.Cols{"token_hash": auth.HashToken(token), "task_id": taskID, "agent_id": agentID, "workspace_id": testWorkspaceID, "user_id": testUserID, "expires_at": expiry})
+			dbfx.Insert(t, "task_token", testutil.Cols{"token_hash": auth.HashToken(token), "task_id": taskID, "agent_id": taskAgent, "workspace_id": testWorkspaceID, "user_id": testUserID, "expires_at": expiry})
 			h := middleware.Auth(testHandler.Queries, nil, nil, nil)(middleware.RequireWorkspaceMember(testHandler.Queries)(http.HandlerFunc(testHandler.GetCurrentTaskIdentity)))
 			req := httptest.NewRequest(http.MethodGet, "/api/tasks/current/identity?workspace_id=forged&task_id=forged", nil)
 			req.Header.Set("Authorization", "Bearer "+token)
