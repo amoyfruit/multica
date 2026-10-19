@@ -45,7 +45,6 @@ globalThis.pendingRaf = (): number =>
 declare global {
   var flushRaf: () => void;
   var pendingRaf: () => number;
-  // eslint-disable-next-line no-var
   var triggerResizeObservers: () => void;
 }
 
