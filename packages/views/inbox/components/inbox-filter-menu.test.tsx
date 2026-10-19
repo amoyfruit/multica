@@ -289,13 +289,13 @@ describe("InboxFilterMenu", () => {
     );
   });
 
-  it("toggles idle only and counts the idle rows behind it", async () => {
+  it("toggles no agents working and counts the idle rows behind it", async () => {
     renderMenu({ activeIssueIds: new Set(["issue-todo-high"]) });
 
     fireEvent.click(screen.getByRole("button", { name: "Filter inbox" }));
     fireEvent.click(
       await screen.findByRole("menuitemcheckbox", {
-        name: /Idle only.*1 notification/,
+        name: /No agents working.*1 notification/,
       }),
     );
 
@@ -304,14 +304,14 @@ describe("InboxFilterMenu", () => {
     ).toBe(true);
   });
 
-  it("hides idle only in the archive and ignores a carried-over selection", async () => {
+  it("hides no agents working in the archive and ignores a carried-over selection", async () => {
     useInboxFilterStore.getState().toggleIdleOnly("ws-1");
     renderMenu({ archived: true });
 
     // Not counted on the trigger, and not offered in the menu.
     fireEvent.click(screen.getByRole("button", { name: "Filter inbox" }));
     await screen.findByRole("menuitemcheckbox", { name: /Unread only/ });
-    expect(screen.queryByRole("menuitemcheckbox", { name: /Idle only/ })).toBeNull();
+    expect(screen.queryByRole("menuitemcheckbox", { name: /No agents working/ })).toBeNull();
   });
 
   it("hides priority and clears its filter for a legacy response", async () => {

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { CircleDot, Filter, Mail, Moon, RotateCcw, SignalHigh, UserRound } from "lucide-react";
+import { BotOff, CircleDot, Filter, Mail, RotateCcw, SignalHigh, UserRound } from "lucide-react";
 import { PRIORITY_DISPLAY_ORDER } from "@multica/core/issues/config";
 import {
   filterInboxItems,
@@ -257,8 +257,8 @@ export function InboxFilterMenu({
             checked={effectiveFilters.idleOnly}
             onCheckedChange={() => toggleIdleOnly(wsId)}
           >
-            <Moon className="size-3.5" />
-            <span className="flex-1">{t(($) => $.filters.idle_only)}</span>
+            <BotOff className="size-3.5" />
+            <span className="flex-1">{t(($) => $.filters.no_agents_working)}</span>
             {idleCount > 0 && (
               <span className="text-caption text-muted-foreground">
                 {t(($) => $.filters.notification_count, { count: idleCount })}
