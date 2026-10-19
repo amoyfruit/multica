@@ -24,6 +24,7 @@ vi.hoisted(() => {
 });
 
 const { openAttachment } = await import("./open-attachment");
+const { EMPTY_ATTACHMENT } = await import("@/data/schemas");
 
 const ATT_ID = "11111111-2222-3333-4444-555555555555";
 
@@ -60,24 +61,17 @@ describe("openAttachment", () => {
     expect(linkingOpenURL).toHaveBeenCalledWith(signed);
   });
 
-  it("falls back to the stored URL when the metadata request fails", async () => {
-    getAttachmentForDownload.mockRejectedValue(new Error("offline"));
+  it.each([
+    ["the metadata request fails", () => getAttachmentForDownload.mockRejectedValue(new Error("404"))],
+    ["the response parses to the empty fallback", () => getAttachmentForDownload.mockResolvedValue(EMPTY_ATTACHMENT)],
+    ["the fresh record has no download_url", () => getAttachmentForDownload.mockResolvedValue(freshRecord(""))],
+  ])("shows the in-app error and opens nothing when %s", async (_case, arrange) => {
+    arrange();
 
     await openAttachment(`/api/attachments/${ATT_ID}/download`);
 
-    expect(linkingOpenURL).toHaveBeenCalledWith(
-      `https://api.example.test/api/attachments/${ATT_ID}/download`,
-    );
-  });
-
-  it("keeps the stored URL when the response parses to the empty fallback", async () => {
-    getAttachmentForDownload.mockResolvedValue(freshRecord(""));
-
-    await openAttachment(`/api/attachments/${ATT_ID}/download`);
-
-    expect(linkingOpenURL).toHaveBeenCalledWith(
-      `https://api.example.test/api/attachments/${ATT_ID}/download`,
-    );
+    expect(alertSpy).toHaveBeenCalledWith("common:attachments.open_failed");
+    expect(linkingOpenURL).not.toHaveBeenCalled();
   });
 
   it("does nothing without a URL", async () => {

@@ -18,7 +18,7 @@
  * capability URLs the server already made credential-free) open unchanged.
  */
 import { Alert, Linking } from "react-native";
-import { attachmentIdFromDownloadURL } from "@multica/core/types";
+import { attachmentIdFromDownloadURL, type Attachment } from "@multica/core/types";
 import { api } from "@/data/api";
 import { i18n } from "@/lib/i18n/singleton";
 import { resolveAttachmentUrl } from "./attachment-url";
@@ -32,14 +32,20 @@ export async function openAttachment(
   let target = resolveAttachmentUrl(rawUrl);
 
   if (attachmentId) {
+    // The stored URL is the auth-gated path, so it cannot serve as a
+    // fallback: Safari would launch and show 401 `missing authorization`.
+    // Without a fresh signed URL, report the failure in-app instead.
+    let fresh: Attachment | undefined;
     try {
-      const fresh = await api.getAttachmentForDownload(attachmentId);
-      // `id: ""` is the parse fallback — keep the original URL rather than
-      // opening an empty string.
-      if (fresh.id) target = resolveAttachmentUrl(fresh.download_url) ?? target;
+      fresh = await api.getAttachmentForDownload(attachmentId);
     } catch {
-      // Offline or a server that predates the endpoint. The stored URL may
-      // still be a public CDN path, so fall through and try it.
+      // Fall through to the alert below.
+    }
+    // `id: ""` is the parse fallback.
+    target = fresh?.id ? resolveAttachmentUrl(fresh.download_url) : null;
+    if (!target) {
+      Alert.alert(i18n.t("common:attachments.open_failed"));
+      return;
     }
   }
 
