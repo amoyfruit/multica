@@ -3692,12 +3692,15 @@ export const RuntimeProfileSchema = z
 export const RuntimeProfileListSchema = z.array(RuntimeProfileSchema);
 
 // Pins are metadata; unknown item types must not be treated as issue pins.
-export const PinnedItemListSchema = z.array(z.object({
+const PinnedItemSchema = z.object({
   id: z.string(),
   workspace_id: z.string(),
   user_id: z.string(),
-  item_type: z.enum(["issue", "project", "view"]),
+  item_type: z.string(),
   item_id: z.string(),
   position: z.number(),
   created_at: z.string(),
-}));
+});
+export const PinnedItemListSchema = z.array(PinnedItemSchema).transform((pins) =>
+  pins.filter((pin) => ["issue", "project", "view"].includes(pin.item_type)),
+);

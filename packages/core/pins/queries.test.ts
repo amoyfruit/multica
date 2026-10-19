@@ -63,12 +63,23 @@ describe("workspace pin queries", () => {
     client.clear();
   });
 
-  it.each([null, {}, [{ ...pin("a"), item_type: "future-kind" }]])(
-    "handles malformed or unsupported pin metadata safely: %j",
+  it("retains supported pins alongside a future item type", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response([
+      pin("a"), { ...pin("a"), id: "future", item_type: "future-kind" },
+    ])));
+    expect(await new ApiClient("https://api.example.test").listPins("a")).toEqual([pin("a")]);
+  });
+
+  it.each([null, {}, [{ ...pin("a"), item_id: null }]])(
+    "rejects malformed responses without clearing cached pins: %j",
     async (data) => {
+      const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      setApiInstance(new ApiClient("https://api.example.test"));
       vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response(data)));
-      expect(await new ApiClient("https://api.example.test").listPins("a")).toEqual([]);
+      client.setQueryData(pinKeys.list("a", "user-1"), [pin("a")]);
+      await expect(client.fetchQuery(pinListOptions("a", "user-1"))).rejects.toThrow(/pin/i);
+      expect(client.getQueryData(pinKeys.list("a", "user-1"))).toEqual([pin("a")]);
+      client.clear();
     },
   );
-
 });

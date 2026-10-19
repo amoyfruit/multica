@@ -4478,9 +4478,11 @@ export class ApiClient {
         ? { "X-Workspace-Slug": "", "X-Workspace-ID": workspaceId }
         : undefined,
     });
-    return parseWithFallback(raw, PinnedItemListSchema, [], {
+    const pins = parseWithFallback<PinnedItem[] | null>(raw, PinnedItemListSchema, null, {
       endpoint: "GET /api/pins",
     });
+    if (pins === null) throw new Error("Invalid pin list response");
+    return pins;
   }
 
   async createPin(data: CreatePinRequest): Promise<PinnedItem> {

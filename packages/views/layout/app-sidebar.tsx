@@ -1,4 +1,6 @@
 "use client";
+
+import { Button } from "@multica/ui/components/ui/button";
 import { useIssueStatuses } from "@multica/core/issue-statuses/hooks";
 
 import { issueStatusCategory } from "@multica/core/issues";
@@ -267,6 +269,20 @@ function SortablePinItem({
   );
 }
 
+function UnavailablePin({ onUnpin }: { onUnpin: () => void }) {
+  const { t } = useT("layout");
+  return (
+    <SidebarMenuItem>
+      <div className="flex h-7 items-center gap-2 px-2 text-sm text-muted-foreground">
+        <span className="min-w-0 flex-1 truncate">{t(($) => $.sidebar.unavailable_pin)}</span>
+        <Button variant="ghost" size="xs" onClick={onUnpin}>
+          {t(($) => $.sidebar.unpin_tooltip)}
+        </Button>
+      </div>
+    </SidebarMenuItem>
+  );
+}
+
 /**
  * Smart wrapper that resolves a pin's display data (label + status/icon)
  * from the issue / project detail query cache. Both queries are declared
@@ -274,8 +290,7 @@ function SortablePinItem({
  * regardless of `pin.item_type`.
  *
  * Loading: render a flat skeleton so the sidebar height doesn't jump.
- * Missing (deleted item / 404): render nothing — the row hides itself
- * until the user unpins manually or a server-side cascade catches up.
+ * Unavailable details: keep the row visible with an explicit unpin action.
  */
 function PinRow({
   pin,
@@ -308,13 +323,12 @@ function PinRow({
     enabled: isView,
   });
 
-  // A 404 can come from a stale workspace context or an older server. Hide
-  // unavailable details below, but only an explicit user action may unpin.
+  // A detail failure is not authoritative evidence that the pin was deleted.
 
   const activeViewByContainer = useActiveIssueViewStore((s) => s.active);
   if (isView) {
     if (viewQuery.isPending) return <PinSkeleton />;
-    if (viewQuery.isError || !viewQuery.data) return null;
+    if (viewQuery.isError || !viewQuery.data) return <UnavailablePin onUnpin={onUnpin} />;
     const view = viewQuery.data;
     // One resolved scope drives the path AND the container key so an
     // unrecognised scope_type from a newer backend degrades coherently.
@@ -358,7 +372,7 @@ function PinRow({
 
   if (isIssue) {
     if (issueQuery.isPending) return <PinSkeleton />;
-    if (issueQuery.isError || !issueQuery.data) return null;
+    if (issueQuery.isError || !issueQuery.data) return <UnavailablePin onUnpin={onUnpin} />;
     const issue = issueQuery.data;
     const label = issue.title;
     const iconNode = (
@@ -384,7 +398,7 @@ function PinRow({
   }
 
   if (projectQuery.isPending) return <PinSkeleton />;
-  if (projectQuery.isError || !projectQuery.data) return null;
+  if (projectQuery.isError || !projectQuery.data) return <UnavailablePin onUnpin={onUnpin} />;
   const project = projectQuery.data;
   const iconNode = <ProjectIcon project={project} size="sm" />;
   return (
