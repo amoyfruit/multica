@@ -19,7 +19,7 @@ vi.mock("expo-secure-store", () => ({
   }),
 }));
 
-import { setIssueViewPrefsScope } from "./issue-view-prefs";
+import { setViewPrefsScope } from "./view-prefs-storage";
 import { useMyIssuesViewStore } from "./my-issues-view-store";
 import { useIssuesViewStore } from "./issues-view-store";
 
@@ -29,7 +29,7 @@ const MY_KEY = "multica_my_issues_view.user-1.ws-a";
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 async function enter(userId: string | null, wsId: string | null) {
-  setIssueViewPrefsScope(userId, wsId);
+  setViewPrefsScope(userId, wsId);
   await flush();
 }
 
@@ -38,7 +38,7 @@ function saved(key: string) {
   return raw ? JSON.parse(raw).state : undefined;
 }
 
-describe("issue view prefs persistence", () => {
+describe("view prefs persistence", () => {
   beforeEach(async () => {
     await enter(null, null);
     keychain.items.clear();

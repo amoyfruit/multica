@@ -11,17 +11,14 @@
  * `showCompleted` is turned on — see `hideCompletedIssues`.
  *
  * Persisted per user and workspace like web's store; see
- * `./issue-view-prefs.ts` for the storage and hydration lifecycle.
+ * `./view-prefs-storage.ts` for the storage and hydration lifecycle.
  */
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { IssuePriority, IssueStatus } from "@multica/core/types";
 import type { MyIssuesScope } from "@/data/queries/issue-keys";
-import {
-  issueViewPersistOptions,
-  registerIssueViewPrefsStore,
-  type IssueViewPrefs,
-} from "./issue-view-prefs";
+import { issueViewPersistOptions, type IssueViewPrefs } from "./issue-view-prefs";
+import { registerViewPrefsStore } from "./view-prefs-storage";
 
 const SCOPES: readonly MyIssuesScope[] = ["assigned", "created", "agents"];
 
@@ -63,4 +60,4 @@ export const useMyIssuesViewStore = create<MyIssuesViewState>()(
   ),
 );
 
-registerIssueViewPrefsStore(useMyIssuesViewStore);
+registerViewPrefsStore(useMyIssuesViewStore);

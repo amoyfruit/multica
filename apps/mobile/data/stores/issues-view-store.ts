@@ -22,18 +22,15 @@
  * `showCompleted` is turned on — see `hideCompletedIssues`.
  *
  * Persisted per user and workspace, scope included (web persists it in
- * `issues-scope-store`); see `./issue-view-prefs.ts`. `clearFilters`
+ * `issues-scope-store`); see `./view-prefs-storage.ts`. `clearFilters`
  * deliberately does NOT reset `scope` or `showCompleted`: they are view
  * choices, not filters.
  */
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { IssuePriority, IssueStatus } from "@multica/core/types";
-import {
-  issueViewPersistOptions,
-  registerIssueViewPrefsStore,
-  type IssueViewPrefs,
-} from "./issue-view-prefs";
+import { issueViewPersistOptions, type IssueViewPrefs } from "./issue-view-prefs";
+import { registerViewPrefsStore } from "./view-prefs-storage";
 
 export type IssuesScope = "all" | "members" | "agents";
 
@@ -77,4 +74,4 @@ export const useIssuesViewStore = create<IssuesViewState>()(
   ),
 );
 
-registerIssueViewPrefsStore(useIssuesViewStore);
+registerViewPrefsStore(useIssuesViewStore);
