@@ -128,7 +128,8 @@ Multica 是一个任务管理平台，人与智能体围绕任务（issue）展�
 
 ## 变更与发布规则
 
-- 变更保持聚焦；复用既有模式。代码注释只用英文。
-- 除非另有要求，不添加内部兼容 shim、双写、回退路径或遗留 adapter。这不会放宽上面的 API 响应兼容要求。
-- 新的全局前置工作区路由使用单个单词或 `/{noun}/{verb}` 格式，不用连字符根名称。变更保留字（reserved slugs）时，更新 `server/internal/handler/reserved_slugs.json`，运行 `pnpm generate:reserved-slugs`，并提交 `packages/core/paths/reserved-slugs.ts`。
-- 使用原子化 conventional commit 与仓库 PR 模板。发布遵循 [.github/RELEASING.md](.github/RELEASING.md)；除非另有说明，默认只升 patch 版本。
+- Keep changes scoped; reuse existing patterns. Code comments are English.
+- Use names, types, and tests to express behavior. Keep comments for non-obvious rationale and constraints; remove superseded plans and incident narratives when updating code. Preserve tool directives and mixed-version contracts.
+- Do not add internal compatibility shims, dual writes, fallback paths, or legacy adapters unless requested. This does not relax API response compatibility above.
+- New global pre-workspace routes use a single word or `/{noun}/{verb}`, not hyphenated root names. Update `server/internal/handler/reserved_slugs.json`, run `pnpm generate:reserved-slugs`, and commit `packages/core/paths/reserved-slugs.ts` when changing reserved slugs.
+- Use atomic conventional commits and the repository PR template. For releases, follow [.github/RELEASING.md](.github/RELEASING.md); default to a patch bump unless specified otherwise.
