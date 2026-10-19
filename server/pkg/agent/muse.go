@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 )
@@ -492,11 +493,13 @@ func (b *museBackend) Execute(ctx context.Context, prompt string, opts ExecOptio
 	state := newMuseSession()
 
 	var (
-		mu          sync.Mutex
-		turnDone    = make(chan museTurnOutcome, 1)
-		sessionID   string
-		usage       map[string]TokenUsage
-		outputCache string
+		mu               sync.Mutex
+		turnDone         = make(chan museTurnOutcome, 1)
+		sessionID        string
+		usage            map[string]TokenUsage
+		outputCache      string
+		terminalOutcome  museTurnOutcome
+		terminalObserved atomic.Bool
 	)
 
 	client := newMuseClient(stdin)
@@ -532,6 +535,10 @@ func (b *museBackend) Execute(ctx context.Context, prompt string, opts ExecOptio
 					outcome.errMessage = payload.Error.Message
 				}
 			}
+			mu.Lock()
+			terminalOutcome = outcome
+			mu.Unlock()
+			terminalObserved.Store(true)
 			select {
 			case turnDone <- outcome:
 			default:
@@ -564,19 +571,38 @@ func (b *museBackend) Execute(ctx context.Context, prompt string, opts ExecOptio
 		}
 		client.closeAllPending(errMuseProcessExited)
 	}()
+	cleanup := sync.OnceFunc(func() {
+		_ = stdin.Close()
+		cancel()
+		drained := make(chan struct{})
+		go func() {
+			<-readerDone
+			<-stderrDone
+			close(drained)
+		}()
+		timer := time.NewTimer(museReaderDrainGrace)
+		defer timer.Stop()
+		select {
+		case <-drained:
+		case <-timer.C:
+			// A detached descendant can retain either pipe after Muse exits.
+			// Close our readers before Wait so EOF cannot hold up the result.
+			_ = stdout.Close()
+			_ = stderr.Close()
+			<-drained
+		}
+		_ = cmd.Wait()
+		releaseProcessGroup(cmd)
+	})
 
 	go func() {
 		defer msgStream.close()
 		defer close(resCh)
-		defer func() {
-			_ = stdin.Close()
-			cancel()
-			_ = cmd.Wait()
-			releaseProcessGroup(cmd)
-		}()
+		defer cleanup()
 
 		startTime := time.Now()
 		fail := func(status, message string) {
+			cleanup()
 			resCh <- Result{
 				Status:     status,
 				Error:      message,
@@ -621,6 +647,7 @@ func (b *museBackend) Execute(ctx context.Context, prompt string, opts ExecOptio
 				// daemon retry. A transport failure is NOT that — the session
 				// may still be healthy and the platform retry should resume it.
 				status, message := museRequestFailure(runCtx, opts.Timeout, "session/resume", resumeErr)
+				cleanup()
 				resCh <- Result{
 					Status:         status,
 					Error:          message,
@@ -643,6 +670,17 @@ func (b *museBackend) Execute(ctx context.Context, prompt string, opts ExecOptio
 				status, message := museRequestFailure(runCtx, opts.Timeout, "session/setApprovalMode", err)
 				fail(status, message)
 				return
+			}
+			if model := strings.TrimSpace(opts.Model); model != "" {
+				if _, err := client.request(runCtx, "session/setModel", map[string]any{
+					"commandId": museUUIDv7(),
+					"sessionId": sessionID,
+					"model":     map[string]any{"modelId": model},
+				}); err != nil {
+					status, message := museRequestFailure(runCtx, opts.Timeout, "session/setModel", err)
+					fail(status, message)
+					return
+				}
 			}
 		} else {
 			params := map[string]any{
@@ -693,29 +731,22 @@ func (b *museBackend) Execute(ctx context.Context, prompt string, opts ExecOptio
 		var outcome museTurnOutcome
 		select {
 		case outcome = <-turnDone:
+		case <-readerDone:
+			outcome = museTurnOutcome{terminal: "failed", errMessage: errMuseProcessExited.Error()}
 		case <-runCtx.Done():
 			outcome = museTurnOutcome{terminal: "timeout"}
 		}
 
-		// Drain whatever the reader still has buffered so the transcript's last
-		// items reach the board instead of being cut off at turn/completed.
-		drainDeadline := time.Now().Add(250 * time.Millisecond)
-		for time.Now().Before(drainDeadline) {
-			select {
-			case extra := <-turnDone:
-				outcome = extra
-			case <-time.After(20 * time.Millisecond):
-			}
-		}
-
 		duration := time.Since(startTime)
-		_ = stdin.Close()
-		cancel()
-		<-readerDone
-		<-stderrDone
+		cleanup()
 
 		mu.Lock()
 		collected := usage
+		// A terminal event wins over a simultaneous EOF, session/closed, or
+		// cancellation, including events already buffered before cleanup.
+		if terminalObserved.Load() {
+			outcome = terminalOutcome
+		}
 		mu.Unlock()
 		outputCache = state.output()
 
@@ -761,7 +792,7 @@ func (b *museBackend) Execute(ctx context.Context, prompt string, opts ExecOptio
 		}
 	}()
 
-	return &Session{Messages: msgStream.ch, Result: resCh}, nil
+	return &Session{Messages: msgStream.ch, Result: resCh, TerminalObserved: terminalObserved.Load}, nil
 }
 
 type museTurnOutcome struct {

@@ -49,6 +49,9 @@ RESUME_BRANCH
     *'"method":"session/setApprovalMode"'*)
       printf '{"jsonrpc":"2.0","id":"%s","result":{"sessionId":"SESSION_ID","mode":"allowAll"}}\n' "$id"
       ;;
+    *'"method":"session/setModel"'*)
+      printf '{"jsonrpc":"2.0","id":"%s","result":{"sessionId":"SESSION_ID","modelId":"new-model"}}\n' "$id"
+      ;;
     *'"method":"turn/start"'*)
       printf '{"jsonrpc":"2.0","id":"%s","result":{"startedNewTurn":true,"disposition":"started"}}\n' "$id"
       sleep 0.02

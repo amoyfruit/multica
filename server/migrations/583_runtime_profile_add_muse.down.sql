@@ -1,4 +1,4 @@
--- Restore the pre-573 whitelist. Existing Muse rows remain valid because
+-- Restore the pre-583 whitelist. Existing Muse rows remain valid because
 -- the replacement constraint is NOT VALID, but new Muse profiles are blocked.
 ALTER TABLE runtime_profile DROP CONSTRAINT IF EXISTS runtime_profile_protocol_family_check;
 
