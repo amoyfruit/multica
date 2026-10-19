@@ -22,6 +22,10 @@ vi.mock("expo-secure-store", () => ({
 import { setViewPrefsScope } from "./view-prefs-storage";
 import { useMyIssuesViewStore } from "./my-issues-view-store";
 import { useIssuesViewStore } from "./issues-view-store";
+import {
+  loadProjectIssuesView,
+  useProjectIssuesViewStore,
+} from "./project-issues-view-store";
 
 const MY_KEY = "multica_my_issues_view.user-1.ws-a";
 
@@ -134,5 +138,78 @@ describe("view prefs persistence", () => {
     await enter("user-1", "ws-a");
     expect(useMyIssuesViewStore.persist.hasHydrated()).toBe(true);
     expect(useMyIssuesViewStore.getState().showCompleted).toBe(false);
+  });
+
+  describe("project issue filters", () => {
+    const keyFor = (projectId: string, ws = "ws-a") =>
+      `multica_project_issues_view.${projectId}.user-1.${ws}`;
+    const view = (projectId: string) =>
+      useProjectIssuesViewStore.getState().byProject[projectId];
+
+    it("saves each project's filters separately", async () => {
+      await enter("user-1", "ws-a");
+      useProjectIssuesViewStore.getState().toggleStatusFilter("p1", "todo");
+      useProjectIssuesViewStore.getState().setShowCompleted("p2", true);
+      await flush();
+      expect(JSON.parse(keychain.items.get(keyFor("p1"))!)).toEqual({
+        statusFilters: ["todo"],
+        priorityFilters: [],
+        showCompleted: false,
+      });
+      expect(JSON.parse(keychain.items.get(keyFor("p2"))!).showCompleted).toBe(true);
+    });
+
+    it("restores a project's filters when it opens after a restart", async () => {
+      keychain.items.set(
+        keyFor("p1"),
+        JSON.stringify({ statusFilters: ["in_progress"], priorityFilters: ["urgent", "huge"], showCompleted: true }),
+      );
+      await enter("user-1", "ws-a");
+      await loadProjectIssuesView("p1");
+      expect(view("p1")).toEqual({
+        statusFilters: ["in_progress"],
+        priorityFilters: ["urgent"],
+        showCompleted: true,
+      });
+      await loadProjectIssuesView("p2");
+      expect(view("p2")).toBeUndefined();
+    });
+
+    it("forgets loaded filters on a workspace switch", async () => {
+      await enter("user-1", "ws-a");
+      useProjectIssuesViewStore.getState().toggleStatusFilter("p1", "todo");
+      await enter("user-1", "ws-b");
+      expect(view("p1")).toBeUndefined();
+      await loadProjectIssuesView("p1");
+      expect(view("p1")).toBeUndefined();
+    });
+
+    it("drops a load that finishes after the workspace changed", async () => {
+      keychain.items.set(
+        keyFor("p1"),
+        JSON.stringify({ statusFilters: ["todo"], priorityFilters: [], showCompleted: false }),
+      );
+      await enter("user-1", "ws-a");
+      const loading = loadProjectIssuesView("p1");
+      setViewPrefsScope("user-1", "ws-b");
+      await loading;
+      expect(view("p1")).toBeUndefined();
+    });
+
+    it("keeps a change made while the saved filters load", async () => {
+      keychain.items.set(
+        keyFor("p1"),
+        JSON.stringify({ statusFilters: ["todo"], priorityFilters: [], showCompleted: false }),
+      );
+      await enter("user-1", "ws-a");
+      const loading = loadProjectIssuesView("p1");
+      useProjectIssuesViewStore.getState().togglePriorityFilter("p1", "high");
+      await loading;
+      expect(view("p1")).toEqual({
+        statusFilters: [],
+        priorityFilters: ["high"],
+        showCompleted: false,
+      });
+    });
   });
 });

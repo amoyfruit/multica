@@ -71,6 +71,14 @@ export function registerViewPrefsStore<T>(store: PersistedViewStore<T>) {
 }
 
 /**
+ * For stores that persist by hand rather than through `persist`: `reset` runs
+ * on every scope change, before persisted stores rehydrate.
+ */
+export function onViewPrefsScopeChange(reset: () => void) {
+  registeredStores.push({ reset, rehydrate: () => {} });
+}
+
+/**
  * Points every registered store at the given user's view of the given
  * workspace. Stores fall back to defaults first, so a workspace with nothing
  * saved never inherits the previous workspace's filters while its own
