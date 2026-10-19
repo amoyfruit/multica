@@ -262,6 +262,44 @@ describe("PullRequestList sidebar rows", () => {
     expect(verdict()).toHaveTextContent(expected);
   });
 
+  // --- Merge queue ---------------------------------------------------------
+
+  it("shows a PR waiting in the merge queue as Queued, like GitHub does", async () => {
+    // What GitHub reports for a queued PR: still open, checks passed, and a
+    // `blocked` merge state because branch protection routes it through the
+    // queue. Read literally, that is "Blocked" — the opposite of the truth.
+    mockPRs = [
+      makePR({
+        checks_rollup: "success",
+        checks_total: 11,
+        checks_passed: 11,
+        mergeable: "mergeable",
+        merge_state_status: "blocked",
+        merge_queue_state: "awaiting_checks",
+      }),
+    ];
+    renderList();
+    await waitForRender();
+    expect(verdict()).toHaveTextContent("Queued");
+    expect(verdict()).toHaveAttribute("title", "In merge queue");
+    expect(screen.queryByText("Blocked")).not.toBeInTheDocument();
+  });
+
+  it("flags a queue entry GitHub cannot merge", async () => {
+    mockPRs = [makePR({ checks_rollup: "success", merge_state_status: "blocked", merge_queue_state: "unmergeable" })];
+    renderList();
+    await waitForRender();
+    expect(verdict()).toHaveTextContent("Queue blocked");
+    expect(verdict()).toHaveAttribute("title", "Merge queue blocked");
+  });
+
+  it("lets a conflict outrank the queue", async () => {
+    mockPRs = [makePR({ mergeable: "conflicting", merge_queue_state: "queued" })];
+    renderList();
+    await waitForRender();
+    expect(verdict()).toHaveTextContent("Conflicts");
+  });
+
   // --- Terminal PRs --------------------------------------------------------
 
   it("ends a merged PR at Merged, whatever its last snapshot said", async () => {

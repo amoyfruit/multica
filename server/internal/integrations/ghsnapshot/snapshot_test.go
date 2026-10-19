@@ -182,6 +182,10 @@ func TestSnapshotDecided(t *testing.T) {
 		{"running context", PRSnapshot{Mergeable: "MERGEABLE", HasChecks: true, RollupState: "SUCCESS",
 			Contexts: []CheckContext{{Status: "in_progress"}}}, false},
 		{"no checks but mergeable", PRSnapshot{Mergeable: "MERGEABLE", HasChecks: false}, true},
+		// A queue entry always ends, so a queued PR is never settled: the chase
+		// and the TTL sweep must keep re-reading it.
+		{"queued with checks passed", PRSnapshot{Mergeable: "MERGEABLE", MergeQueueState: "QUEUED", HasChecks: true, RollupState: "SUCCESS",
+			Contexts: []CheckContext{{Status: "completed", Conclusion: "success"}}}, false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -189,5 +193,182 @@ func TestSnapshotDecided(t *testing.T) {
 				t.Fatalf("Decided() = %v, want %v", got, tc.want)
 			}
 		})
+	}
+}
+
+// TestFetchPRSnapshotMergeQueue covers the merge-queue signal. A queued PR is
+// still an open PR whose mergeStateStatus reads BLOCKED, so the entry state is
+// the only field that says "waiting its turn to merge".
+func TestFetchPRSnapshotMergeQueue(t *testing.T) {
+	cases := []struct {
+		name string
+		pr   string
+		want string
+	}{
+		{
+			name: "entry state is preferred",
+			pr:   `"isInMergeQueue":true,"mergeQueueEntry":{"state":"AWAITING_CHECKS"},`,
+			want: "AWAITING_CHECKS",
+		},
+		{
+			name: "unreadable entry falls back to QUEUED",
+			pr:   `"isInMergeQueue":true,"mergeQueueEntry":null,`,
+			want: "QUEUED",
+		},
+		{
+			name: "not queued",
+			pr:   `"isInMergeQueue":false,"mergeQueueEntry":null,`,
+			want: "",
+		},
+		{
+			name: "repository without a merge queue omits both fields",
+			pr:   "",
+			want: "",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := graphqlServer(t, func(map[string]any) string {
+				return `{"repository":{"pullRequest":{
+					"headRefOid":"sha1","mergeable":"MERGEABLE","mergeStateStatus":"BLOCKED",` + tc.pr + `
+					"commits":{"nodes":[{"commit":{"statusCheckRollup":null}}]}}}}`
+			})
+			defer srv.Close()
+
+			snap, err := FetchPRSnapshot(context.Background(), newTestClient(t, srv.URL), 1, "o", "r", 5)
+			if err != nil {
+				t.Fatalf("FetchPRSnapshot: %v", err)
+			}
+			if snap.MergeQueueState != tc.want {
+				t.Fatalf("MergeQueueState = %q, want %q", snap.MergeQueueState, tc.want)
+			}
+		})
+	}
+}
+
+// TestPRSnapshotQueryRequestsMergeQueueFields pins the query text: dropping
+// either field silently reverts every queued PR to an ordinary open PR.
+func TestPRSnapshotQueryRequestsMergeQueueFields(t *testing.T) {
+	for _, field := range []string{"isInMergeQueue", "mergeQueueEntry{state}"} {
+		if !strings.Contains(prSnapshotQuery, field) {
+			t.Fatalf("prSnapshotQuery is missing %q", field)
+		}
+	}
+}
+
+// mergeQueueRefusingServer answers like GitHub does for an installation that
+// may not read merge-queue data: any query naming those fields gets HTTP 200
+// with an `errors` array of errType and no usable data; the same query without
+// them succeeds. It counts GraphQL requests by kind.
+func mergeQueueRefusingServer(t *testing.T, errType string, withQueue, withoutQueue *int) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/access_tokens") {
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"token":"ghs_secret","expires_at":"` +
+				time.Now().Add(time.Hour).UTC().Format(time.RFC3339) + `"}`))
+			return
+		}
+		body, _ := io.ReadAll(r.Body)
+		var req struct {
+			Query string `json:"query"`
+		}
+		_ = json.Unmarshal(body, &req)
+		if strings.Contains(req.Query, "mergeQueueEntry") {
+			*withQueue++
+			_, _ = w.Write([]byte(`{"data":{"repository":{"pullRequest":null}},"errors":[{"type":"` + errType +
+				`","path":["repository","pullRequest","mergeQueueEntry"],"message":"Resource not accessible by integration"}]}`))
+			return
+		}
+		*withoutQueue++
+		_, _ = w.Write([]byte(`{"data":` + graphqlSnapshotPage("sha1", false, "") + `}`))
+	}))
+}
+
+// TestFetchPRSnapshotSurvivesRefusedMergeQueueFields: a refusal of the
+// merge-queue fields must never cost the PR its CI and mergeability snapshot,
+// and a permission refusal must not be paid again on every fetch.
+func TestFetchPRSnapshotSurvivesRefusedMergeQueueFields(t *testing.T) {
+	var withQueue, withoutQueue int
+	srv := mergeQueueRefusingServer(t, "FORBIDDEN", &withQueue, &withoutQueue)
+	defer srv.Close()
+	c := newTestClient(t, srv.URL)
+
+	snap, err := FetchPRSnapshot(context.Background(), c, 1, "o", "r", 5)
+	if err != nil {
+		t.Fatalf("FetchPRSnapshot: %v", err)
+	}
+	if snap.HeadSHA != "sha1" || snap.Mergeable != "MERGEABLE" || snap.RollupState != "PENDING" {
+		t.Fatalf("snapshot lost its non-queue fields: %+v", snap)
+	}
+	if snap.MergeQueueState != "" {
+		t.Fatalf("MergeQueueState = %q, want empty when the fields were refused", snap.MergeQueueState)
+	}
+	if withQueue != 1 || withoutQueue != 1 {
+		t.Fatalf("first fetch: %d queries with queue fields, %d without; want 1 and 1", withQueue, withoutQueue)
+	}
+
+	if _, err := FetchPRSnapshot(context.Background(), c, 1, "o", "r", 5); err != nil {
+		t.Fatalf("second FetchPRSnapshot: %v", err)
+	}
+	if withQueue != 1 || withoutQueue != 2 {
+		t.Fatalf("second fetch retried the refused fields: %d with, %d without", withQueue, withoutQueue)
+	}
+
+	// Another installation has its own permissions and still asks.
+	if _, err := FetchPRSnapshot(context.Background(), c, 2, "o", "r", 5); err != nil {
+		t.Fatalf("other installation FetchPRSnapshot: %v", err)
+	}
+	if withQueue != 2 {
+		t.Fatalf("a refusal for installation 1 suppressed installation 2's queue read")
+	}
+
+	// The skip expires, so granting the permission takes effect on its own.
+	c.now = func() time.Time { return time.Now().Add(mergeQueueRetryAfter + time.Minute) }
+	if c.mergeQueueUnreadable(1) {
+		t.Fatal("merge-queue skip did not expire")
+	}
+}
+
+// TestFetchPRSnapshotNonPermissionErrorIsNotRemembered: any GraphQL-level
+// error still falls back to a queue-less snapshot, but only a permission
+// refusal is remembered — a one-off failure must not hide queues for an hour.
+func TestFetchPRSnapshotNonPermissionErrorIsNotRemembered(t *testing.T) {
+	var withQueue, withoutQueue int
+	srv := mergeQueueRefusingServer(t, "INTERNAL", &withQueue, &withoutQueue)
+	defer srv.Close()
+	c := newTestClient(t, srv.URL)
+
+	for i := 0; i < 2; i++ {
+		if _, err := FetchPRSnapshot(context.Background(), c, 1, "o", "r", 5); err != nil {
+			t.Fatalf("FetchPRSnapshot #%d: %v", i+1, err)
+		}
+	}
+	if withQueue != 2 || withoutQueue != 2 {
+		t.Fatalf("got %d queries with queue fields, %d without; want 2 and 2", withQueue, withoutQueue)
+	}
+}
+
+// TestFetchPRSnapshotReturnsErrorWhenFallbackFails: when the query fails for a
+// reason unrelated to the queue fields, the fallback fails too and the caller
+// gets the error — never an empty snapshot.
+func TestFetchPRSnapshotReturnsErrorWhenFallbackFails(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/access_tokens") {
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"token":"ghs_secret","expires_at":"` +
+				time.Now().Add(time.Hour).UTC().Format(time.RFC3339) + `"}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"data":null,"errors":[{"type":"FORBIDDEN","message":"Resource not accessible by integration"}]}`))
+	}))
+	defer srv.Close()
+	c := newTestClient(t, srv.URL)
+
+	if _, err := FetchPRSnapshot(context.Background(), c, 1, "o", "r", 5); err == nil {
+		t.Fatal("expected an error when the PR itself is unreadable")
+	}
+	if c.mergeQueueUnreadable(1) {
+		t.Fatal("a refusal unrelated to the queue fields marked the installation")
 	}
 }

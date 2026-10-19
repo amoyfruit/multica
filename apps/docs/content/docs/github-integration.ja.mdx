@@ -143,6 +143,8 @@ Repository permissions:
 
 Multica で CI を表示しない場合は、Checks と Commit statuses の権限、および関連イベントの購読を省略できます。ただし Contents は必須です。付与しないとスナップショットのクエリ自体が失敗し、PR カードからマージ状態も消えます。
 
+マージキューの状態に追加の設定は不要です。スナップショットのクエリは上記の権限で PR がマージキューで待機中かどうかを読み取り、キューへの追加・離脱は **Pull request** イベントとして届くため、既存の installation で再承認は必要ありません。installation がマージキューのフィールドを拒否した場合、Multica はそれらを除いてスナップショットを取得します。その PR はキュー待ちとして表示されませんが、CI とマージ状態は保たれます。
+
 <Callout type="warning">
 必要なのは **Webhook secret** であり、OAuth Client secret ではありません。GitHub と Multica に入力した Webhook secret が異なる場合、GitHub delivery は `401 invalid signature` を返します。
 </Callout>

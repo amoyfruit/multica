@@ -218,6 +218,61 @@ func TestListStaleUndecidedGitHubPRsExcludesDecidedAndRotatesCursor(t *testing.T
 	}
 }
 
+// TestListStaleUndecidedGitHubPRsKeepsQueuedPRs: a PR in a merge queue stays in
+// the TTL sweep even when its checks and mergeability are settled. The entry
+// always ends, and if its dequeue webhook is missed the sweep is what notices.
+func TestListStaleUndecidedGitHubPRsKeepsQueuedPRs(t *testing.T) {
+	pool := testDBPool(t)
+	q := db.New(pool)
+	ctx := context.Background()
+	now := time.Unix(1_700_020_000, 0)
+	// Below the cursor test's fixtures, above any ordinary fixture.
+	const installationID int64 = 1<<63 - 10
+
+	settled := seedPRAt(t, pool, q, installationID, "settled", 1, "S")
+	queued := seedPRAt(t, pool, q, installationID, "queued", 2, "Q")
+	prs := []db.GithubPullRequest{settled, queued}
+	t.Cleanup(func() {
+		for _, pr := range prs {
+			_, _ = pool.Exec(context.Background(), `DELETE FROM github_pull_request WHERE id=$1`, pr.ID)
+		}
+	})
+	for _, pr := range prs {
+		if _, err := pool.Exec(ctx, `
+			UPDATE github_pull_request
+			SET snapshot_head_sha=head_sha, snapshot_fetched_at=$2,
+			    api_mergeable='MERGEABLE', checks_rollup_state='SUCCESS'
+			WHERE id=$1`,
+			pr.ID, now.Add(-time.Hour)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := pool.Exec(ctx, `UPDATE github_pull_request SET api_merge_queue_state='QUEUED' WHERE id=$1`, queued.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	rows, err := q.ListStaleUndecidedGitHubPRs(ctx, db.ListStaleUndecidedGitHubPRsParams{
+		OlderThan:           tsFromTime(now.Add(-10 * time.Minute)),
+		AfterInstallationID: installationID - 1,
+		MaxRows:             100,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]bool{}
+	for _, row := range rows {
+		if row.InstallationID == installationID {
+			got[row.RepoName] = true
+		}
+	}
+	if !got["queued"] {
+		t.Fatalf("queued PR with a settled snapshot left the TTL sweep: %+v", rows)
+	}
+	if got["settled"] {
+		t.Fatal("settled, unqueued PR remained in the TTL sweep")
+	}
+}
+
 // TestApplySnapshotHeadSHAGuard is the acceptance-criterion-1 regression: a slow
 // response for an old head must never overwrite a newer head's snapshot.
 func TestApplySnapshotHeadSHAGuard(t *testing.T) {

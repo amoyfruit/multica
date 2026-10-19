@@ -146,6 +146,8 @@ Subscribe to these events:
 
 If you don't need CI shown in Multica, you can skip the Checks and Commit statuses permissions and their events. Contents is still required — without it the snapshot query fails outright and the PR card also loses merge state.
 
+Merge-queue state needs nothing extra. The snapshot query reads whether a PR is waiting in a merge queue with the permissions above, and a PR entering or leaving the queue arrives as a **Pull request** event, so existing installations need no new approval. If an installation refuses the merge-queue fields, Multica fetches the snapshot without them: the PR then never shows as queued, but keeps its CI and merge state.
+
 <Callout type="warning">
 This is the **Webhook secret**, not the OAuth Client secret. If the two sides have different webhook secrets, GitHub deliveries return `401 invalid signature`.
 </Callout>

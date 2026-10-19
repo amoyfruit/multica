@@ -146,6 +146,8 @@ Repository permissions：
 
 如果不需要在 Multica 中显示 CI，可以不授予 Checks 和 Commit statuses 权限，也不订阅对应事件。但 Contents 仍然必须授予——缺少它时整个快照查询会直接失败，PR 卡片连合并状态也会一起消失。
 
+合并队列状态无需额外配置。快照查询用上述权限读取 PR 是否在合并队列中等待，进入和离开队列以 **Pull request** 事件送达，因此已有的 installation 无需重新批准。如果某个 installation 拒绝读取合并队列字段，Multica 会不带这些字段获取快照：该 PR 不会显示为排队中，但 CI 与合并状态照常保留。
+
 <Callout type="warning">
 这里需要的是 **Webhook secret**，不是 OAuth Client secret。两边填写的 Webhook secret 不一致时，GitHub delivery 会返回 `401 invalid signature`。
 </Callout>

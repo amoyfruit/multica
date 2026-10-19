@@ -424,10 +424,14 @@
     "pull_request_checks_failed_count": "{{failed}}/{{total}} failed",
     "pull_request_checks_more": "+{{count}} more",
     "pull_request_merge_conflicting": "Has merge conflicts",
+    "pull_request_merge_queued": "In merge queue",
+    "pull_request_merge_queued_unmergeable": "Merge queue blocked",
     "pull_request_merge_ready": "Ready to merge",
     "pull_request_merge_blocked": "Blocked",
     "pull_request_merge_behind": "Behind base",
     "pull_request_verdict_conflicting": "Conflicts",
+    "pull_request_verdict_queued": "Queued",
+    "pull_request_verdict_queue_blocked": "Queue blocked",
     "pull_request_verdict_ready": "Ready",
     "pull_request_verdict_passed": "Checks passed",
     "pull_request_snapshot_stale": "Updated {{time}}",
@@ -867,6 +871,8 @@
     "cancel": "Cancel"
   },
   "card": {
+    "merge_queue": "Queued",
+    "merge_queue_blocked": "Queue blocked",
     "update_failed": "Failed to update issue",
     "updated_ago": "Updated {{time}}"
   },

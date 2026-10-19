@@ -179,7 +179,8 @@ SELECT
     pr.author_avatar_url, pr.merged_at, pr.closed_at, pr.pr_created_at,
     pr.pr_updated_at, pr.head_sha, pr.mergeable_state,
     pr.additions, pr.deletions, pr.changed_files,
-    pr.api_mergeable, pr.api_merge_state_status, pr.checks_rollup_state,
+    pr.api_mergeable, pr.api_merge_state_status, pr.api_merge_queue_state,
+    pr.checks_rollup_state,
     pr.snapshot_head_sha, pr.snapshot_fetched_at,
     pr.created_at, pr.updated_at,
     COALESCE(ipr.linked_by_type, 'system')::text AS linked_by_type,
@@ -280,3 +281,34 @@ WHERE workspace_id = $1
   AND lower(rtrim(html_url, '/')) = lower(sqlc.arg('html_url')::text)
 ORDER BY pr_updated_at DESC
 LIMIT 1;
+
+-- name: ListQueuedPullRequestIssuesByWorkspace :many
+-- Backs the board card's merge-queue indicator. Returns one row per issue in
+-- the workspace that has a pull request sitting in a repository merge queue,
+-- carrying that PR's queue state.
+--
+-- Deliberately workspace-wide and tiny rather than per-issue: a board renders
+-- hundreds of cards, but only a handful of PRs are ever queued at once, so the
+-- board fetches this once instead of issuing one PR request per card.
+--
+-- The snapshot conditions mirror `currentGitHubSnapshotAvailable` so the board
+-- and the issue detail card never disagree about the same PR: the stored queue
+-- state is trusted only while the snapshot belongs to the PR's current head
+-- and is no older than `fresh_after`. The refresh pipeline keeps re-reading a
+-- queued PR, so a queue state older than that means refreshes are not landing
+-- and the PR may have left the queue long ago. Terminal PRs are excluded
+-- because the column keeps whatever the PR last reported while it was open.
+--
+-- DISTINCT ON keeps the newest queued PR when an issue has several.
+SELECT DISTINCT ON (ipr.issue_id)
+    ipr.issue_id,
+    pr.api_merge_queue_state
+FROM github_pull_request pr
+JOIN issue_pull_request ipr ON ipr.pull_request_id = pr.id
+WHERE pr.workspace_id = sqlc.arg('workspace_id')
+  AND pr.state IN ('open', 'draft')
+  AND pr.api_merge_queue_state IS NOT NULL
+  AND pr.snapshot_fetched_at >= sqlc.arg('fresh_after')
+  AND pr.snapshot_head_sha <> ''
+  AND pr.snapshot_head_sha = pr.head_sha
+ORDER BY ipr.issue_id, pr.pr_created_at DESC;

@@ -156,6 +156,49 @@ describe("deriveMergeStatus", () => {
       deriveMergeStatus({ mergeable: "conflicting", merge_state_status: "blocked" }).kind,
     ).toBe("conflicting");
   });
+
+  it("reports merge-queue membership for every mergeable entry state", () => {
+    expect(deriveMergeStatus({ merge_queue_state: "queued" }).kind).toBe("queued");
+    expect(deriveMergeStatus({ merge_queue_state: "awaiting_checks" }).kind).toBe("queued");
+    expect(deriveMergeStatus({ merge_queue_state: "mergeable" }).kind).toBe("queued");
+    expect(deriveMergeStatus({ merge_queue_state: "locked" }).kind).toBe("queued");
+  });
+
+  it("separates a queue entry GitHub cannot merge", () => {
+    expect(deriveMergeStatus({ merge_queue_state: "unmergeable" }).kind).toBe(
+      "queued_unmergeable",
+    );
+  });
+
+  it("queued wins over the merge state a queued PR actually reports", () => {
+    // GitHub reports a queued PR as `blocked` — branch protection routes the
+    // merge through the queue. Reading that literally hides the queue entirely.
+    expect(
+      deriveMergeStatus({ merge_state_status: "blocked", merge_queue_state: "queued" }).kind,
+    ).toBe("queued");
+    expect(
+      deriveMergeStatus({ merge_state_status: "clean", merge_queue_state: "queued" }).kind,
+    ).toBe("queued");
+  });
+
+  it("conflict still wins over a queue entry", () => {
+    expect(deriveMergeStatus({ mergeable: "conflicting", merge_queue_state: "queued" }).kind).toBe(
+      "conflicting",
+    );
+  });
+
+  it("ignores the queue when the API snapshot feature is unavailable", () => {
+    expect(
+      deriveMergeStatus({ snapshot_available: false, merge_queue_state: "queued" }).kind,
+    ).toBe("none");
+  });
+
+  it("treats an absent merge_queue_state as not queued (older backend)", () => {
+    expect(deriveMergeStatus({ merge_state_status: "clean" }).kind).toBe("ready");
+    expect(deriveMergeStatus({ merge_state_status: "clean", merge_queue_state: null }).kind).toBe(
+      "ready",
+    );
+  });
 });
 
 describe("shouldShowPullRequestStats", () => {
@@ -179,6 +222,40 @@ describe("derivePullRequestVerdict", () => {
     const failing = { checks_rollup: "failure" as const, checks_failed: 2, mergeable: "conflicting" as const };
     expect(derivePullRequestVerdict({ ...failing, state: "merged" })).toEqual({ kind: "merged" });
     expect(derivePullRequestVerdict({ ...failing, state: "closed" })).toEqual({ kind: "closed" });
+  });
+
+  it("reads as queued while the PR waits in a merge queue, as GitHub shows it", () => {
+    // What a queued PR actually reports: open, checks passed, merge state
+    // `blocked` because branch protection routes the merge through the queue.
+    const queued = {
+      ...open,
+      checks_rollup: "success" as const,
+      checks_total: 11,
+      checks_passed: 11,
+      mergeable: "mergeable" as const,
+      merge_state_status: "blocked" as const,
+    };
+    expect(derivePullRequestVerdict({ ...queued, merge_queue_state: "queued" })).toEqual({ kind: "queued" });
+    expect(derivePullRequestVerdict({ ...queued, merge_queue_state: "awaiting_checks" })).toEqual({
+      kind: "queued",
+    });
+    expect(derivePullRequestVerdict({ ...queued, merge_queue_state: "unmergeable" })).toEqual({
+      kind: "queue_blocked",
+    });
+    expect(derivePullRequestVerdict({ ...queued, merge_queue_state: null })).toEqual({ kind: "blocked" });
+  });
+
+  it("puts the queue above check verdicts but never above a conflict or an ending", () => {
+    const queued = { ...open, merge_queue_state: "queued" as const };
+    expect(derivePullRequestVerdict({ ...queued, checks_rollup: "pending", checks_running: 1 })).toEqual({
+      kind: "queued",
+    });
+    expect(derivePullRequestVerdict({ ...queued, checks_rollup: "failure", checks_failed: 1 })).toMatchObject({
+      kind: "queued",
+    });
+    expect(derivePullRequestVerdict({ ...queued, mergeable: "conflicting" })).toEqual({ kind: "conflicting" });
+    // A merged PR keeps the queue state of its last open snapshot.
+    expect(derivePullRequestVerdict({ ...queued, state: "merged" })).toEqual({ kind: "merged" });
   });
 
   it("leads with a failure and keeps the names and a conflict alongside it", () => {

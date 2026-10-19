@@ -33,6 +33,7 @@ import type { Issue } from "@multica/core/types";
 import { BoardView } from "../components/board-view";
 import { BatchActionToolbar } from "../components/batch-action-toolbar";
 import { GanttView } from "../components/gantt-view";
+import { IssueMergeQueueProvider } from "../components/issue-merge-queue-indicator";
 import { IssuesHeader } from "../components/issues-header";
 import { ListView } from "../components/list-view";
 import { SwimLaneView } from "../components/swimlane-view";
@@ -330,19 +331,23 @@ function IssueSurfaceContent({
           )
         ) : (
           <div className={cn("flex flex-col flex-1 min-h-0", contentClassName)}>
+            {/* Board and swimlane cards show a merge-queue chip; the provider
+                owns the one workspace-wide read they share. */}
             {controller.viewMode === "board" && (
-              <BoardView
-                issues={issues}
-                visibleStatuses={controller.visibleStatuses}
-                hiddenStatuses={controller.hiddenStatuses}
-                onMoveIssue={controller.moveIssue}
-                childProgressMap={controller.childProgressMap}
-                projectMap={controller.projectMap}
-                projectId={controller.projectId}
-                onCreateIssue={openCreateIssue}
-                statusPagination={controller.statusPagination}
-                groupBranches={controller.groupBranches}
-              />
+              <IssueMergeQueueProvider>
+                <BoardView
+                  issues={issues}
+                  visibleStatuses={controller.visibleStatuses}
+                  hiddenStatuses={controller.hiddenStatuses}
+                  onMoveIssue={controller.moveIssue}
+                  childProgressMap={controller.childProgressMap}
+                  projectMap={controller.projectMap}
+                  projectId={controller.projectId}
+                  onCreateIssue={openCreateIssue}
+                  statusPagination={controller.statusPagination}
+                  groupBranches={controller.groupBranches}
+                />
+              </IssueMergeQueueProvider>
             )}
             {controller.viewMode === "list" && (
               <ListView
@@ -373,19 +378,21 @@ function IssueSurfaceContent({
               <GanttView issues={controller.filteredGanttIssues} />
             )}
             {controller.viewMode === "swimlane" && (
-              <SwimLaneView
-                issues={issues}
-                unfilteredIssues={swimlaneIssues}
-                activeFilters={controller.activeFilters}
-                visibleStatuses={controller.visibleStatuses}
-                hiddenStatuses={controller.hiddenStatuses}
-                onMoveIssue={controller.moveIssue}
-                childProgressMap={controller.childProgressMap}
-                projectMap={controller.projectMap}
-                projectId={controller.projectId}
-                onCreateIssue={openCreateIssue}
-                groupBranches={controller.groupBranches}
-              />
+              <IssueMergeQueueProvider>
+                <SwimLaneView
+                  issues={issues}
+                  unfilteredIssues={swimlaneIssues}
+                  activeFilters={controller.activeFilters}
+                  visibleStatuses={controller.visibleStatuses}
+                  hiddenStatuses={controller.hiddenStatuses}
+                  onMoveIssue={controller.moveIssue}
+                  childProgressMap={controller.childProgressMap}
+                  projectMap={controller.projectMap}
+                  projectId={controller.projectId}
+                  onCreateIssue={openCreateIssue}
+                  groupBranches={controller.groupBranches}
+                />
+              </IssueMergeQueueProvider>
             )}
           </div>
         )}

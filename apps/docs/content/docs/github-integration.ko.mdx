@@ -143,6 +143,8 @@ Repository permissions:
 
 Multica에서 CI를 표시할 필요가 없다면 Checks 및 Commit statuses 권한을 부여하거나 관련 이벤트를 구독하지 않아도 됩니다. 단, Contents는 반드시 필요합니다. 없으면 snapshot 쿼리 자체가 실패해 PR 카드에서 머지 상태도 사라집니다.
 
+머지 큐 상태에는 추가 설정이 필요 없습니다. snapshot 쿼리는 위 권한으로 PR이 머지 큐에서 대기 중인지 읽고, 큐 진입과 이탈은 **Pull request** 이벤트로 전달되므로 기존 installation은 다시 승인할 필요가 없습니다. installation이 머지 큐 필드를 거부하면 Multica는 해당 필드 없이 snapshot을 가져옵니다. 이때 PR은 대기열로 표시되지 않지만 CI와 머지 상태는 유지됩니다.
+
 <Callout type="warning">
 여기에는 OAuth Client secret이 아니라 **Webhook secret**이 필요합니다. 양쪽에 입력한 Webhook secret이 다르면 GitHub delivery가 `401 invalid signature`를 반환합니다.
 </Callout>

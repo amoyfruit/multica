@@ -102,6 +102,11 @@ type GitHubPullRequestResponse struct {
 	// "dirty" | "blocked" | "behind" | "unstable" | "draft" | "has_hooks" |
 	// "unknown" | null. "Ready to merge" is derived ONLY from "clean".
 	MergeStateStatus *string `json:"merge_state_status"`
+	// MergeQueueState is the PR's merge-queue entry state, lowercased:
+	// "queued" | "awaiting_checks" | "mergeable" | "unmergeable" | "locked" |
+	// null. Non-null means the PR is sitting in the repository's merge queue —
+	// a fact no other field carries, since a queued PR is still an open PR.
+	MergeQueueState *string `json:"merge_queue_state"`
 	// SnapshotAvailable distinguishes a current API snapshot from both
 	// "feature disabled / not fetched yet" and "a current snapshot whose
 	// statusCheckRollup is null". Only the last case may render "no checks".
@@ -278,6 +283,13 @@ func issuePullRequestRowToResponse(p db.ListPullRequestsByIssueRow, snapshotEnab
 		resp.ChecksPending = p.ChecksRunning
 		resp.FailedCheckNames = failedNames
 		resp.SnapshotFetchedAt = timestampToPtr(p.SnapshotFetchedAt)
+		// Unlike the fields above, a stale queue state is withheld rather
+		// than greyed out: the card promotes it to the PR's primary status,
+		// and the pipeline re-reads a queued PR every sweep, so a state this
+		// old means the PR may have left the queue long ago.
+		if !stale {
+			resp.MergeQueueState = lowerTextPtr(p.ApiMergeQueueState)
+		}
 	}
 	return resp
 }
@@ -960,6 +972,63 @@ func (h *Handler) DeleteGitHubInstallation(w http.ResponseWriter, r *http.Reques
 		"id": id,
 	})
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// ── Queued PRs for a workspace ──────────────────────────────────────────────
+
+// GitHubQueuedPullRequestResponse marks one issue whose pull request is sitting
+// in a repository merge queue.
+type GitHubQueuedPullRequestResponse struct {
+	IssueID string `json:"issue_id"`
+	// MergeQueueState is the queue entry state, lowercased to match the
+	// per-issue PR payload: "queued" | "awaiting_checks" | "mergeable" |
+	// "unmergeable" | "locked".
+	MergeQueueState string `json:"merge_queue_state"`
+}
+
+// ListQueuedPullRequests returns every issue in the workspace whose PR sits in
+// a merge queue. The board calls this once per view rather than asking for each
+// card's pull requests: only a handful of PRs are ever queued at once, so the
+// response stays small no matter how many cards are on screen.
+func (h *Handler) ListQueuedPullRequests(w http.ResponseWriter, r *http.Request) {
+	wsUUID, ok := parseUUIDOrBadRequest(w, chi.URLParam(r, "id"), "workspace id")
+	if !ok {
+		return
+	}
+	out := make([]GitHubQueuedPullRequestResponse, 0)
+	// With the snapshot pipeline disabled nothing refreshes these columns, so
+	// every stored queue state is of unknown age — report none rather than
+	// pinning a card to a queue the PR may have left long ago.
+	if h.PRRefresh.Enabled() {
+		rows, err := h.Queries.ListQueuedPullRequestIssuesByWorkspace(r.Context(), db.ListQueuedPullRequestIssuesByWorkspaceParams{
+			WorkspaceID: wsUUID,
+			// Same cutoff as the detail card's queue state (see
+			// issuePullRequestRowToResponse), so the two never disagree.
+			FreshAfter: pgtype.Timestamptz{Time: time.Now().Add(-prSnapshotStaleThreshold), Valid: true},
+		})
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to list queued pull requests")
+			return
+		}
+		out = queuedPullRequestRowsToResponse(rows)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"queued_pull_requests": out})
+}
+
+func queuedPullRequestRowsToResponse(
+	rows []db.ListQueuedPullRequestIssuesByWorkspaceRow,
+) []GitHubQueuedPullRequestResponse {
+	out := make([]GitHubQueuedPullRequestResponse, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, GitHubQueuedPullRequestResponse{
+			IssueID: uuidToString(row.IssueID),
+			// Lowercased to match the per-issue PR payload, which the client
+			// parses with the same union. Non-null is guaranteed by the
+			// query's IS NOT NULL filter.
+			MergeQueueState: strings.ToLower(row.ApiMergeQueueState.String),
+		})
+	}
+	return out
 }
 
 // ── List PRs for an issue ───────────────────────────────────────────────────

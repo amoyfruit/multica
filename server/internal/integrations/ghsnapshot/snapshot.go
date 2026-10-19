@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"strings"
 )
 
@@ -14,16 +15,33 @@ import (
 //     conflict" only;
 //   - mergeStateStatus: CLEAN / DIRTY / BLOCKED / BEHIND / UNSTABLE / ... —
 //     "Ready to merge" is derived ONLY from CLEAN;
+//   - isInMergeQueue / mergeQueueEntry.state: whether the PR is sitting in the
+//     repository's merge queue and what that entry is doing. A queued PR is
+//     still an open PR with an unremarkable mergeStateStatus, so without this
+//     the UI cannot tell "waiting its turn to merge" from "nobody has acted";
 //   - statusCheckRollup: the overall CI verdict plus every check/status context.
 //
 // $cursor paginates statusCheckRollup.contexts; the caller loops until
 // hasNextPage is false (acceptance criterion 2 — never assume <100 contexts).
-const prSnapshotQuery = `query($owner:String!,$repo:String!,$number:Int!,$cursor:String){
+var prSnapshotQuery = buildPRSnapshotQuery(mergeQueueFields)
+
+// prSnapshotQueryWithoutMergeQueue is prSnapshotQuery minus the merge-queue
+// fields. FetchPRSnapshot falls back to it when the full query fails at the
+// GraphQL level, so an installation that cannot read merge-queue data still
+// gets its CI and mergeability snapshot.
+var prSnapshotQueryWithoutMergeQueue = buildPRSnapshotQuery("")
+
+const mergeQueueFields = `
+      isInMergeQueue
+      mergeQueueEntry{state}`
+
+func buildPRSnapshotQuery(extraPRFields string) string {
+	return `query($owner:String!,$repo:String!,$number:Int!,$cursor:String){
   repository(owner:$owner,name:$repo){
     pullRequest(number:$number){
       headRefOid
       mergeable
-      mergeStateStatus
+      mergeStateStatus` + extraPRFields + `
       commits(last:1){nodes{commit{
         statusCheckRollup{
           state
@@ -40,6 +58,7 @@ const prSnapshotQuery = `query($owner:String!,$repo:String!,$number:Int!,$cursor
     }
   }
 }`
+}
 
 // CheckContext is one normalized check for a PR head. Both GraphQL CheckRun and
 // StatusContext contexts are flattened into this shape (see normalizeNode), so
@@ -63,6 +82,11 @@ type PRSnapshot struct {
 	HeadSHA          string
 	Mergeable        string // MERGEABLE / CONFLICTING / UNKNOWN (raw enum)
 	MergeStateStatus string // CLEAN / DIRTY / BLOCKED / BEHIND / UNSTABLE / ... (raw enum)
+	// MergeQueueState is the PR's merge-queue entry state: QUEUED /
+	// AWAITING_CHECKS / MERGEABLE / UNMERGEABLE / LOCKED (raw enum). Empty when
+	// the PR is not in a merge queue, which is also the case for every
+	// repository that has no merge queue configured.
+	MergeQueueState string
 	// RollupState is statusCheckRollup.state (SUCCESS/FAILURE/PENDING/ERROR/
 	// EXPECTED). Empty ONLY when HasChecks is false.
 	RollupState string
@@ -73,11 +97,19 @@ type PRSnapshot struct {
 	Contexts  []CheckContext
 }
 
-// Decided reports whether the snapshot has settled: no check is still running
-// and mergeability is known. An undecided snapshot on an open PR drives the
-// bounded chase-window re-fetch (refresh.go).
+// Decided reports whether the snapshot has settled: no check is still running,
+// mergeability is known, and the PR is not waiting in a merge queue. An
+// undecided snapshot on an open PR drives the bounded chase-window re-fetch
+// (refresh.go) and keeps the PR in the TTL sweep.
+//
+// A queue entry is transient by definition — it ends in a merge or an eviction
+// — so a queued PR must keep being re-read. Otherwise one missed dequeue
+// webhook would leave it shown as queued indefinitely.
 func (s *PRSnapshot) Decided() bool {
 	if s.Mergeable == "UNKNOWN" || s.Mergeable == "" {
+		return false
+	}
+	if s.MergeQueueState != "" {
 		return false
 	}
 	if s.HasChecks {
@@ -109,13 +141,31 @@ type graphqlPullRequest struct {
 	HeadRefOid       string `json:"headRefOid"`
 	Mergeable        string `json:"mergeable"`
 	MergeStateStatus string `json:"mergeStateStatus"`
-	Commits          struct {
+	IsInMergeQueue   bool   `json:"isInMergeQueue"`
+	MergeQueueEntry  *struct {
+		State string `json:"state"`
+	} `json:"mergeQueueEntry"`
+	Commits struct {
 		Nodes []struct {
 			Commit struct {
 				StatusCheckRollup *graphqlRollup `json:"statusCheckRollup"`
 			} `json:"commit"`
 		} `json:"nodes"`
 	} `json:"commits"`
+}
+
+// mergeQueueState normalizes the two merge-queue fields into one value.
+// mergeQueueEntry is the richer signal, but GitHub can report isInMergeQueue
+// while the entry itself is momentarily unreadable (it is nullable), so fall
+// back to the plain QUEUED state rather than losing the fact entirely.
+func (pr *graphqlPullRequest) mergeQueueState() string {
+	if pr.MergeQueueEntry != nil && pr.MergeQueueEntry.State != "" {
+		return pr.MergeQueueEntry.State
+	}
+	if pr.IsInMergeQueue {
+		return "QUEUED"
+	}
+	return ""
 }
 
 func (pr *graphqlPullRequest) rollup() *graphqlRollup {
@@ -136,10 +186,39 @@ const maxSnapshotContextPages = 100
 // FetchPRSnapshot runs prSnapshotQuery, paginating statusCheckRollup.contexts
 // to completion, and returns the normalized snapshot. A nil rollup yields
 // HasChecks=false with no contexts.
+//
+// The merge-queue fields are the newest part of the query and the one most
+// likely to be refused for a given installation. GitHub fails the whole
+// request when any field errors, so a GraphQL-level error is retried once
+// without them: the PR then reads as not queued, but its CI and mergeability
+// snapshot is never lost to the queue. An installation whose refusal is a
+// permission error skips the queue fields for a while instead of paying the
+// failed request on every fetch.
 func FetchPRSnapshot(ctx context.Context, c *Client, installationID int64, owner, repo string, number int32) (*PRSnapshot, error) {
 	if !c.Enabled() {
 		return nil, errors.New("ghsnapshot: client not configured")
 	}
+	if !c.mergeQueueUnreadable(installationID) {
+		snap, err := fetchPRSnapshot(ctx, c, installationID, owner, repo, number, prSnapshotQuery)
+		var gqlErr *GraphQLError
+		if err == nil || !errors.As(err, &gqlErr) {
+			return snap, err
+		}
+		snap, retryErr := fetchPRSnapshot(ctx, c, installationID, owner, repo, number, prSnapshotQueryWithoutMergeQueue)
+		if retryErr != nil {
+			return nil, retryErr
+		}
+		if gqlErr.Forbidden() {
+			c.markMergeQueueUnreadable(installationID)
+		}
+		slog.Warn("ghsnapshot: merge-queue fields refused; snapshot fetched without them",
+			"installation_id", installationID, "err", err.Error())
+		return snap, nil
+	}
+	return fetchPRSnapshot(ctx, c, installationID, owner, repo, number, prSnapshotQueryWithoutMergeQueue)
+}
+
+func fetchPRSnapshot(ctx context.Context, c *Client, installationID int64, owner, repo string, number int32, query string) (*PRSnapshot, error) {
 	snap := &PRSnapshot{}
 	cursor := ""
 	// Guard against a pathological cursor loop; 100 pages = 10k contexts, far
@@ -151,7 +230,7 @@ func FetchPRSnapshot(ctx context.Context, c *Client, installationID int64, owner
 		} else {
 			vars["cursor"] = nil
 		}
-		data, err := c.graphQL(ctx, installationID, prSnapshotQuery, vars)
+		data, err := c.graphQL(ctx, installationID, query, vars)
 		if err != nil {
 			return nil, err
 		}
@@ -167,6 +246,7 @@ func FetchPRSnapshot(ctx context.Context, c *Client, installationID int64, owner
 			snap.HeadSHA = pr.HeadRefOid
 			snap.Mergeable = pr.Mergeable
 			snap.MergeStateStatus = pr.MergeStateStatus
+			snap.MergeQueueState = pr.mergeQueueState()
 		} else if pr.HeadRefOid != snap.HeadSHA {
 			// Every page re-reads the PR's latest commit. If a synchronize
 			// event advances the head while pagination is in progress, mixing

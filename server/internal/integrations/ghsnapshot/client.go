@@ -55,6 +55,55 @@ func (e *RateLimitError) Error() string {
 	return fmt.Sprintf("github rate limited, retry after %s", e.RetryAfter)
 }
 
+// GraphQLError is a query-level failure: GitHub answered HTTP 200 with a
+// non-empty `errors` array (other than rate limiting). Kept distinct from
+// transport and HTTP failures so a caller can tell "this query was refused"
+// from "GitHub was unreachable".
+type GraphQLError struct {
+	Message string
+	// Types holds each error's `type` (FORBIDDEN, NOT_FOUND, ...), in order.
+	Types []string
+}
+
+func (e *GraphQLError) Error() string {
+	return fmt.Sprintf("github graphql error: %s", e.Message)
+}
+
+// Forbidden reports whether every error was a permission refusal.
+func (e *GraphQLError) Forbidden() bool {
+	if len(e.Types) == 0 {
+		return false
+	}
+	for _, t := range e.Types {
+		if t != "FORBIDDEN" {
+			return false
+		}
+	}
+	return true
+}
+
+// mergeQueueRetryAfter is how long an installation whose merge-queue reads were
+// refused goes without them. Long enough that a refusing installation costs
+// one extra request per hour rather than per fetch; short enough that granting
+// the permission takes effect without a restart.
+const mergeQueueRetryAfter = time.Hour
+
+func (c *Client) mergeQueueUnreadable(installationID int64) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	until, ok := c.mergeQueueSkipUntil[installationID]
+	return ok && c.now().Before(until)
+}
+
+func (c *Client) markMergeQueueUnreadable(installationID int64) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.mergeQueueSkipUntil == nil {
+		c.mergeQueueSkipUntil = map[int64]time.Time{}
+	}
+	c.mergeQueueSkipUntil[installationID] = c.now().Add(mergeQueueRetryAfter)
+}
+
 // Client is an installation-token-authenticated GitHub API client. A nil
 // *Client is a valid "feature disabled" value — every method the refresh
 // pipeline calls tolerates it — so a deployment without a GitHub App private
@@ -68,6 +117,10 @@ type Client struct {
 
 	mu     sync.Mutex
 	tokens map[int64]cachedToken
+	// mergeQueueSkipUntil holds installations whose merge-queue reads were
+	// refused as forbidden, until the time they are tried again. See
+	// FetchPRSnapshot.
+	mergeQueueSkipUntil map[int64]time.Time
 	// sf collapses concurrent token mints for the same installation into a
 	// single HTTP call, so the N workers of one installation don't each mint a
 	// token on a cold cache or a simultaneous renew.
@@ -261,7 +314,11 @@ func (c *Client) graphQL(ctx context.Context, installationID int64, query string
 		}
 		// Surface the message but nothing else; GraphQL error messages do not
 		// contain credentials.
-		return nil, fmt.Errorf("github graphql error: %s", envelope.Errors[0].Message)
+		gqlErr := &GraphQLError{Message: envelope.Errors[0].Message}
+		for _, e := range envelope.Errors {
+			gqlErr.Types = append(gqlErr.Types, e.Type)
+		}
+		return nil, gqlErr
 	}
 	if len(envelope.Data) == 0 {
 		return nil, errors.New("github graphql: empty data")

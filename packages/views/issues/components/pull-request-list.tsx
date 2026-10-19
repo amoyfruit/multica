@@ -17,6 +17,7 @@ import {
   GitPullRequestArrow,
   GitPullRequestClosed,
   GitPullRequestDraft,
+  ListOrdered,
   TriangleAlert,
   XCircle,
 } from "lucide-react";
@@ -69,6 +70,10 @@ const STATE_ICON: Record<
   merged: { icon: GitMerge, className: "text-violet-600 dark:text-violet-400" },
   closed: { icon: GitPullRequestClosed, className: "text-rose-600 dark:text-rose-400" },
 };
+
+// A PR in a merge queue is still `state === "open"`, but GitHub shows "Queued"
+// as its state, not "Open". The leading icon follows GitHub, in its amber.
+const QUEUED_STATE_ICON = { icon: ListOrdered, className: "text-amber-600 dark:text-amber-400" };
 
 export function PullRequestList({
   issueId,
@@ -392,9 +397,10 @@ function PullRequestRow({
 }) {
   const { t } = useT("issues");
   const timeAgo = useTimeAgo();
-  const cfg = STATE_ICON[pr.state] ?? { icon: GitPullRequest, className: "" };
-  const StateIcon = cfg.icon;
   const verdict = derivePullRequestVerdict(pr);
+  const queued = verdict.kind === "queued" || verdict.kind === "queue_blocked";
+  const cfg = queued ? QUEUED_STATE_ICON : (STATE_ICON[pr.state] ?? { icon: GitPullRequest, className: "" });
+  const StateIcon = cfg.icon;
   const pill = getVerdictPill(verdict, t);
   const showStats = shouldShowPullRequestStats(pr);
 
@@ -582,6 +588,22 @@ function getVerdictPill(verdict: PullRequestVerdict, t: IssuesT): VerdictPillCon
       return { icon: GitMerge, tone: "violet", label: t(($) => $.detail.pull_request_state_merged) };
     case "closed":
       return { icon: GitPullRequestClosed, tone: "muted", label: t(($) => $.detail.pull_request_state_closed) };
+    case "queued":
+      return {
+        icon: ListOrdered,
+        tone: "amber",
+        label: t(($) => $.detail.pull_request_verdict_queued),
+        title: t(($) => $.detail.pull_request_merge_queued),
+      };
+    // The one queue state that is not progress: GitHub is about to evict the
+    // entry, so it must not read like the others.
+    case "queue_blocked":
+      return {
+        icon: TriangleAlert,
+        tone: "red",
+        label: t(($) => $.detail.pull_request_verdict_queue_blocked),
+        title: t(($) => $.detail.pull_request_merge_queued_unmergeable),
+      };
     case "failed":
       return {
         icon: XCircle,
