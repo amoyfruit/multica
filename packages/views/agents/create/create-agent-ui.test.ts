@@ -10,7 +10,6 @@ import {
 } from "@multica/core/workspace/queries";
 import { AgentNameField } from "./agent-configuration-panel";
 import { CreateAgentFooter } from "./create-agent-footer";
-import { draftPreview } from "./unfinished-drafts";
 import { classifyAgentCreateError } from "./use-create-agent-submit";
 
 vi.mock("../../i18n", () => ({
@@ -36,6 +35,7 @@ vi.mock("../../i18n", () => ({
           name_label: string;
           name_placeholder: string;
         };
+        drafts: { create_agent: string };
       }) => string,
     ) =>
       selector({
@@ -64,6 +64,7 @@ vi.mock("../../i18n", () => ({
           name_label: "Name",
           name_placeholder: "Agent name",
         },
+        drafts: { create_agent: "Create agent" },
       }),
   }),
 }));
@@ -145,7 +146,7 @@ describe("Agent creation errors", () => {
     expect(input).toHaveProperty("selectionEnd", "Existing agent".length);
   });
 
-  it("renders a generic error on the left side of the sticky footer", () => {
+  it("renders a generic error on the left side of the footer", () => {
     render(
       createElement(CreateAgentFooter, {
         canCreate: true,
@@ -157,8 +158,10 @@ describe("Agent creation errors", () => {
     );
 
     const error = screen.getByRole("alert");
-    const button = screen.getByRole("button", { name: "Create and open" });
-    expect(error.parentElement).toBe(button.parentElement);
+    const button = screen.getByRole("button", { name: "Create agent" });
+    const footer = error.closest("[data-slot=create-agent-footer]");
+    expect(footer).not.toBeNull();
+    expect(button.closest("[data-slot=create-agent-footer]")).toBe(footer);
     expect(
       error.compareDocumentPosition(button) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
@@ -232,36 +235,5 @@ describe("Agent creation cache handoff", () => {
     expect(
       queryClient.getQueryData(workspaceKeys.agent("ws-1", CREATED_AGENT.id)),
     ).toEqual(CREATED_AGENT);
-  });
-});
-
-// The list endpoint returns the stored message untouched, still in the builder
-// wire format. Rendered raw it is a wall of JSON, which is what the user would
-// see on the one screen meant to help them recognise their own draft.
-describe("Unfinished draft preview", () => {
-  it("unwraps the encoded envelope on a user message", () => {
-    expect(
-      draftPreview({
-        last_message_role: "user",
-        last_message_content:
-          'MULTICA_AGENT_BUILDER_INPUT\n{"user_request":"Create a release manager","current_draft":{"name":"X"}}',
-      }),
-    ).toBe("Create a release manager");
-  });
-
-  it("hides the structured block on an assistant message", () => {
-    expect(
-      draftPreview({
-        last_message_role: "assistant",
-        last_message_content:
-          'Here is a first draft.\n<agent_draft>{"name":"Researcher"}</agent_draft>',
-      }),
-    ).toBe("Here is a first draft.");
-  });
-
-  it("returns an empty preview when the server sent no message", () => {
-    expect(
-      draftPreview({ last_message_role: "", last_message_content: "" }),
-    ).toBe("");
   });
 });

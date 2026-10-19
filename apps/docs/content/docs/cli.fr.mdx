@@ -141,6 +141,20 @@ multica skill import --url <skill-url> --on-conflict skip
 
 `overwrite` n'est autorisé que pour le créateur du skill et conserve l'ID d'origine ainsi que les liaisons avec les agents.
 
+### Brouillons d'agent
+
+Un brouillon d'agent propose un agent sans le créer. Membres et agents peuvent rédiger des brouillons ; seul le membre propriétaire d'un brouillon peut en créer l'agent, depuis la carte du brouillon dans un chat ou un commentaire, ou depuis la page Agents.
+
+```bash
+multica agent draft create --name "PR reviewer" --instructions-file ./instructions.md
+multica agent draft set <draft-id> --description "Reviews frontend pull requests"
+multica agent draft get <draft-id>
+multica agent draft list
+multica agent draft discard <draft-id>
+```
+
+`set` ne modifie que les options que vous passez. Publiez le lien `mention` du brouillon seul sur une ligne pour l'afficher sous forme de carte ; chaque modification est une nouvelle version avec son propre lien. `--needs-env CLÉ=raison` et `--follow-up "texte"` indiquent ce que le membre fait après la création, affiché comme une liste sur la carte. `discard --reason` laisse la raison du refus à l'auteur.
+
 ## Daemon et runtimes
 
 ```bash
