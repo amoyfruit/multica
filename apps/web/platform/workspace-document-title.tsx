@@ -39,13 +39,23 @@ export function WorkspaceDocumentTitle() {
   const documentTitle =
     subject.kind === "unknown" ? SITE_TITLE : formatDocumentTitle(title);
 
-  // `url` is a dependency even though `documentTitle` is what we write: an app
-  // router navigation re-renders the target route's metadata and resets
-  // document.title to the root default, so a move between two routes that
-  // happen to share a title (`/inbox` → `/inbox?view=archived`) has to
-  // re-assert it.
+  // App Router metadata can commit after this effect, especially when an
+  // issue UUID URL is replaced by its canonical identifier. Keep ownership
+  // while mounted instead of relying on a later URL/cache render to repair it.
   useEffect(() => {
-    document.title = documentTitle;
+    const syncTitle = () => {
+      // Our own write also notifies the observer; equality prevents a loop.
+      if (document.title !== documentTitle) document.title = documentTitle;
+    };
+    syncTitle();
+    const observer = new MutationObserver(syncTitle);
+    // Observe the head, not just the title: navigation can replace the node.
+    observer.observe(document.head, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+    });
+    return () => observer.disconnect();
   }, [documentTitle, url]);
 
   // Leaving the dashboard entirely (logout, workspace switcher, landing) drops
