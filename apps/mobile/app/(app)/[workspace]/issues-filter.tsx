@@ -13,6 +13,7 @@ import { Pressable, ScrollView, View } from "react-native";
 import { useLocalSearchParams } from "expo-router";
 import type { IssuePriority, IssueStatus } from "@multica/core/types";
 import { Text } from "@/components/ui/text";
+import { Switch } from "@/components/ui/switch";
 import { StatusIcon } from "@/components/ui/status-icon";
 import { PriorityIcon } from "@/components/ui/priority-icon";
 import { useIssuesViewStore } from "@/data/stores/issues-view-store";
@@ -48,6 +49,7 @@ export default function IssuesFilterRoute() {
 
   const statusFilters = useScopedFilters(resolvedScope, "status");
   const priorityFilters = useScopedFilters(resolvedScope, "priority");
+  const showCompleted = useScopedShowCompleted(resolvedScope);
   // Same option list the status picker offers, so every status a user can set
   // is also a status they can filter by. (MUL-6243)
   const catalog = useIssueStatuses();
@@ -65,6 +67,13 @@ export default function IssuesFilterRoute() {
       useIssuesViewStore.getState().togglePriorityFilter(p);
     } else {
       useMyIssuesViewStore.getState().togglePriorityFilter(p);
+    }
+  };
+  const onToggleShowCompleted = () => {
+    if (resolvedScope === "all") {
+      useIssuesViewStore.getState().setShowCompleted(!showCompleted);
+    } else {
+      useMyIssuesViewStore.getState().setShowCompleted(!showCompleted);
     }
   };
   const onClearFilters = () => {
@@ -97,6 +106,25 @@ export default function IssuesFilterRoute() {
       </View>
       <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
         <SectionLabel>{t("filters.status")}</SectionLabel>
+        {/* The whole row is the control so the target spans the sheet width;
+            the switch only mirrors its state. */}
+        <Pressable
+          onPress={onToggleShowCompleted}
+          accessibilityRole="switch"
+          accessibilityState={{ checked: showCompleted }}
+          className="flex-row items-center gap-3 px-4 py-2.5 active:bg-secondary"
+        >
+          <Text className="flex-1 text-sm text-foreground">
+            {t("filters.show_completed")}
+          </Text>
+          <View
+            pointerEvents="none"
+            accessibilityElementsHidden
+            importantForAccessibility="no-hide-descendants"
+          >
+            <Switch checked={showCompleted} onCheckedChange={() => {}} />
+          </View>
+        </Pressable>
         {statusChoices.map((option) => {
           const checked = statusFilters.includes(option.key);
           return (
@@ -167,6 +195,12 @@ function useScopedFilters(
     return kind === "status" ? allStatus : allPriority;
   }
   return kind === "status" ? myStatus : myPriority;
+}
+
+function useScopedShowCompleted(scope: Scope): boolean {
+  const all = useIssuesViewStore((s) => s.showCompleted);
+  const my = useMyIssuesViewStore((s) => s.showCompleted);
+  return scope === "all" ? all : my;
 }
 
 function SectionLabel({ children }: { children: string }) {
