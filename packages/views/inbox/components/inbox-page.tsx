@@ -173,15 +173,20 @@ export function InboxPage() {
   // alone while it is off.
   const idleFilterIssueIds = effectiveFilters.idleOnly ? activeIssueIds : undefined;
   // The open row survives the unread and idle dimensions while it stays
-  // selected; see the pin refs above.
-  const pinnedKey =
-    (effectiveFilters.unreadOnly && pinnedUnreadKeyRef.current === selectedKey) ||
-    (effectiveFilters.idleOnly && pinnedIdleKeyRef.current === selectedKey)
+  // selected; see the pin refs above. Each pin is passed separately so it
+  // only crosses its own dimension.
+  const pinnedUnreadKey =
+    effectiveFilters.unreadOnly && pinnedUnreadKeyRef.current === selectedKey
       ? selectedKey
       : null;
+  const pinnedIdleKey =
+    effectiveFilters.idleOnly && pinnedIdleKeyRef.current === selectedKey
+      ? selectedKey
+      : null;
+  const pinnedKey = pinnedUnreadKey ?? pinnedIdleKey;
   const filterContext = useMemo(
-    () => ({ activeIssueIds: idleFilterIssueIds, pinnedKey }),
-    [idleFilterIssueIds, pinnedKey],
+    () => ({ activeIssueIds: idleFilterIssueIds, pinnedUnreadKey, pinnedIdleKey }),
+    [idleFilterIssueIds, pinnedUnreadKey, pinnedIdleKey],
   );
   const filteredItems = useMemo(
     () => filterInboxItems(viewItems, effectiveFilters, filterContext),
@@ -386,12 +391,22 @@ export function InboxPage() {
   // `selected` only exists once the open row passed every filter, so under
   // the idle filter this pins a row that was idle when the user opened it.
   const idleOnlyActive = effectiveFilters.idleOnly;
+  const unreadOnlyActive = effectiveFilters.unreadOnly;
   const hasSelected = selected != null;
   useEffect(() => {
     if (idleOnlyActive && hasSelected && selectedKey) {
       pinnedIdleKeyRef.current = selectedKey;
     }
   }, [idleOnlyActive, hasSelected, selectedKey]);
+
+  // Turning a filter off releases its pin, so turning it back on judges the
+  // open row by its current state instead of an exemption from earlier.
+  useEffect(() => {
+    if (!idleOnlyActive) pinnedIdleKeyRef.current = null;
+  }, [idleOnlyActive]);
+  useEffect(() => {
+    if (!unreadOnlyActive) pinnedUnreadKeyRef.current = null;
+  }, [unreadOnlyActive]);
 
   const writeViewState = useViewStateWriter();
   // Bumped when the already-open notification row is re-clicked; threaded to

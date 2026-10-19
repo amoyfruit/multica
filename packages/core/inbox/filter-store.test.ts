@@ -177,7 +177,7 @@ describe("unread filtering", () => {
     const read = item("read", "todo", "high", { read: true });
 
     expect(
-      filterInboxItems([opened, read], filters, { pinnedKey: "issue-opened" }).map(
+      filterInboxItems([opened, read], filters, { pinnedUnreadKey: "issue-opened" }).map(
         (candidate) => candidate.id,
       ),
     ).toEqual(["opened"]);
@@ -185,7 +185,7 @@ describe("unread filtering", () => {
     // Pinning only crosses the unread dimension: an explicit issue filter
     // still removes the open row, and the page clears its selection.
     expect(
-      filterInboxItems([opened], { ...filters, statuses: ["done"] }, { pinnedKey: "issue-opened" }),
+      filterInboxItems([opened], { ...filters, statuses: ["done"] }, { pinnedUnreadKey: "issue-opened" }),
     ).toEqual([]);
   });
 });
@@ -219,15 +219,30 @@ describe("pinned row with idle filtering", () => {
     expect(
       filterInboxItems([opened, other], filters, {
         activeIssueIds,
-        pinnedKey: "issue-opened",
+        pinnedIdleKey: "issue-opened",
       }).map((candidate) => candidate.id),
     ).toEqual(["opened"]);
+
+    // Each pin crosses only its own dimension.
+    expect(
+      filterInboxItems([opened], filters, {
+        activeIssueIds,
+        pinnedUnreadKey: "issue-opened",
+      }),
+    ).toEqual([]);
+    expect(
+      filterInboxItems(
+        [{ ...opened, read: true }],
+        { ...filters, idleOnly: false, unreadOnly: true },
+        { pinnedIdleKey: "issue-opened" },
+      ),
+    ).toEqual([]);
 
     // The pin still never crosses an explicit issue filter.
     expect(
       filterInboxItems([opened], { ...filters, statuses: ["done"] }, {
         activeIssueIds,
-        pinnedKey: "issue-opened",
+        pinnedIdleKey: "issue-opened",
       }),
     ).toEqual([]);
   });

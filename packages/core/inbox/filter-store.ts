@@ -203,8 +203,16 @@ const EMPTY_ISSUE_IDS: ReadonlySet<string> = new Set();
 export interface InboxFilterContext {
   /** Issues an agent is running or queued on. Read only by `idleOnly`. */
   readonly activeIssueIds?: ReadonlySet<string>;
-  /** Group key (`issue_id ?? id`) of the open notification. */
-  readonly pinnedKey?: string | null;
+  /**
+   * Group key (`issue_id ?? id`) of the open notification, pinned against the
+   * unread dimension only. Set by the page after opening marks the row read.
+   */
+  readonly pinnedUnreadKey?: string | null;
+  /**
+   * Group key of the open notification, pinned against the idle dimension
+   * only. Set by the page once the row was opened while idle.
+   */
+  readonly pinnedIdleKey?: string | null;
 }
 
 /**
@@ -237,20 +245,24 @@ export function inboxFiltersForArchive(filters: InboxFilters): InboxFilters {
  * one never matches. `activeIssueIds` are the issues an agent is running or
  * queued on; the caller derives them from the agent task snapshot.
  *
- * `pinnedKey` is the notification whose detail is open. Opening an unread
+ * `pinnedUnreadKey` / `pinnedIdleKey` name the notification whose detail is
+ * open. Opening an unread
  * notification marks it read, and replying from the detail can start an
  * agent on its issue; either would otherwise remove the row the user is
  * working in from under the detail pane. The pinned row therefore survives
- * the unread and idle dimensions only; the status, priority, and actor
- * dimensions still apply, because changing one of those is an explicit
- * request to filter the notification itself out.
+ * the unread and idle dimensions only, and each pin only crosses its own
+ * dimension: a row pinned for unread is still removed when the idle filter
+ * is turned on over a busy issue, and vice versa. The status, priority, and
+ * actor dimensions always apply, because changing one of those is an
+ * explicit request to filter the notification itself out.
  */
 export function filterInboxItems(
   items: InboxItem[],
   filters: InboxFilters,
   {
     activeIssueIds = EMPTY_ISSUE_IDS,
-    pinnedKey = null,
+    pinnedUnreadKey = null,
+    pinnedIdleKey = null,
   }: InboxFilterContext = {},
 ): InboxItem[] {
   if (isEmptyInboxFilters(filters)) return items;
@@ -267,12 +279,16 @@ export function filterInboxItems(
         (item.issue_priority != null && priorities.has(item.issue_priority))) &&
       (actors.size === 0 || (actor != null && actors.has(actor)));
     if (!matchesOtherDimensions) return false;
-    if (pinnedKey != null && (item.issue_id ?? item.id) === pinnedKey) return true;
-    return (
-      (!filters.unreadOnly || item.read !== true) &&
-      (!filters.idleOnly ||
-        (item.issue_id != null && !activeIssueIds.has(item.issue_id)))
-    );
+    const key = item.issue_id ?? item.id;
+    const matchesUnread =
+      !filters.unreadOnly ||
+      item.read !== true ||
+      (pinnedUnreadKey != null && key === pinnedUnreadKey);
+    const matchesIdle =
+      !filters.idleOnly ||
+      (item.issue_id != null && !activeIssueIds.has(item.issue_id)) ||
+      (pinnedIdleKey != null && key === pinnedIdleKey);
+    return matchesUnread && matchesIdle;
   });
 }
 

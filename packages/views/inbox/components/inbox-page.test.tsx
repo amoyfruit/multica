@@ -302,6 +302,55 @@ function reset() {
 }
 
 describe("InboxPage", () => {
+  it.each([false, true])("enabling idle hides an already busy row with unread pin=%s", (unreadOnly) => {
+    reset();
+    layout.width = DESKTOP;
+    listData.active = [item({ id: "busy-row", issue_id: "busy-issue", read: !unreadOnly })];
+    listData.tasks = [{ id: "task-a", agent_id: "agent-1", issue_id: "busy-issue", status: "running" }] as AgentTask[];
+    if (unreadOnly) useInboxFilterStore.getState().toggleUnreadOnly("workspace-1");
+    markReadMutate.mockImplementation(() => {
+      listData.active = listData.active.map((current) => ({ ...current, read: true }));
+    });
+    const { rerender } = render(<InboxPage />);
+    fireEvent.click(screen.getByTestId("row"));
+    rerender(<InboxPage />);
+    expect(screen.getByTestId("row")).toHaveTextContent("busy-row");
+
+    act(() => useInboxFilterStore.getState().toggleIdleOnly("workspace-1"));
+
+    expect(screen.queryByTestId("row")).toBeNull();
+  });
+
+  it("enabling unread hides a read row pinned by idle", () => {
+    reset();
+    layout.width = DESKTOP;
+    listData.active = [item({ id: "read-row", issue_id: "idle-issue", read: true })];
+    useInboxFilterStore.getState().toggleIdleOnly("workspace-1");
+    render(<InboxPage />);
+    fireEvent.click(screen.getByTestId("row"));
+
+    act(() => useInboxFilterStore.getState().toggleUnreadOnly("workspace-1"));
+
+    expect(screen.queryByTestId("row")).toBeNull();
+  });
+
+  it("re-enabling idle evaluates current activity after disabling it", () => {
+    reset();
+    layout.width = DESKTOP;
+    listData.active = [item({ id: "was-idle", issue_id: "issue-a", read: true })];
+    useInboxFilterStore.getState().toggleIdleOnly("workspace-1");
+    const { rerender } = render(<InboxPage />);
+    fireEvent.click(screen.getByTestId("row"));
+    act(() => useInboxFilterStore.getState().toggleIdleOnly("workspace-1"));
+    listData.tasks = [{ id: "task-a", agent_id: "agent-1", issue_id: "issue-a", status: "running" }] as AgentTask[];
+    rerender(<InboxPage />);
+    expect(screen.getByTestId("row")).toHaveTextContent("was-idle");
+
+    act(() => useInboxFilterStore.getState().toggleIdleOnly("workspace-1"));
+
+    expect(screen.queryByTestId("row")).toBeNull();
+  });
+
   it("keeps the list subordinate to the detail pane on desktop", () => {
     reset();
     layout.width = DESKTOP;
