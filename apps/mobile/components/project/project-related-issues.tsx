@@ -50,9 +50,10 @@ export function ProjectRelatedIssues({ projectId }: Props) {
     DEFAULT_PROJECT_ISSUES_VIEW;
   const { statusFilters, priorityFilters, showCompleted } = view;
 
+  const generation = useProjectIssuesViewStore((s) => s.generation);
   useEffect(() => {
     void loadProjectIssuesView(projectId);
-  }, [projectId]);
+  }, [projectId, generation]);
 
   const catalog = useIssueStatuses();
   const matching = useMemo(
@@ -85,7 +86,7 @@ export function ProjectRelatedIssues({ projectId }: Props) {
     <>
       <View className="flex-row items-center justify-between pl-4 pr-2">
         <Text className="text-xs uppercase tracking-wider text-muted-foreground font-medium">
-          {t("projects:related_issues")}
+          {t("projects:detail.related_issues")}
         </Text>
         <FilterButton onPress={openFilter} active={hasActiveFilters} />
       </View>

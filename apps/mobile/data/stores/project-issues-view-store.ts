@@ -23,6 +23,10 @@ export const DEFAULT_PROJECT_ISSUES_VIEW: Readonly<IssueFilterPrefs> = {
 
 interface ProjectIssuesViewState {
   byProject: Record<string, IssueFilterPrefs>;
+  /** Bumped on every scope change. Screens list it as an effect dependency
+   *  so they reload under the new scope whatever order effects run in, and
+   *  a load started under the previous scope cannot land in the new one. */
+  generation: number;
   toggleStatusFilter: (projectId: string, status: IssueStatus) => void;
   togglePriorityFilter: (projectId: string, priority: IssuePriority) => void;
   setShowCompleted: (projectId: string, showCompleted: boolean) => void;
@@ -51,6 +55,7 @@ export const useProjectIssuesViewStore = create<ProjectIssuesViewState>()(
     };
     return {
       byProject: {},
+      generation: 0,
       toggleStatusFilter: (projectId, status) =>
         update(projectId, (p) => ({ statusFilters: toggle(p.statusFilters, status) })),
       togglePriorityFilter: (projectId, priority) =>
@@ -65,26 +70,24 @@ export const useProjectIssuesViewStore = create<ProjectIssuesViewState>()(
   },
 );
 
-// Bumped on every scope change so a load started for the previous user or
-// workspace cannot land in the new one.
-let generation = 0;
-
 onViewPrefsScopeChange(() => {
-  generation += 1;
-  useProjectIssuesViewStore.setState({ byProject: {} });
+  useProjectIssuesViewStore.setState((state) => ({
+    byProject: {},
+    generation: state.generation + 1,
+  }));
 });
 
 /** Loads a project's saved filters once per scope; call when the project opens. */
 export async function loadProjectIssuesView(projectId: string) {
   if (projectId in useProjectIssuesViewStore.getState().byProject) return;
-  const startedIn = generation;
+  const startedIn = useProjectIssuesViewStore.getState().generation;
   let raw: string | null = null;
   try {
     raw = await viewPrefsStorage.getItem(`${STORAGE_NAME}.${projectId}`);
   } catch {
     // Unreadable storage counts as nothing saved.
   }
-  const { byProject } = useProjectIssuesViewStore.getState();
+  const { byProject, generation } = useProjectIssuesViewStore.getState();
   // A change made while loading is newer than the saved value.
   if (startedIn !== generation || projectId in byProject || !raw) return;
   let saved: unknown = null;

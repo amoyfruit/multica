@@ -178,7 +178,10 @@ describe("view prefs persistence", () => {
     it("forgets loaded filters on a workspace switch", async () => {
       await enter("user-1", "ws-a");
       useProjectIssuesViewStore.getState().toggleStatusFilter("p1", "todo");
+      const before = useProjectIssuesViewStore.getState().generation;
       await enter("user-1", "ws-b");
+      // Open project screens depend on this to reload under the new scope.
+      expect(useProjectIssuesViewStore.getState().generation).toBe(before + 1);
       expect(view("p1")).toBeUndefined();
       await loadProjectIssuesView("p1");
       expect(view("p1")).toBeUndefined();
