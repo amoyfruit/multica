@@ -199,6 +199,14 @@ export function inboxFiltersForPrioritySupport(
 
 const EMPTY_ISSUE_IDS: ReadonlySet<string> = new Set();
 
+/** Page state `filterInboxItems` needs beyond the selected filters. */
+export interface InboxFilterContext {
+  /** Issues an agent is running or queued on. Read only by `idleOnly`. */
+  readonly activeIssueIds?: ReadonlySet<string>;
+  /** Group key (`issue_id ?? id`) of the open notification. */
+  readonly pinnedKey?: string | null;
+}
+
 /**
  * The archive is filtered server-side and the backend has no idle dimension,
  * so a selection kept from the active inbox stays dormant there instead of
@@ -228,11 +236,22 @@ export function inboxFiltersForArchive(filters: InboxFilters): InboxFilters {
  * `idleOnly` asks about the issue, like status and priority, so a row without
  * one never matches. `activeIssueIds` are the issues an agent is running or
  * queued on; the caller derives them from the agent task snapshot.
+ *
+ * `pinnedKey` is the notification whose detail is open. Opening an unread
+ * notification marks it read, and replying from the detail can start an
+ * agent on its issue; either would otherwise remove the row the user is
+ * working in from under the detail pane. The pinned row therefore survives
+ * the unread and idle dimensions only; the status, priority, and actor
+ * dimensions still apply, because changing one of those is an explicit
+ * request to filter the notification itself out.
  */
 export function filterInboxItems(
   items: InboxItem[],
   filters: InboxFilters,
-  activeIssueIds: ReadonlySet<string> = EMPTY_ISSUE_IDS,
+  {
+    activeIssueIds = EMPTY_ISSUE_IDS,
+    pinnedKey = null,
+  }: InboxFilterContext = {},
 ): InboxItem[] {
   if (isEmptyInboxFilters(filters)) return items;
 
@@ -241,12 +260,15 @@ export function filterInboxItems(
   const actors = new Set(filters.actors);
   return items.filter((item) => {
     const actor = inboxActorKey(item);
-    return (
+    const matchesOtherDimensions =
       (statuses.size === 0 ||
         (item.issue_status != null && statuses.has(item.issue_status))) &&
       (priorities.size === 0 ||
         (item.issue_priority != null && priorities.has(item.issue_priority))) &&
-      (actors.size === 0 || (actor != null && actors.has(actor))) &&
+      (actors.size === 0 || (actor != null && actors.has(actor)));
+    if (!matchesOtherDimensions) return false;
+    if (pinnedKey != null && (item.issue_id ?? item.id) === pinnedKey) return true;
+    return (
       (!filters.unreadOnly || item.read !== true) &&
       (!filters.idleOnly ||
         (item.issue_id != null && !activeIssueIds.has(item.issue_id)))

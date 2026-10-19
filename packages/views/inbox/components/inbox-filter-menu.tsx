@@ -147,15 +147,15 @@ export function InboxFilterMenu({
   // ignoring its own, so each number says how many rows selecting that value
   // can actually reveal.
   const statusFacetItems = useMemo(
-    () => filterInboxItems(items, { ...effectiveFilters, statuses: [] }, activeIssueIds),
+    () => filterInboxItems(items, { ...effectiveFilters, statuses: [] }, { activeIssueIds }),
     [items, effectiveFilters, activeIssueIds],
   );
   const priorityFacetItems = useMemo(
-    () => filterInboxItems(items, { ...effectiveFilters, priorities: [] }, activeIssueIds),
+    () => filterInboxItems(items, { ...effectiveFilters, priorities: [] }, { activeIssueIds }),
     [items, effectiveFilters, activeIssueIds],
   );
   const actorFacetItems = useMemo(
-    () => filterInboxItems(items, { ...effectiveFilters, actors: [] }, activeIssueIds),
+    () => filterInboxItems(items, { ...effectiveFilters, actors: [] }, { activeIssueIds }),
     [items, effectiveFilters, activeIssueIds],
   );
   const localUnreadCount = useMemo(
@@ -163,13 +163,13 @@ export function InboxFilterMenu({
       filterInboxItems(
         items,
         { ...effectiveFilters, unreadOnly: false },
-        activeIssueIds,
+        { activeIssueIds },
       ).filter((item) => item.read !== true).length,
     [items, effectiveFilters, activeIssueIds],
   );
   const idleCount = useMemo(
     () =>
-      filterInboxItems(items, { ...effectiveFilters, idleOnly: true }, activeIssueIds)
+      filterInboxItems(items, { ...effectiveFilters, idleOnly: true }, { activeIssueIds })
         .length,
     [items, effectiveFilters, activeIssueIds],
   );
