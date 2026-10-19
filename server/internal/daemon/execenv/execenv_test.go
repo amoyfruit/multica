@@ -3981,8 +3981,8 @@ func TestPrepareCodexSeedsUserSkills(t *testing.T) {
 
 	if data, err := os.ReadFile(filepath.Join(env.CodexHome, "skills", "summarize", "SKILL.md")); err != nil {
 		t.Fatalf("user skill SKILL.md not seeded: %v", err)
-	} else if string(data) != "summarize" {
-		t.Errorf("summarize SKILL.md = %q, want %q", data, "summarize")
+	} else if !strings.Contains(string(data), "name: summarize") || !strings.Contains(string(data), "summarize") {
+		t.Errorf("summarize SKILL.md was not normalized: %q", data)
 	}
 	if data, err := os.ReadFile(filepath.Join(env.CodexHome, "skills", "summarize", "examples", "ex.md")); err != nil {
 		t.Fatalf("user skill support file not seeded: %v", err)
@@ -3991,8 +3991,8 @@ func TestPrepareCodexSeedsUserSkills(t *testing.T) {
 	}
 	if data, err := os.ReadFile(filepath.Join(env.CodexHome, "skills", "translate", "SKILL.md")); err != nil {
 		t.Fatalf("second user skill not seeded: %v", err)
-	} else if string(data) != "translate" {
-		t.Errorf("translate SKILL.md = %q, want %q", data, "translate")
+	} else if !strings.Contains(string(data), "name: translate") || !strings.Contains(string(data), "translate") {
+		t.Errorf("translate SKILL.md was not normalized: %q", data)
 	}
 	if _, err := os.Stat(filepath.Join(env.CodexHome, "skills", ".DS_Store")); !os.IsNotExist(err) {
 		t.Errorf("ignored dotfile leaked into codex-home/skills: err=%v", err)
