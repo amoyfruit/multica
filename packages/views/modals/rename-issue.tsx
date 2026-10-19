@@ -11,6 +11,7 @@ import {
 } from "@multica/ui/components/ui/dialog";
 import { Button } from "@multica/ui/components/ui/button";
 import { Input } from "@multica/ui/components/ui/input";
+import { errorCode } from "@multica/core/api";
 import { useUpdateIssue } from "@multica/core/issues/mutations";
 import { useT } from "../i18n";
 
@@ -32,6 +33,7 @@ export function RenameIssueModal({
   data: Record<string, unknown> | null;
 }) {
   const { t } = useT("modals");
+  const { t: tIssues } = useT("issues");
   const issueId = typeof data?.issueId === "string" ? data.issueId : "";
   const seedTitle = typeof data?.title === "string" ? data.title : "";
   const seedIdentifier =
@@ -70,14 +72,20 @@ export function RenameIssueModal({
       return;
     }
     try {
-      await updateIssue.mutateAsync({ id: issueId, title: trimmed });
+      await updateIssue.mutateAsync({
+        id: issueId,
+        title: trimmed,
+        title_base: seedTitle,
+      });
       toast.success(t(($) => $.rename_issue.toast_renamed));
       onClose();
     } catch (err) {
       toast.error(
-        err instanceof Error && err.message
-          ? err.message
-          : t(($) => $.rename_issue.toast_failed),
+        errorCode(err) === "revision_conflict"
+          ? tIssues(($) => $.revision.conflict)
+          : err instanceof Error && err.message
+            ? err.message
+            : t(($) => $.rename_issue.toast_failed),
       );
     }
   };
