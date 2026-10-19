@@ -2,16 +2,18 @@
 -- Kept in lockstep with agent.SupportedTypes and agent.New().  NOT VALID
 -- preserves the historical-row tolerance used by the prior family additions.
 --
--- Rebased onto migration 441 (add codearts), the newest family migration on
--- main.  This statement replaces the whole constraint rather than amending it,
--- so any family missing from the list below is revoked: `codearts`
+-- The predecessor family migration is 583 (add muse).  This statement
+-- replaces the whole constraint rather than amending it, so any family
+-- missing from the list below is revoked: `muse` (migration 583), `codearts`
 -- (migration 441), `zeroclaw` (migration 403), `dim` (migration 370) and
 -- `mcode` (migration 342) are therefore listed explicitly, not inherited.
+-- The list below is 583's set plus `prime`.
 --
 -- The number matters as much as the list.  The migration runner applies
 -- versions out of order (see internal/migrations.AllVersions), so a prefix
--- below 441 would run *after* codearts on any database that already applied
--- it, and this rewritten CHECK would silently revoke the codearts family.
+-- below 583 would run *after* muse on any database that already applied it,
+-- and this rewritten CHECK would silently revoke the muse family.  A prefix
+-- above 583 runs after muse and must carry `muse` or it revokes that family.
 -- 586 is above every version currently on main.  440, 441, 444, 446, 451,
 -- 457, 468, 491, 500, 535, 545, 548 and 567 were each free when this migration
 -- was renumbered onto them, and each was then taken: 440 by
@@ -27,13 +29,14 @@
 -- 535_github_pr_address_index (#8636), 545 by
 -- 545_pr_auto_complete (#8758), which also added 546 and 547, 548 by
 -- 548_task_supplement_comment_task_index (#8760), and 567 by
--- 567_channel_typing_reaction_retry_idx (#8656).  main at v0.6.3 reaches 582
+-- 567_channel_typing_reaction_retry_idx (#8656).  main at v0.6.3 reached 582
 -- (issue workflow; 580 is unused), which took 573-579 and 581-582, including
--- 576_issue_workflow_workspace_name_index.  Open PR #8679
--- (feat/provider-plan-usage) reserves 583-585, so this migration is 586.
--- None of 442-585 is a family migration (501 adds the runtime_type column
--- but leaves this constraint alone), so 441 remains this migration's
--- predecessor in the chain and the family list below is unchanged.
+-- 576_issue_workflow_workspace_name_index, and has since taken 583
+-- (583_runtime_profile_add_muse) and 584 (584_quick_action_optional_target).
+-- 585 is unused on main.  Open PR #8679 (feat/provider-plan-usage) reserves
+-- 583-585; those prefixes collide with main's 583-584 but not with 586, so
+-- this migration stays 586.  501 adds the runtime_type column but leaves
+-- this constraint alone.
 ALTER TABLE runtime_profile DROP CONSTRAINT IF EXISTS runtime_profile_protocol_family_check;
 
 ALTER TABLE runtime_profile ADD CONSTRAINT runtime_profile_protocol_family_check
@@ -61,6 +64,7 @@ ALTER TABLE runtime_profile ADD CONSTRAINT runtime_profile_protocol_family_check
         'qwen',
         'qwenpaw',
         'mcode',
+        'muse',
         'dim',
         'zeroclaw',
         'prime'

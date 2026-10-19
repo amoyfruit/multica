@@ -247,6 +247,12 @@ func localSkillRootsForProvider(provider string) ([]localSkillRoot, bool, error)
 			// directly below it. Project skills are injected separately under
 			// <workDir>/.minimax/skills.
 			providerRoot = filepath.Join(home, ".minimax", "skills")
+		case "muse":
+			configHome := os.Getenv("XDG_CONFIG_HOME")
+			if configHome == "" {
+				configHome = filepath.Join(home, ".config")
+			}
+			providerRoot = filepath.Join(configHome, "muse", "skills")
 		case "prime":
 			// PRIME_AGENT_CODING_AGENT_DIR overrides Prime Agent's global
 			// ~/.prime/agent directory, which owns settings, sessions,

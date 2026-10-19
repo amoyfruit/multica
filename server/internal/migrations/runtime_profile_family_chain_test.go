@@ -120,7 +120,7 @@ func TestRuntimeProfileFamilyMigrationsNeverDropASibling(t *testing.T) {
 
 	// The tail of the chain is what agent.SupportedTypes must match, so name
 	// the families whose loss this test exists to catch.
-	for _, family := range []string{"mcode", "dim", "prime"} {
+	for _, family := range []string{"mcode", "dim", "muse", "prime"} {
 		if !previous[family] {
 			t.Errorf("the newest runtime_profile family migration does not allow %q", family)
 		}

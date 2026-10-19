@@ -307,6 +307,13 @@ func ListModels(ctx context.Context, providerType string, runtimeCmd Command) (C
 		// MCode's ACP server does not expose session-scoped model selection or
 		// a model catalog. The configured MCode runtime owns the model choice.
 		return Catalog{Models: []Model{}}, nil
+	case "muse":
+		// Meta Muse Code advertises its catalog over MSP model/list, a
+		// session-free query, and applies the pick through session/start
+		// modelId (or session/setModel on a resumed session).
+		return cachedDiscovery(discoveryCacheKey(providerType, runtimeCmd), func() (Catalog, error) {
+			return discoverMuseModels(ctx, runtimeCmd)
+		})
 	case "prime":
 		// Prime Agent's model is fixed process-globally at CLI startup and
 		// never read from session/new or session/prompt over ACP, so there is
