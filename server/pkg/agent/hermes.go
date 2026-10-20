@@ -462,12 +462,19 @@ func (b *hermesBackend) Execute(ctx context.Context, prompt string, opts ExecOpt
 	}
 
 	timeout := opts.Timeout
-	runCtx, cancel := runContext(ctx, timeout)
+	runCtx, cancelRun := runContext(ctx, timeout)
+	// A cancelled task must still be able to notify the persistent owner via
+	// its viewer. Only bounded adapter cleanup ends this transport lifetime.
+	transportCtx, stopProcess := context.WithCancel(context.WithoutCancel(runCtx))
+	cancel := func() {
+		cancelRun()
+		stopProcess()
+	}
 
 	// Same assembly HermesLaunchArgv reproduces for the daemon, so the profile
 	// the overlay is seeded from is the one this argv actually selects.
 	hermesArgs := hermesCLIArgs(b.cfg.LaunchPrefix, opts.CustomArgs, b.cfg.Logger)
-	cmd := b.cfg.commandAt(execPath).exec(runCtx, hermesArgs...)
+	cmd := b.cfg.commandAt(execPath).exec(transportCtx, hermesArgs...)
 	hideAgentWindow(cmd)
 	// What makes the shutdown below bounded. Wait waits on the direct child, and
 	// a child that ignores the cancel would otherwise hold it forever; with a
@@ -599,6 +606,13 @@ func (b *hermesBackend) Execute(ctx context.Context, prompt string, opts ExecOpt
 		},
 	}
 
+	request := func(ctx context.Context, method string, params any) (json.RawMessage, error) {
+		return requestHermesTurn(ctx, transportCtx, c, method, params, func() {
+			_ = stdin.Close()
+			stopProcess()
+		})
+	}
+
 	// Start reading stdout in background.
 	readerDone := make(chan struct{})
 	go func() {
@@ -679,7 +693,7 @@ func (b *hermesBackend) Execute(ctx context.Context, prompt string, opts ExecOpt
 		var sessionCurrentModel string
 
 		// 1. Initialize handshake.
-		initResult, err := c.request(runCtx, "initialize", map[string]any{
+		initResult, err := request(runCtx, "initialize", map[string]any{
 			"protocolVersion": 1,
 			"clientInfo": map[string]any{
 				"name":    "multica-agent-sdk",
@@ -717,7 +731,7 @@ func (b *hermesBackend) Execute(ctx context.Context, prompt string, opts ExecOpt
 			// the runtime re-connects them as part of the resume. Without
 			// this, a resumed Hermes task lost access to MCP tools that a
 			// fresh task on the same agent would have.
-			result, err := c.request(runCtx, "session/resume", map[string]any{
+			result, err := request(runCtx, "session/resume", map[string]any{
 				"cwd":        cwd,
 				"sessionId":  opts.ResumeSessionID,
 				"mcpServers": mcpServers,
@@ -746,7 +760,7 @@ func (b *hermesBackend) Execute(ctx context.Context, prompt string, opts ExecOpt
 				effectiveModel = sessionCurrentModel
 			}
 		} else {
-			result, err := c.request(runCtx, "session/new", buildHermesSessionParams(cwd, opts.Model, mcpServers))
+			result, err := request(runCtx, "session/new", buildHermesSessionParams(cwd, opts.Model, mcpServers))
 			if err != nil {
 				finalStatus = "failed"
 				finalError = fmt.Sprintf("hermes session/new failed: %v", err)
@@ -803,7 +817,7 @@ func (b *hermesBackend) Execute(ctx context.Context, prompt string, opts ExecOpt
 				"session_id", sessionID,
 			)
 		} else if opts.Model != "" {
-			if _, err := c.request(runCtx, "session/set_model", map[string]any{
+			if _, err := request(runCtx, "session/set_model", map[string]any{
 				"sessionId": sessionID,
 				"modelId":   opts.Model,
 			}); err != nil {
@@ -846,7 +860,7 @@ func (b *hermesBackend) Execute(ctx context.Context, prompt string, opts ExecOpt
 		//
 		// sessionResult stops describing the live session once set_model runs,
 		// because an ACP effort option may depend on the current model.
-		applyACPEffortOption(runCtx, c.request, "hermes", b.cfg.Logger,
+		applyACPEffortOption(runCtx, request, "hermes", b.cfg.Logger,
 			sessionID, sessionResult, opts.ThinkingLevel, opts.Model == "")
 
 		// 4. Send the prompt and wait for PromptResponse.
@@ -870,7 +884,7 @@ func (b *hermesBackend) Execute(ctx context.Context, prompt string, opts ExecOpt
 		trySend(msgCh, Message{Type: MessageStatus, Status: "running", SessionID: sessionID})
 
 		streamingCurrentTurn.Store(true)
-		_, err = c.request(runCtx, "session/prompt", map[string]any{
+		_, err = request(runCtx, "session/prompt", map[string]any{
 			"sessionId": sessionID,
 			"prompt": []map[string]any{
 				{"type": "text", "text": hermesTurnText(prompt, opts.ResumeExpected, resumeLanded, opts.ResumeContinuityNotice)},
@@ -1027,7 +1041,14 @@ func (b *hermesBackend) Execute(ctx context.Context, prompt string, opts ExecOpt
 			resumeRejected = true
 		}
 
-		// Build usage map.
+		// Build usage map. A cancelled prompt may have answered during the
+		// bounded cancel window even though the task result remains aborted or
+		// timeout. Retain that response's trailing usage too.
+		select {
+		case pr := <-promptDone:
+			c.mergeUsage(pr.usage)
+		default:
+		}
 		u := c.accumulatedUsage()
 
 		var usageMap map[string]TokenUsage
