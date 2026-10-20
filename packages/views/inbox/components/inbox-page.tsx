@@ -43,6 +43,7 @@ import {
 } from "@multica/core/inbox/mutations";
 import {
   filterInboxItems,
+  inboxFiltersForArchive,
   inboxFiltersForPrioritySupport,
   inboxFilterCount,
   inboxPriorityFilterSupport,
@@ -52,6 +53,7 @@ import {
 
 import { IssueDetail, issueHighlightMementoKey } from "../../issues/components/issue-detail";
 import { IssuePeekHost } from "../../issues/components/issue-peek";
+import { useIssueSurfaceActivity } from "../../issues/surface/activity";
 import { useViewStateWriter } from "../../platform";
 import { ErrorBoundary } from "@multica/ui/components/common/error-boundary";
 import { useNavigation, useReportNavigating } from "../../navigation";
@@ -125,6 +127,11 @@ export function InboxPage() {
   // so the filter would otherwise drop the row before the detail finishes
   // mounting. Scoped to the selection: moving away releases it.
   const pinnedUnreadKeyRef = useRef<string | null>(null);
+  // The row the user opened under the idle filter. Replying from the detail
+  // can start an agent on its issue, which would otherwise drop the row the
+  // user is working in. Set once the open row has passed the idle filter, so
+  // turning the filter on over a busy row still filters it out.
+  const pinnedIdleKeyRef = useRef<string | null>(null);
 
   // Sync from URL when searchParams change (e.g. navigation)
   useEffect(() => {
@@ -155,14 +162,35 @@ export function InboxPage() {
   const viewItems = isArchivedView ? archivedItems : items;
   // The paginated endpoint guarantees the projection, including on empty pages.
   const priorityFilterSupport = isArchivedView ? "supported" : inboxPriorityFilterSupport(rawItems);
-  const effectiveFilters = useMemo(() => inboxFiltersForPrioritySupport(filters, priorityFilterSupport), [filters, priorityFilterSupport]);
+  const effectiveFilters = useMemo(() => {
+    const supported = inboxFiltersForPrioritySupport(filters, priorityFilterSupport);
+    return isArchivedView ? inboxFiltersForArchive(supported) : supported;
+  }, [filters, priorityFilterSupport, isArchivedView]);
+  // "Active" is the same running-or-queued rule the row's activity badge uses.
+  const { activityByIssueId } = useIssueSurfaceActivity();
+  const activeIssueIds = useMemo(() => new Set(activityByIssueId.keys()), [activityByIssueId]);
+  // Only an idle selection reads the snapshot, so task churn leaves the list
+  // alone while it is off.
+  const idleFilterIssueIds = effectiveFilters.idleOnly ? activeIssueIds : undefined;
+  // The open row survives the unread and idle dimensions while it stays
+  // selected; see the pin refs above. Each pin is passed separately so it
+  // only crosses its own dimension.
   const pinnedUnreadKey =
     effectiveFilters.unreadOnly && pinnedUnreadKeyRef.current === selectedKey
       ? selectedKey
       : null;
+  const pinnedIdleKey =
+    effectiveFilters.idleOnly && pinnedIdleKeyRef.current === selectedKey
+      ? selectedKey
+      : null;
+  const pinnedKey = pinnedUnreadKey ?? pinnedIdleKey;
+  const filterContext = useMemo(
+    () => ({ activeIssueIds: idleFilterIssueIds, pinnedUnreadKey, pinnedIdleKey }),
+    [idleFilterIssueIds, pinnedUnreadKey, pinnedIdleKey],
+  );
   const filteredItems = useMemo(
-    () => filterInboxItems(viewItems, effectiveFilters, pinnedUnreadKey),
-    [viewItems, effectiveFilters, pinnedUnreadKey],
+    () => filterInboxItems(viewItems, effectiveFilters, filterContext),
+    [viewItems, effectiveFilters, filterContext],
   );
   const hasActiveFilters = inboxFilterCount(effectiveFilters) > 0;
   const selectedOnPage = viewItems.find((i) => (i.issue_id ?? i.id) === selectedKey);
@@ -177,10 +205,10 @@ export function InboxPage() {
     if (!isArchivedView || selectedOnPage) return filteredItems;
     return deduplicateArchivedInboxItems([
       ...filteredItems,
-      ...filterInboxItems(lookupItems, effectiveFilters, pinnedUnreadKey),
+      ...filterInboxItems(lookupItems, effectiveFilters, filterContext),
     ]);
-  }, [isArchivedView, selectedOnPage, filteredItems, lookupItems, effectiveFilters, pinnedUnreadKey]);
-  const visibleItems = isArchivedView && pinnedUnreadKey ? selectionItems : filteredItems;
+  }, [isArchivedView, selectedOnPage, filteredItems, lookupItems, effectiveFilters, filterContext]);
+  const visibleItems = isArchivedView && pinnedKey ? selectionItems : filteredItems;
   const selected = selectionItems.find((i) => (i.issue_id ?? i.id) === selectedKey) ?? null;
   const selectedInView = selectedOnPage ?? (isArchivedView ? lookupItems.find((i) => (i.issue_id ?? i.id) === selectedKey) : null);
   const selectionFilteredOut = !!selectedKey && !!selectedInView && !selected;
@@ -355,7 +383,30 @@ export function InboxPage() {
     if (pinnedUnreadKeyRef.current && pinnedUnreadKeyRef.current !== selectedKey) {
       pinnedUnreadKeyRef.current = null;
     }
+    if (pinnedIdleKeyRef.current && pinnedIdleKeyRef.current !== selectedKey) {
+      pinnedIdleKeyRef.current = null;
+    }
   }, [selectedId, selectedKey]);
+
+  // `selected` only exists once the open row passed every filter, so under
+  // the idle filter this pins a row that was idle when the user opened it.
+  const idleOnlyActive = effectiveFilters.idleOnly;
+  const unreadOnlyActive = effectiveFilters.unreadOnly;
+  const hasSelected = selected != null;
+  useEffect(() => {
+    if (idleOnlyActive && hasSelected && selectedKey) {
+      pinnedIdleKeyRef.current = selectedKey;
+    }
+  }, [idleOnlyActive, hasSelected, selectedKey]);
+
+  // Turning a filter off releases its pin, so turning it back on judges the
+  // open row by its current state instead of an exemption from earlier.
+  useEffect(() => {
+    if (!idleOnlyActive) pinnedIdleKeyRef.current = null;
+  }, [idleOnlyActive]);
+  useEffect(() => {
+    if (!unreadOnlyActive) pinnedUnreadKeyRef.current = null;
+  }, [unreadOnlyActive]);
 
   const writeViewState = useViewStateWriter();
   // Bumped when the already-open notification row is re-clicked; threaded to
@@ -544,6 +595,7 @@ export function InboxPage() {
         wsId={wsId}
         items={viewItems}
         priorityFilterSupport={priorityFilterSupport}
+        activeIssueIds={activeIssueIds}
         archived={isArchivedView}
       />
       {/* Batch actions are main-view only. Every entry archives from the MAIN
