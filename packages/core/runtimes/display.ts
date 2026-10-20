@@ -36,8 +36,9 @@ export function runtimeDisplayLabel(
  * slug. This MUST mirror the daemon's `runtimeDisplayNameOverrides`
  * (server/internal/daemon/daemon.go): the daemon bakes that display name into
  * `name` for the no-alias case (for example, "Trae (host)"), so the aliased label has to use
- * the exact same names or the two paths drift apart (#5260). `qoderclicn`,
- * `codearts`, `dsh`, `traecli`, `qwen`, `qwenpaw`, `mcode`, `muse`, and `zeroclaw` need overrides today — every other provider is a
+ * the exact same names or the two paths drift apart (#5260). `codearts`,
+ * `qoderclicn`, `dsh`, `traecli`, `qwen`, `qwenpaw`, `mcode`, `muse`, `omp`,
+ * `zeroclaw` and `prime` need overrides today — every other provider is a
  * first-letter capitalization of its slug on both sides. Keep in sync with the daemon map.
  */
 const PROVIDER_DISPLAY_NAMES: Record<string, string> = {
@@ -51,6 +52,7 @@ const PROVIDER_DISPLAY_NAMES: Record<string, string> = {
   muse: "Muse Code",
   omp: "Oh-My-Pi",
   zeroclaw: "ZeroClaw",
+  prime: "Prime Agent",
 };
 
 /**
