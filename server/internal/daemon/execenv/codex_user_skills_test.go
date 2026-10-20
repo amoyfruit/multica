@@ -6,6 +6,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 // User skills reach the per-task CODEX_HOME as links, not copies (MUL-6000).
@@ -57,7 +59,7 @@ func TestSeedUserCodexSkillsLinksInsteadOfCopying(t *testing.T) {
 		t.Fatalf("read seeded SKILL.md: %v", err)
 	}
 	if string(body) != validUserSkillFixture("alpha v1") {
-		t.Errorf("seeded SKILL.md = %q, want %q", body, "alpha v1")
+		t.Errorf("seeded SKILL.md = %q, want %q", body, validUserSkillFixture("alpha v1"))
 	}
 
 	// The decisive proof it is not a copy: content added to the user's real
@@ -99,7 +101,7 @@ func TestSeedUserCodexSkillsResolvesInstallerSymlink(t *testing.T) {
 		t.Fatalf("symlink-installed skill unreadable through the per-task link: %v", err)
 	}
 	if string(body) != validUserSkillFixture("lark-base v1") {
-		t.Errorf("SKILL.md = %q, want %q", body, "lark-base v1")
+		t.Errorf("SKILL.md = %q, want %q", body, validUserSkillFixture("lark-base v1"))
 	}
 
 	// The per-task link must point at the real directory, not at the
@@ -293,5 +295,52 @@ func TestSeedUserCodexSkillsSkipsMalformedSibling(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(home, "skills", "good", "SKILL.md")); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestNormalizeUserCodexSkillContentPreservesFormatting(t *testing.T) {
+	cases := []struct {
+		name, in, want string
+	}{
+		{
+			name: "missing description keeps comments and order",
+			in:   "---\nname: alpha\n# keep me\nallowed-tools: [Read]\nmetadata:\n  short-description: x\n---\nbody\n",
+			want: "---\ndescription: \"Instructions for the alpha skill.\"\nname: alpha\n# keep me\nallowed-tools: [Read]\nmetadata:\n  short-description: x\n---\nbody\n",
+		},
+		{
+			name: "CRLF line endings stay CRLF",
+			in:   "---\r\nname: alpha\r\n---\r\nbody\r\n",
+			want: "---\r\ndescription: \"Instructions for the alpha skill.\"\r\nname: alpha\r\n---\r\nbody\r\n",
+		},
+		{
+			name: "empty value replaced in place",
+			in:   "---\n# keep me\nzeta: 1\nname: alpha\ndescription:\n---\nbody\n",
+			want: "---\n# keep me\nzeta: 1\nname: alpha\ndescription: Instructions for the alpha skill.\n---\nbody\n",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := normalizeUserCodexSkillContent(tc.in, "alpha")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != tc.want {
+				t.Fatalf("got %q\nwant %q", got, tc.want)
+			}
+			raw, _, ok := frontmatterParts(got)
+			var fm map[string]any
+			if !ok || yaml.Unmarshal([]byte(raw), &fm) != nil {
+				t.Fatalf("unparseable: %q", got)
+			}
+			if fm["name"] != "alpha" || fm["description"] != "Instructions for the alpha skill." {
+				t.Fatalf("not loadable: %#v", fm)
+			}
+		})
+	}
+}
+
+func TestNormalizeUserCodexSkillContentRejectsDuplicateKeys(t *testing.T) {
+	if _, err := normalizeUserCodexSkillContent("---\nname: a\nname: b\n---\nbody", "alpha"); err == nil {
+		t.Fatal("duplicate-key frontmatter accepted")
 	}
 }

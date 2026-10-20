@@ -121,26 +121,74 @@ func normalizeUserCodexSkillContent(content, slug string) (string, error) {
 		}
 		return synthesizeFrontmatter(content, slug, description), nil
 	}
+	// Decoding into a map is the validity gate: unlike a Node decode it
+	// rejects duplicate keys, which Codex's loader rejects too.
 	var metadata map[string]any
 	if err := yaml.Unmarshal([]byte(fm), &metadata); err != nil || metadata == nil {
 		return "", fmt.Errorf("invalid skill frontmatter")
 	}
 	name, _ := metadata["name"].(string)
 	desc, _ := metadata["description"].(string)
-	if strings.TrimSpace(name) != "" && strings.TrimSpace(desc) != "" {
+	needName := strings.TrimSpace(name) == ""
+	needDesc := strings.TrimSpace(desc) == ""
+	if !needName && !needDesc {
 		return content, nil
 	}
-	if strings.TrimSpace(name) == "" {
-		metadata["name"] = slug
+	_, nameKey := metadata["name"]
+	_, descKey := metadata["description"]
+	if (!needName || !nameKey) && (!needDesc || !descKey) {
+		// Every repair is a missing key: inject the lines after the opening
+		// delimiter so comments, key order and formatting stay byte-for-byte.
+		fmStart, _ := frontmatterBodyStart(content)
+		eol := strings.TrimPrefix(content[:fmStart], "---")
+		var inject strings.Builder
+		if needName {
+			inject.WriteString("name: " + slug + eol)
+		}
+		if needDesc {
+			inject.WriteString("description: " + yamlEscapeInline(description) + eol)
+		}
+		return content[:fmStart] + inject.String() + content[fmStart:], nil
 	}
-	if strings.TrimSpace(desc) == "" {
-		metadata["description"] = description
+	// A key is present but empty or non-string: replace its value in place on
+	// the node tree, which keeps comments and key order.
+	return rewriteUserSkillFrontmatterNode(fm, body, slug, description, needName, needDesc)
+}
+
+func rewriteUserSkillFrontmatterNode(fm, body, slug, description string, needName, needDesc bool) (string, error) {
+	var doc yaml.Node
+	if err := yaml.Unmarshal([]byte(fm), &doc); err != nil || len(doc.Content) == 0 || doc.Content[0].Kind != yaml.MappingNode {
+		return "", fmt.Errorf("invalid skill frontmatter")
 	}
-	encoded, err := yaml.Marshal(metadata)
-	if err != nil {
+	mapping := doc.Content[0]
+	set := func(key, value string) {
+		for i := 0; i+1 < len(mapping.Content); i += 2 {
+			if mapping.Content[i].Value == key {
+				mapping.Content[i+1] = &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: value}
+				return
+			}
+		}
+		mapping.Content = append([]*yaml.Node{
+			{Kind: yaml.ScalarNode, Tag: "!!str", Value: key},
+			{Kind: yaml.ScalarNode, Tag: "!!str", Value: value},
+		}, mapping.Content...)
+	}
+	if needDesc {
+		set("description", description)
+	}
+	if needName {
+		set("name", slug)
+	}
+	var out strings.Builder
+	enc := yaml.NewEncoder(&out)
+	enc.SetIndent(2)
+	if err := enc.Encode(&doc); err != nil {
 		return "", err
 	}
-	return "---\n" + string(encoded) + "---\n" + body, nil
+	if err := enc.Close(); err != nil {
+		return "", err
+	}
+	return "---\n" + out.String() + "---\n" + body, nil
 }
 
 func seedCodexUserSkill(src, dst, name string) error {
