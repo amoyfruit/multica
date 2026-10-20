@@ -19,6 +19,7 @@ const maxProvisionMembersPerRequest = 100
 
 const (
 	ProvisionMemberStatusCreated       = "created"
+	ProvisionMemberStatusAdded         = "added"
 	ProvisionMemberStatusAlreadyMember = "already_member"
 	ProvisionMemberStatusDuplicate     = "duplicate"
 	ProvisionMemberStatusInvalid       = "invalid"
@@ -26,8 +27,9 @@ const (
 )
 
 type ProvisionMemberEntry struct {
-	Email string `json:"email"`
-	Role  string `json:"role"`
+	Email string  `json:"email"`
+	Role  string  `json:"role"`
+	Name  *string `json:"name,omitempty"`
 }
 
 type ProvisionMembersRequest struct {
@@ -46,6 +48,7 @@ type ProvisionMemberResult struct {
 type ProvisionMembersSummary struct {
 	Total         int `json:"total"`
 	Created       int `json:"created"`
+	Added         int `json:"added"`
 	AlreadyMember int `json:"already_member"`
 	Duplicate     int `json:"duplicate"`
 	Invalid       int `json:"invalid"`
@@ -82,6 +85,12 @@ func (h *Handler) ProvisionMembers(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, "only workspace owners can provision members")
 		return
 	}
+	// The Cloud seat protocol has no direct-provision admission operation.
+	// Fail closed rather than bypass purchased capacity or invitation holds.
+	if h.seatCapacityEnabled() {
+		writeError(w, http.StatusServiceUnavailable, "member provisioning is unavailable on seat-managed deployments")
+		return
+	}
 
 	var req ProvisionMembersRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -108,6 +117,9 @@ func (h *Handler) ProvisionMembers(w http.ResponseWriter, r *http.Request) {
 		email, emailErr := normalizeProvisioningEmail(entry.Email)
 		role, roleOK := normalizeProvisioningRole(entry.Role)
 		result := ProvisionMemberResult{Email: email, Role: role}
+		if !roleOK {
+			result.Role = ""
+		}
 		if emailErr != nil {
 			result.Email = strings.ToLower(strings.TrimSpace(entry.Email))
 			result.Status = ProvisionMemberStatusInvalid
@@ -123,6 +135,17 @@ func (h *Handler) ProvisionMembers(w http.ResponseWriter, r *http.Request) {
 			resp.Results = append(resp.Results, result)
 			continue
 		}
+		name := ""
+		if entry.Name != nil {
+			name = strings.TrimSpace(*entry.Name)
+			if name == "" {
+				result.Status = ProvisionMemberStatusInvalid
+				result.Error = "name is required"
+				resp.Summary.Invalid++
+				resp.Results = append(resp.Results, result)
+				continue
+			}
+		}
 		if _, duplicate := seen[email]; duplicate {
 			result.Status = ProvisionMemberStatusDuplicate
 			resp.Summary.Duplicate++
@@ -131,7 +154,7 @@ func (h *Handler) ProvisionMembers(w http.ResponseWriter, r *http.Request) {
 		}
 		seen[email] = struct{}{}
 
-		provisioned, err := h.provisionWorkspaceMember(r, requester.WorkspaceID, email, role)
+		provisioned, err := h.provisionWorkspaceMember(r, requester.WorkspaceID, email, role, name)
 		if err != nil {
 			result.Status = ProvisionMemberStatusFailed
 			result.Error = provisionMemberPublicError(err)
@@ -142,10 +165,15 @@ func (h *Handler) ProvisionMembers(w http.ResponseWriter, r *http.Request) {
 		}
 
 		result.Status = provisioned.status
+		result.Role = provisioned.member.Role
 		result.UserID = uuidToString(provisioned.user.ID)
 		result.MemberID = uuidToString(provisioned.member.ID)
-		if provisioned.status == ProvisionMemberStatusCreated {
-			resp.Summary.Created++
+		if provisioned.status != ProvisionMemberStatusAlreadyMember {
+			if provisioned.status == ProvisionMemberStatusCreated {
+				resp.Summary.Created++
+			} else {
+				resp.Summary.Added++
+			}
 			memberResp := h.memberWithUserResponse(provisioned.member, provisioned.user)
 			eventPayload := map[string]any{"member": memberResp}
 			if ws, err := h.Queries.GetWorkspace(r.Context(), requester.WorkspaceID); err == nil {
@@ -190,19 +218,19 @@ func normalizeProvisioningRole(raw string) (string, bool) {
 	return role, role == "member" || role == "admin"
 }
 
-func (h *Handler) provisionWorkspaceMember(r *http.Request, workspaceID pgtype.UUID, email, role string) (provisionedMember, error) {
-	provisioned, err := h.provisionWorkspaceMemberOnce(r, workspaceID, email, role)
+func (h *Handler) provisionWorkspaceMember(r *http.Request, workspaceID pgtype.UUID, email, role, name string) (provisionedMember, error) {
+	provisioned, err := h.provisionWorkspaceMemberOnce(r, workspaceID, email, role, name)
 	if isUniqueViolation(err) {
 		// A concurrent sign-in or provisioning request may create the global
 		// user or workspace membership after our initial lookup. The failed
 		// transaction has already rolled back, so one fresh attempt observes
 		// the winning row and returns the normal already_member outcome.
-		return h.provisionWorkspaceMemberOnce(r, workspaceID, email, role)
+		return h.provisionWorkspaceMemberOnce(r, workspaceID, email, role, name)
 	}
 	return provisioned, err
 }
 
-func (h *Handler) provisionWorkspaceMemberOnce(r *http.Request, workspaceID pgtype.UUID, email, role string) (provisionedMember, error) {
+func (h *Handler) provisionWorkspaceMemberOnce(r *http.Request, workspaceID pgtype.UUID, email, role, name string) (provisionedMember, error) {
 	tx, err := h.TxStarter.Begin(r.Context())
 	if err != nil {
 		return provisionedMember{}, err
@@ -210,6 +238,7 @@ func (h *Handler) provisionWorkspaceMemberOnce(r *http.Request, workspaceID pgty
 	defer tx.Rollback(r.Context())
 	qtx := h.Queries.WithTx(tx)
 
+	createdUser := false
 	user, err := qtx.GetUserByEmail(r.Context(), email)
 	if err != nil {
 		if !errors.Is(err, pgx.ErrNoRows) {
@@ -218,14 +247,17 @@ func (h *Handler) provisionWorkspaceMemberOnce(r *http.Request, workspaceID pgty
 		if !h.provisioningEmailAllowed(email) {
 			return provisionedMember{}, errProvisioningEmailNotAllowed
 		}
-		name := email
-		if at := strings.IndexByte(email, '@'); at > 0 {
-			name = email[:at]
+		if name == "" {
+			name = email
+			if at := strings.IndexByte(email, '@'); at > 0 {
+				name = email[:at]
+			}
 		}
 		user, err = qtx.CreateUser(r.Context(), db.CreateUserParams{Name: name, Email: email})
 		if err != nil {
 			return provisionedMember{}, err
 		}
+		createdUser = true
 	}
 
 	member, memberErr := qtx.GetMemberByUserAndWorkspace(r.Context(), db.GetMemberByUserAndWorkspaceParams{
@@ -245,12 +277,17 @@ func (h *Handler) provisionWorkspaceMemberOnce(r *http.Request, workspaceID pgty
 		if err != nil {
 			return provisionedMember{}, err
 		}
-		status = ProvisionMemberStatusCreated
+		status = ProvisionMemberStatusAdded
+		if createdUser {
+			status = ProvisionMemberStatusCreated
+		}
 	}
 
-	user, err = qtx.MarkUserOnboarded(r.Context(), user.ID)
-	if err != nil {
-		return provisionedMember{}, err
+	if createdUser {
+		user, err = qtx.MarkUserOnboarded(r.Context(), user.ID)
+		if err != nil {
+			return provisionedMember{}, err
+		}
 	}
 
 	revokedInvitation := ""

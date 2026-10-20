@@ -41,6 +41,7 @@ describe("BulkMemberProvisionDialog", () => {
       summary: {
         total: 2,
         created: 1,
+        added: 0,
         already_member: 1,
         duplicate: 0,
         invalid: 0,
@@ -85,5 +86,16 @@ describe("BulkMemberProvisionDialog", () => {
     expect(screen.getByText(/1 invalid email/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /provision members/i })).toBeDisabled();
     expect(mockProvisionMembers).not.toHaveBeenCalled();
+  });
+
+  it("keeps input and reports malformed responses instead of claiming success", async () => {
+    const onCompleted = vi.fn();
+    mockProvisionMembers.mockResolvedValue({ summary: { total: 0 }, results: [] });
+    renderDialog(onCompleted);
+    await userEvent.type(screen.getByRole("textbox", { name: /email addresses/i }), "seed@example.test");
+    await userEvent.click(screen.getByRole("button", { name: /provision members/i }));
+    expect(await screen.findByText(/unable to provision members/i)).toBeInTheDocument();
+    expect(screen.getByRole("textbox")).toHaveValue("seed@example.test");
+    expect(onCompleted).not.toHaveBeenCalled();
   });
 });

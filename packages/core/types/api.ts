@@ -630,6 +630,7 @@ export interface CreateMemberRequest {
 
 export interface ProvisionMemberEntry {
   email: string;
+  name?: string;
   role: Exclude<MemberRole, "owner">;
 }
 
@@ -639,6 +640,7 @@ export interface ProvisionMembersRequest {
 
 export type ProvisionMemberStatus =
   | "created"
+  | "added"
   | "already_member"
   | "duplicate"
   | "invalid"
@@ -646,7 +648,7 @@ export type ProvisionMemberStatus =
 
 export interface ProvisionMemberResult {
   email: string;
-  role?: Exclude<MemberRole, "owner">;
+  role?: MemberRole;
   status: ProvisionMemberStatus;
   user_id?: string;
   member_id?: string;
@@ -657,6 +659,7 @@ export interface ProvisionMembersResponse {
   summary: {
     total: number;
     created: number;
+    added: number;
     already_member: number;
     duplicate: number;
     invalid: number;

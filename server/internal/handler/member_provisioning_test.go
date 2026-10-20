@@ -158,7 +158,7 @@ func TestProvisionMembers_CreatesSeedUsersAndMemberships(t *testing.T) {
 		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
 	}
 	resp := decodeProvisionMembersResponse(t, w)
-	if resp.Summary.Total != 2 || resp.Summary.Created != 2 || resp.Summary.Failed != 0 {
+	if resp.Summary.Total != 2 || resp.Summary.Created != 1 || resp.Summary.Added != 1 || resp.Summary.Failed != 0 {
 		t.Fatalf("unexpected summary: %+v", resp.Summary)
 	}
 
@@ -173,8 +173,8 @@ func TestProvisionMembers_CreatesSeedUsersAndMemberships(t *testing.T) {
 		`, email, testWorkspaceID).Scan(&gotRole, &onboarded); err != nil {
 			t.Fatalf("load provisioned member %s: %v", email, err)
 		}
-		if gotRole != wantRole || !onboarded {
-			t.Fatalf("member %s: role=%q onboarded=%v; want role=%q onboarded=true", email, gotRole, onboarded, wantRole)
+		if gotRole != wantRole || onboarded != (email == newEmail) {
+			t.Fatalf("member %s: role=%q onboarded=%v", email, gotRole, onboarded)
 		}
 	}
 }

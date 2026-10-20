@@ -7,7 +7,7 @@ afterEach(() => vi.unstubAllGlobals());
 
 describe("member provisioning response boundary", () => {
   const response = {
-    summary: { total: 1, created: 1, already_member: 0, duplicate: 0, invalid: 0, failed: 0 },
+    summary: { total: 1, created: 1, added: 0, already_member: 0, duplicate: 0, invalid: 0, failed: 0 },
     results: [{ email: "seed@example.test", role: "member", status: "created", future: true }],
   };
 

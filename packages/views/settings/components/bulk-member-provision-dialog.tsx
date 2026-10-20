@@ -56,7 +56,8 @@ export function BulkMemberProvisionDialog({
   };
 
   const handleOpenChange = (nextOpen: boolean) => {
-    if (!nextOpen && !submitting) reset();
+    if (submitting) return;
+    if (!nextOpen) reset();
     onOpenChange(nextOpen);
   };
 
@@ -68,6 +69,9 @@ export function BulkMemberProvisionDialog({
       const result = await api.provisionMembers(workspaceId, {
         entries: parsed.emails.map((email) => ({ email, role })),
       });
+      if (result.results.length !== parsed.emails.length) {
+        throw new Error(t(($) => $.members.provision.error_generic));
+      }
       setResponse(result);
       onCompleted();
     } catch (err) {
@@ -89,11 +93,11 @@ export function BulkMemberProvisionDialog({
           <div className="space-y-3">
             <p className="font-medium">
               {t(($) => $.members.provision.success_summary, {
-                count: response.summary.created + response.summary.already_member,
+                count: response.summary.created + response.summary.added + response.summary.already_member,
               })}
             </p>
             <div className="grid grid-cols-2 gap-2 rounded-lg border p-3 text-xs text-muted-foreground sm:grid-cols-4">
-              <span>{t(($) => $.members.provision.result_created, { count: response.summary.created })}</span>
+              <span>{t(($) => $.members.provision.result_created, { count: response.summary.created + response.summary.added })}</span>
               <span>{t(($) => $.members.provision.result_existing, { count: response.summary.already_member })}</span>
               <span>{t(($) => $.members.provision.result_invalid, { count: response.summary.invalid })}</span>
               <span>{t(($) => $.members.provision.result_failed, { count: response.summary.failed })}</span>
@@ -179,7 +183,7 @@ export function BulkMemberProvisionDialog({
               <Button variant="outline" onClick={() => handleOpenChange(false)} disabled={submitting}>
                 {t(($) => $.members.provision.cancel)}
               </Button>
-              <Button onClick={submit} disabled={!canSubmit}>
+              <Button onClick={submit} disabled={!canSubmit} aria-busy={submitting}>
                 {submitting
                   ? t(($) => $.members.provision.submitting)
                   : t(($) => $.members.provision.submit)}

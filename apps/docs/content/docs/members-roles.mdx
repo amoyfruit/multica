@@ -51,6 +51,28 @@ with `FF_SETTINGS_BULK_MEMBER_PROVISIONING=true`. Only owners can use the UI or
 API, only member/admin roles are accepted, and configured email/domain
 allowlists continue to apply when provisioning a new account.
 
+From the CLI:
+
+```bash
+multica workspace member provision alice@example.com my-workspace --name "Alice Example" --role member --output json
+```
+
+The workspace argument accepts a UUID, slug, or UUID prefix. If omitted, the
+usual `--workspace-id`, `MULTICA_WORKSPACE_ID`, or profile default is used.
+`--name` is optional, is trimmed, and cannot be blank when supplied. It applies
+only when creating an account; omitting it uses the email's local part.
+
+JSON output is a single per-email result. `created` means a new account and
+membership; `added` means an existing account gained membership;
+`already_member` means membership already existed. Retrying never changes a
+profile or existing role. Invalid or failed provisioning exits nonzero.
+The bulk API returns these per-entry outcomes plus summary counts.
+
+Provisioning is not available on Cloud-connected, seat-managed deployments
+(HTTP 503): it must not bypass their purchased-seat admission protocol. Use
+invitations there instead. This restriction does not affect self-hosted
+deployments without Cloud seat management.
+
 ## Change roles
 
 An `admin` can move roles between `admin` and `member`, and can remove members holding those two roles. Any change involving `owner` — promoting, changing, or removing — can only be performed by an `owner`.
