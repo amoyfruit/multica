@@ -52,12 +52,12 @@ var modelPrices = map[string]ModelPrice{
 	"anthropic:claude-haiku-4.5":  {Provider: "anthropic", Model: "claude-haiku-4.5", InputPerM: 1.00, CacheReadPerM: 0.10, CacheWritePerM: 1.25, OutputPerM: 5.00},
 	"deepseek:v4-pro":             {Provider: "deepseek", Model: "v4-pro", InputPerM: 1.74, CacheReadPerM: 0.0145, CacheWritePerM: 1.74, OutputPerM: 3.48},
 	"deepseek:v4-flash":           {Provider: "deepseek", Model: "v4-flash", InputPerM: 0.56, CacheReadPerM: 0.0112, CacheWritePerM: 0.56, OutputPerM: 1.12},
-	// MiniMax-M3 (platform.minimax.io/subscribe/token-plan?tab=api-enterprise).
-	// The target configuration exposes the full 1M-token context window, so this
-	// row uses the >512K tier: input $0.60, output $2.40, cache read $0.12. MiniMax
-	// lists no separate cache-write rate, so writes mirror input instead of being
-	// treated as free.
-	"minimax:m3":              {Provider: "minimax", Model: "m3", InputPerM: 0.60, CacheReadPerM: 0.12, CacheWritePerM: 0.60, OutputPerM: 2.40},
+	// MiniMax-M3 standard-tier estimate (https://platform.minimax.io/docs/pricing/overview).
+	// Usage aggregates multiple requests, so it cannot identify individual >512K
+	// inputs. As with xAI below, use the standard tier; long requests may be
+	// underestimated. Cache writes mirror input for newly cached input tokens,
+	// not an additional write fee (https://platform.minimax.io/docs/api-reference/text-prompt-caching).
+	"minimax:m3":              {Provider: "minimax", Model: "m3", InputPerM: 0.30, CacheReadPerM: 0.06, CacheWritePerM: 0.30, OutputPerM: 1.20},
 	"minimax:m2.7":            {Provider: "minimax", Model: "m2.7", InputPerM: 0.30, CacheReadPerM: 0.06, CacheWritePerM: 0.375, OutputPerM: 1.20},
 	"minimax:m2.7-highspeed":  {Provider: "minimax", Model: "m2.7-highspeed", InputPerM: 0.60, CacheReadPerM: 0.06, CacheWritePerM: 0.375, OutputPerM: 2.40},
 	"google:gemini-3-flash":   {Provider: "google", Model: "gemini-3-flash", InputPerM: 0.50, CacheReadPerM: 0.05, CacheWritePerM: 0.50, OutputPerM: 3.00},

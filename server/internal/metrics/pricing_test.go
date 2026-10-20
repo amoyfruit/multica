@@ -182,11 +182,9 @@ func TestPriceForModelAliasGrok(t *testing.T) {
 	}
 }
 
-// TestPriceForModelAliasMinimaxM3 pins the MiniMax-M3 row to the >512K tier
-// used by the full 1M-token target configuration (input $0.60, output $2.40,
-// cache read $0.12). M3 has no separate cache-write rate, so writes mirror
-// input. The alias must resolve M3 without borrowing the older M2.7 row, and
-// M2.7 must keep its own distinct rates.
+// TestPriceForModelAliasMinimaxM3 pins the standard-tier fallback estimate.
+// Aggregate usage cannot identify per-request long-context tiers. Cache writes
+// mirror input for newly cached tokens; existing M2.7 rates remain unchanged.
 func TestPriceForModelAliasMinimaxM3(t *testing.T) {
 	cases := []struct {
 		model string
@@ -194,15 +192,15 @@ func TestPriceForModelAliasMinimaxM3(t *testing.T) {
 	}{
 		{
 			model: "minimax-m3",
-			want:  ModelPrice{Provider: "minimax", Model: "m3", InputPerM: 0.6, CacheReadPerM: 0.12, CacheWritePerM: 0.6, OutputPerM: 2.4},
+			want:  ModelPrice{Provider: "minimax", Model: "m3", InputPerM: 0.3, CacheReadPerM: 0.06, CacheWritePerM: 0.3, OutputPerM: 1.2},
 		},
 		{
 			model: "codebuddy/minimax-m3",
-			want:  ModelPrice{Provider: "minimax", Model: "m3", InputPerM: 0.6, CacheReadPerM: 0.12, CacheWritePerM: 0.6, OutputPerM: 2.4},
+			want:  ModelPrice{Provider: "minimax", Model: "m3", InputPerM: 0.3, CacheReadPerM: 0.06, CacheWritePerM: 0.3, OutputPerM: 1.2},
 		},
 		{
 			model: "MiniMax-M3",
-			want:  ModelPrice{Provider: "minimax", Model: "m3", InputPerM: 0.6, CacheReadPerM: 0.12, CacheWritePerM: 0.6, OutputPerM: 2.4},
+			want:  ModelPrice{Provider: "minimax", Model: "m3", InputPerM: 0.3, CacheReadPerM: 0.06, CacheWritePerM: 0.3, OutputPerM: 1.2},
 		},
 		// The older M2.7 row must stay separate and keep its distinct rates.
 		{
