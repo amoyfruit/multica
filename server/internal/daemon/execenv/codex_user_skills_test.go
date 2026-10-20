@@ -344,3 +344,69 @@ func TestNormalizeUserCodexSkillContentRejectsDuplicateKeys(t *testing.T) {
 		t.Fatal("duplicate-key frontmatter accepted")
 	}
 }
+
+// Review regressions from MUL-8095: every repair must parse, keep other
+// fields equal, and never touch a skill Codex already accepts.
+func TestNormalizeUserCodexSkillContentRepairsEveryMappingStyle(t *testing.T) {
+	cases := []struct {
+		name, in string
+		check    func(t *testing.T, out string, fm map[string]any)
+	}{
+		{name: "flow mapping missing description", in: "---\n{name: alpha, allowed-tools: [Read]}\n---\nbody\n",
+			check: func(t *testing.T, out string, fm map[string]any) {
+				if tools, _ := fm["allowed-tools"].([]any); len(tools) != 1 || tools[0] != "Read" {
+					t.Fatalf("allowed-tools lost: %#v", fm)
+				}
+			}},
+		{name: "indented mapping missing description", in: "---\n  name: alpha\n  allowed-tools: [Read]\n---\nbody\n"},
+		{name: "anchored empty description keeps aliases and comment", in: "---\nname: alpha\ndescription: &shared \"\" # retain me\nmetadata:\n  short-description: *shared\n---\nbody\n",
+			check: func(t *testing.T, out string, fm map[string]any) {
+				if md, _ := fm["metadata"].(map[string]any); md["short-description"] != "" {
+					t.Fatalf("alias value changed: %#v", fm)
+				}
+				if !strings.Contains(out, "# retain me") {
+					t.Fatalf("line comment lost: %s", out)
+				}
+			}},
+		{name: "non-string name replaced", in: "---\nname: [a]\ndescription: Demo\n---\nbody\n",
+			check: func(t *testing.T, out string, fm map[string]any) {
+				if fm["name"] != "alpha" {
+					t.Fatalf("name not repaired: %#v", fm)
+				}
+			}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			out, err := normalizeUserCodexSkillContent(tc.in, "alpha")
+			if err != nil {
+				t.Fatal(err)
+			}
+			raw, body, ok := frontmatterParts(out)
+			var fm map[string]any
+			if !ok || yaml.Unmarshal([]byte(raw), &fm) != nil {
+				t.Fatalf("repair produced invalid YAML:\n%s", out)
+			}
+			if d, _ := fm["description"].(string); strings.TrimSpace(d) == "" || body != "body\n" {
+				t.Fatalf("not loadable: %q", out)
+			}
+			if tc.check != nil {
+				tc.check(t, out, fm)
+			}
+		})
+	}
+}
+
+func TestNormalizeUserCodexSkillContentLeavesLoadableSkillsUntouched(t *testing.T) {
+	// Codex falls back to the directory name for a missing or blank name, so
+	// these already load and must stay linked byte-for-byte.
+	for _, in := range []string{
+		"---\n{description: Demo skill}\n---\nbody\n",
+		"---\ndescription: Demo skill\n---\nbody\n",
+		"---\nname: \"\"\ndescription: Demo skill\n---\nbody\n",
+	} {
+		out, err := normalizeUserCodexSkillContent(in, "alpha")
+		if err != nil || out != in {
+			t.Fatalf("loadable skill rewritten: %q -> %q (%v)", in, out, err)
+		}
+	}
+}
