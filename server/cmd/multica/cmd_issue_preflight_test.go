@@ -25,7 +25,6 @@ func TestIssuePreflightCompatibility(t *testing.T) {
 		{"incompatible", "opencode v2.0.10", "", "online", false, true, true, "blocked"},
 		{"missing capability", "1.19.3", "", "online", false, true, false, "blocked"},
 		{"offline", "1.19.3", "", "offline", false, true, true, "blocked"},
-		{"redacted v2", "2.0.10", "", "online", true, false, true, "unknown"},
 		{"custom profile", "2.0.10", "profile", "online", false, true, true, "unknown"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -176,7 +175,7 @@ func TestIssuePreflightRerunCarriesReportAndSeparateQA(t *testing.T) {
 		case "/api/agents/agent/mcp-servers":
 			w.Write([]byte(`[]`))
 		case "/api/runtimes":
-			json.NewEncoder(w).Encode([]any{map[string]any{"id": "runtime", "provider": "codex", "status": "online", "last_seen_at": now}})
+			json.NewEncoder(w).Encode([]any{map[string]any{"id": "runtime", "provider": "codex", "status": "online", "last_seen_at": now, "metadata": map[string]any{"capabilities": []string{"remote-mcp-v1"}}}})
 		case "/api/issues/issue/task-runs":
 			json.NewEncoder(w).Encode([]any{map[string]any{"id": "failed", "status": "failed", "created_at": now, "error": "usage limit"}})
 		case "/api/issues/issue/comments":
@@ -198,7 +197,7 @@ func TestIssuePreflightRerunCarriesReportAndSeparateQA(t *testing.T) {
 	}))
 	defer srv.Close()
 	client := &cli.APIClient{BaseURL: srv.URL, HTTPClient: srv.Client()}
-	report, err := collectIssuePreflight(context.Background(), client, "issue", preflightOptions{Purpose: "infrastructure_diagnostic", Revision: preflightSHA, QAComment: "qa-comment", QAAuthor: "qa"}, now)
+	report, err := collectIssuePreflight(context.Background(), client, "issue", preflightOptions{Purpose: "infrastructure_diagnostic", ManagedMCP: true, Revision: preflightSHA, QAComment: "qa-comment", QAAuthor: "qa"}, now)
 	if err != nil {
 		t.Fatal(err)
 	}

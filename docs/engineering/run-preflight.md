@@ -11,6 +11,10 @@ Required capabilities are supplied with repeatable `--require-capability` flags.
 `--managed-mcp` declares that the task requires managed MCP, including servers
 supplied by integrations or plugins. Those overlays are not exposed by the
 agent-read API. Redacted agent MCP configuration is unknown, never absent.
+Without observed managed servers or an explicit `--managed-mcp` requirement,
+redaction produces `unknown / mcp_config_unverified` and prevents rerun on every
+provider. Declare the requirement with `--managed-mcp` to check the runtime's
+actual managed-MCP compatibility and capabilities without revealing config.
 OpenCode 2.x with required or observed managed MCP is refused before rerun;
 unknown MCP delivery on OpenCode 2.x also prevents rerun. Custom runtime profiles
 cannot be inferred compatible from the wrapped binary's version.
@@ -32,6 +36,12 @@ that author's comment. It recognizes an affirmative `QA PASS` heading and a
 single distinct full commit SHA. Missing, ambiguous, negated, unversioned, or
 different-revision evidence never becomes a current PASS. The report labels
 this a caller-selected citation, not a search for the latest workspace-wide QA.
+When no citation is selected, `qa_evidence_unselected` tells the caller to find
+the latest accepted report through bounded comment reads and supply
+`--qa-comment`, `--qa-author`, and `--revision`. Unavailable comments produce
+`qa_comment_unavailable`; the report omits their comment ID and timestamp.
+Unverified selected evidence also produces an actionable finding. QA evidence
+findings do not block infrastructure diagnostics or change the runtime verdict.
 A failed process is reported independently; it does not mutate that evidence or
 the issue's status. Historical run attribution is preserved verbatim.
 

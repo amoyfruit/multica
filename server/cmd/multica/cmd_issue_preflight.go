@@ -103,11 +103,11 @@ type preflightComment struct {
 }
 
 type preflightQA struct {
-	Status    string    `json:"status"`
-	CommentID string    `json:"comment_id,omitempty"`
-	Revision  string    `json:"revision,omitempty"`
-	Source    string    `json:"source"`
-	CreatedAt time.Time `json:"created_at,omitempty"`
+	Status    string     `json:"status"`
+	CommentID string     `json:"comment_id,omitempty"`
+	Revision  string     `json:"revision,omitempty"`
+	Source    string     `json:"source"`
+	CreatedAt *time.Time `json:"created_at,omitempty"`
 }
 
 type preflightRun struct {
@@ -214,6 +214,9 @@ func evaluateIssuePreflight(a preflightAgent, rt *preflightRuntime, bindings []w
 			}
 		}
 	}
+	if a.MCPRedacted && !managed {
+		unknown("mcp_config_unverified", "Agent MCP configuration is redacted. Declare the task's MCP requirement with --managed-mcp to check compatibility and capabilities without revealing credentials.")
+	}
 	required := slices.Clone(opts.Capabilities)
 	if managed {
 		required = append(required, "remote-mcp-v1")
@@ -243,11 +246,14 @@ var preflightFullSHA = regexp.MustCompile(`(?i)\b[0-9a-f]{40}(?:[0-9a-f]{24})?\b
 var preflightRevisionLabel = regexp.MustCompile("(?im)(?:QA revision:|merge/live)\\s*[*`]*([0-9a-f]{40}(?:[0-9a-f]{24})?)\\b")
 
 func evaluatePreflightQA(c preflightComment, opts preflightOptions) preflightQA {
-	q := preflightQA{Status: "unverified", CommentID: opts.QAComment, Source: "caller-selected comment; not a latest-QA search"}
+	q := preflightQA{Status: "unverified", Source: "caller-selected comment; not a latest-QA search"}
 	if c.ID != opts.QAComment || c.AuthorID != opts.QAAuthor || opts.QAAuthor == "" || c.DeletedAt != nil || c.AuthorType != "agent" {
 		return q
 	}
-	q.CreatedAt = c.CreatedAt
+	q.CommentID = c.ID
+	if !c.CreatedAt.IsZero() {
+		q.CreatedAt = &c.CreatedAt
+	}
 	first := strings.TrimSpace(strings.SplitN(c.Content, "\n", 2)[0])
 	first = strings.TrimSpace(strings.TrimLeft(strings.ReplaceAll(first, "**", ""), "#"))
 	if !(strings.HasPrefix(first, "QA PASS") || strings.HasPrefix(first, "ГАТОВА — QA PASS")) {
@@ -276,6 +282,25 @@ func evaluatePreflightQA(c preflightComment, opts preflightOptions) preflightQA 
 		q.Status = "pass_same_revision"
 	}
 	return q
+}
+
+func applyPreflightQAEvidence(r *issuePreflightReport, comments []preflightComment, opts preflightOptions) {
+	const selectionAction = "Read the latest accepted QA report with issue comment list --roots-only --summary, then --thread ID --tail 30; cite it with --qa-comment ID --qa-author ID --revision FULL_SHA."
+	if opts.QAComment == "" {
+		r.Findings = append(r.Findings, preflightFinding{"qa_evidence_unselected", selectionAction})
+		return
+	}
+	for _, c := range comments {
+		if c.ID == opts.QAComment {
+			r.QA = evaluatePreflightQA(c, opts)
+			if r.QA.Status == "unverified" {
+				r.Findings = append(r.Findings, preflightFinding{"qa_evidence_unverified", "The selected comment does not verify an accepted QA revision for the expected author. " + selectionAction})
+			}
+			return
+		}
+	}
+	r.QA = preflightQA{Status: "unverified", Source: "selected comment unavailable in bounded thread read"}
+	r.Findings = append(r.Findings, preflightFinding{"qa_comment_unavailable", "The selected comment was not returned by the bounded thread read; inspect that thread's pagination. " + selectionAction})
 }
 
 func isPreflightSHA(s string) bool {
@@ -379,19 +404,14 @@ func collectIssuePreflight(ctx context.Context, client *cli.APIClient, issueID s
 		}
 		applyPreflightModelCatalog(&r, catalog, now)
 	}
+	var comments []preflightComment
 	if opts.QAComment != "" {
-		var comments []preflightComment
 		path := base + "/comments?thread=" + url.QueryEscape(opts.QAComment) + "&tail=30"
 		if err := preflightGet(ctx, client, path, &comments); err != nil {
 			return r, err
 		}
-		for _, c := range comments {
-			if c.ID == opts.QAComment {
-				r.QA = evaluatePreflightQA(c, opts)
-				break
-			}
-		}
 	}
+	applyPreflightQAEvidence(&r, comments, opts)
 	return r, nil
 }
 
