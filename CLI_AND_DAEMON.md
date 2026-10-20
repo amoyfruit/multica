@@ -299,6 +299,18 @@ The daemon auto-detects these AI CLIs on your PATH:
 
 You need at least one installed. The daemon registers each detected CLI as an available runtime.
 
+**How prompts are delivered.** The daemon hands each run's task prompt to the
+CLI on standard input, never on the command line: a single argv string caps at
+the OS limit (131,072 bytes on Linux, 8,191–32,767 characters on Windows), and
+a prompt inlined past it kills the task at spawn with "argument list too long"
+(E2BIG) and zero output — a 145 KB log pasted into an issue thread is enough.
+Antigravity (`agy`) is the exception: it accepts the prompt only as `-p`, so an
+over-cap prompt fails up front with a named `ErrArgvLimitExceeded` error
+naming the byte counts and the remedy instead of dying opaquely. Either way,
+members should attach large logs, diffs, and files to the issue rather than
+pasting them inline: inline text inflates every subsequent run's prompt,
+attachments are pulled only when needed.
+
 ### How It Works
 
 1. On start, the daemon detects installed agent CLIs and registers a runtime for each agent in each watched workspace

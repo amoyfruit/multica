@@ -37,8 +37,11 @@ func configureProcessGroup(cmd *exec.Cmd) {
 // unused here; Windows needs it to report degraded ownership.
 //
 // It is still the only way this package starts a long-lived runtime process,
-// so the two platforms share one call site per backend.
-func startOwnedProcessTree(cmd *exec.Cmd, _ *slog.Logger) error { return cmd.Start() }
+// so the two platforms share one call site per backend — and one place to
+// rename the OS's oversized-command-line refusal (wrapArgvLimitError).
+func startOwnedProcessTree(cmd *exec.Cmd, _ *slog.Logger) error {
+	return wrapArgvLimitError(cmd.Start())
+}
 
 // releaseProcessGroup is a no-op on non-Windows platforms: a process group needs
 // no handle and is gone once its members are.

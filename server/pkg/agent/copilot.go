@@ -3,18 +3,28 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"os/exec"
 	"strings"
+	"sync"
 	"time"
 )
 
 // copilotBackend implements Backend by spawning the GitHub Copilot CLI
 // with --output-format json and parsing its JSONL event stream.
 //
-// The v1 integration uses the -p (pipe) mode which is the stable
-// automation/CI channel. The prompt is passed as a CLI argument (not stdin).
+// The v1 integration uses the CLI's non-interactive mode, which the CLI
+// also enters from piped stdin: the prompt is delivered on stdin and is
+// NEVER an argv element. Inlining it as `-p <prompt>` dies with E2BIG
+// "argument list too long" once the prompt crosses Linux's MAX_ARG_STRLEN
+// (131071 usable bytes), so a 145 KB log pasted into a thread killed the
+// task at spawn with zero output — the same ceiling that moved OpenCode
+// to stdin in #6538, and verified against Copilot CLI 1.0.98, where
+// `printf <prompt> | copilot --output-format json …` runs the piped text
+// as the full prompt.
 // Events arrive as newline-delimited JSON on stdout in the Copilot CLI's
 // own envelope format: { "type": "dotted.event.name", "data": {...}, ... }
 type copilotBackend struct {
@@ -52,6 +62,13 @@ type copilotEventState struct {
 	callUsage     map[string]TokenUsage
 	msgUsage      map[string]TokenUsage
 	shutdownUsage map[string]TokenUsage
+	// sawResult marks that the CLI's terminal `result` event landed. A failed
+	// prompt write is only benign after that proof: the CLI reads stdin to EOF
+	// before doing any work, so a run that reported a result provably received
+	// the whole prompt and a later EPIPE is just the pipe closing on the way
+	// out. Without a result, a prompt that never landed must not be reported
+	// as a clean success (same reasoning as the OpenCode backend's guard).
+	sawResult bool
 	// resumed marks a run that continued an existing Copilot session, which is
 	// what disqualifies the session.shutdown totals — see resolveUsage.
 	resumed bool
@@ -310,6 +327,7 @@ func handleCopilotEvent(evt copilotEvent, st *copilotEventState) []Message {
 		}
 
 	case "result":
+		st.sawResult = true
 		if evt.SessionID != "" {
 			st.sessionID = evt.SessionID
 		}
@@ -343,14 +361,20 @@ func (b *copilotBackend) Execute(ctx context.Context, prompt string, opts ExecOp
 	if err != nil {
 		return nil, fmt.Errorf("copilot executable not found at %q: %w", execName, err)
 	}
+	// Without -p the CLI takes its prompt from stdin, so an empty prompt with
+	// stdin closed immediately is a spawn with nothing to run — refuse it here
+	// instead of discovering what the CLI then decides to do.
+	if prompt == "" {
+		return nil, errors.New("copilot: refusing to spawn with an empty prompt")
+	}
 
 	timeout := opts.Timeout
 	runCtx, cancel := runContext(ctx, timeout)
 
-	args := buildCopilotArgs(prompt, opts, b.cfg.Logger)
+	args := buildCopilotArgs(opts, b.cfg.Logger)
 	cmd, _, _ := b.cfg.commandAt(execName).execVia(runCtx, chooseCopilotInvocation, lookedUp, args, b.cfg.Logger)
 	hideAgentWindow(cmd)
-	b.cfg.logAgentCommand(cmd, newAgentCommandLogArgs(args))
+	b.cfg.logAgentCommandWithPrompt(cmd, newAgentCommandLogArgs(args), len(prompt))
 	cmd.WaitDelay = 10 * time.Second
 	if opts.Cwd != "" {
 		cmd.Dir = opts.Cwd
@@ -362,15 +386,38 @@ func (b *copilotBackend) Execute(ctx context.Context, prompt string, opts ExecOp
 		cancel()
 		return nil, fmt.Errorf("copilot stdout pipe: %w", err)
 	}
+	// The prompt rides stdin, never argv (see copilotBackend). Closing stdin
+	// is what terminates it: the CLI reads stdin to EOF before working, so a
+	// stdin left open would hang the run.
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		cancel()
+		return nil, fmt.Errorf("copilot stdin pipe: %w", err)
+	}
+	var closeStdinOnce sync.Once
+	closeStdin := func() { closeStdinOnce.Do(func() { _ = stdin.Close() }) }
 	stderrBuf := newStderrTail(newLogWriter(b.cfg.Logger, "[copilot:stderr] "), agentStderrTailBytes)
 	cmd.Stderr = stderrBuf
 
 	if err := startOwnedProcessTree(cmd, b.cfg.Logger); err != nil {
+		closeStdin()
 		cancel()
 		return nil, fmt.Errorf("start copilot: %w", err)
 	}
 
 	b.cfg.Logger.Info("copilot started", "pid", cmd.Process.Pid, "cwd", opts.Cwd, "model", opts.Model)
+
+	// Write the prompt from its own goroutine so it cannot deadlock against the
+	// stdout scanner below: a prompt larger than the OS pipe buffer (~64 KiB)
+	// blocks mid-write until the CLI drains it, and the CLI cannot drain while
+	// nobody consumes its stdout. cmd.Wait closes the pipes, so by the time
+	// Wait returns this writer has sent exactly once.
+	writeErrCh := make(chan error, 1)
+	go func() {
+		_, err := io.WriteString(stdin, prompt)
+		closeStdin()
+		writeErrCh <- err
+	}()
 
 	msgCh := make(chan Message, 256)
 	resCh := make(chan Result, 1)
@@ -415,6 +462,9 @@ func (b *copilotBackend) Execute(ctx context.Context, prompt string, opts ExecOp
 		}
 
 		exitErr := cmd.Wait()
+		// Wait closes the process pipes, so a prompt write still blocked when
+		// the CLI exited has returned by now. The writer sends exactly once.
+		writeErr := <-writeErrCh
 		releaseProcessGroup(cmd)
 		duration := time.Since(startTime)
 
@@ -427,6 +477,23 @@ func (b *copilotBackend) Execute(ctx context.Context, prompt string, opts ExecOp
 		} else if exitErr != nil && st.finalStatus == "completed" {
 			st.finalStatus = "failed"
 			st.finalError = fmt.Sprintf("copilot exited with error: %v", exitErr)
+		} else if writeErr != nil && !st.sawResult {
+			// A failed prompt write is only benign once the run is PROVEN to
+			// have finished: the CLI reads stdin to EOF before it does any
+			// work, so a run that reached its terminal result necessarily
+			// received the whole prompt, and an EPIPE recorded after that just
+			// means the pipe closed on its way out — failing on it would
+			// discard a successful result. Absence of failure is not that
+			// proof: finalStatus starts at "completed", so a child that emits
+			// nothing and exits 0 would otherwise pass a run whose prompt never
+			// landed off as a clean success (same guard as the OpenCode
+			// backend).
+			st.finalStatus = "failed"
+			if st.finalError == "" {
+				st.finalError = fmt.Sprintf("copilot prompt write failed: %v", writeErr)
+			} else {
+				st.finalError = fmt.Sprintf("%s; copilot prompt write failed: %v", st.finalError, writeErr)
+			}
 		}
 		if st.finalError != "" {
 			st.finalError = withAgentStderr(st.finalError, "copilot", stderrBuf.Tail())
@@ -611,6 +678,10 @@ type copilotCodeChanges struct {
 // copilotBlockedArgs are flags hardcoded by the daemon that must not be
 // overridden by user-configured custom_args.
 var copilotBlockedArgs = map[string]blockedArgMode{
+	// -p is blocked even though the daemon stopped passing it: a custom_args
+	// `-p "<prompt>"` reintroduces exactly the argv path this backend moved off
+	// stdin to escape (E2BIG above MAX_ARG_STRLEN on Linux, the 32,767/8,191
+	// command-line ceilings on Windows).
 	"-p":                blockedWithValue,
 	"--output-format":   blockedWithValue,
 	"--allow-all":       blockedStandalone, // tools + paths + URLs
@@ -625,11 +696,16 @@ var copilotBlockedArgs = map[string]blockedArgMode{
 
 // buildCopilotArgs assembles the argv for a one-shot copilot invocation.
 //
-//	copilot -p "<prompt>" --output-format json --allow-all --no-ask-user
+//	copilot --output-format json --allow-all --no-ask-user
 //	        [--resume <session-id>] [--model <model>]
-func buildCopilotArgs(prompt string, opts ExecOptions, logger *slog.Logger) []string {
+//
+// The prompt is deliberately absent: it is written to the child's stdin by
+// Execute and read back by the CLI as the full run prompt (verified against
+// Copilot CLI 1.0.98). Passing it as `-p <prompt>` instead puts the task's
+// entire thread context on one argv element, which Linux refuses above
+// MAX_ARG_STRLEN (131071 bytes) with E2BIG, killing the task at spawn.
+func buildCopilotArgs(opts ExecOptions, logger *slog.Logger) []string {
 	args := []string{
-		"-p", prompt,
 		"--output-format", "json",
 		"--allow-all", // tools + paths + URLs — full headless mode
 		"--no-ask-user",

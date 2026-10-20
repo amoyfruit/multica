@@ -987,9 +987,8 @@ func TestCopilotExecuteSurfacesStderrOnNonZeroResult(t *testing.T) {
 func TestBuildCopilotArgsBaseline(t *testing.T) {
 	t.Parallel()
 
-	args := buildCopilotArgs("write a haiku", ExecOptions{}, slog.Default())
+	args := buildCopilotArgs(ExecOptions{}, slog.Default())
 	expected := []string{
-		"-p", "write a haiku",
 		"--output-format", "json",
 		"--allow-all",
 		"--no-ask-user",
@@ -1003,12 +1002,21 @@ func TestBuildCopilotArgsBaseline(t *testing.T) {
 			t.Fatalf("expected args[%d] = %q, got %q", i, want, args[i])
 		}
 	}
+	// The prompt must never be an argv element: -p with an inline prompt
+	// exceeded MAX_ARG_STRLEN and killed runs with E2BIG before the move to
+	// stdin. The Execute-level test below pins the positive half (prompt on
+	// stdin); this pins the negative half.
+	for _, a := range args {
+		if a == "-p" {
+			t.Fatalf("-p must not appear in copilot argv (prompt rides stdin): %v", args)
+		}
+	}
 }
 
 func TestBuildCopilotArgsWithModel(t *testing.T) {
 	t.Parallel()
 
-	args := buildCopilotArgs("hi", ExecOptions{Model: "gpt-4o"}, slog.Default())
+	args := buildCopilotArgs(ExecOptions{Model: "gpt-4o"}, slog.Default())
 
 	var foundModel bool
 	for i, a := range args {
@@ -1028,7 +1036,7 @@ func TestBuildCopilotArgsWithModel(t *testing.T) {
 func TestBuildCopilotArgsWithResume(t *testing.T) {
 	t.Parallel()
 
-	args := buildCopilotArgs("hi", ExecOptions{ResumeSessionID: "sess-42"}, slog.Default())
+	args := buildCopilotArgs(ExecOptions{ResumeSessionID: "sess-42"}, slog.Default())
 
 	var foundResume bool
 	for i, a := range args {
@@ -1048,7 +1056,7 @@ func TestBuildCopilotArgsWithResume(t *testing.T) {
 func TestBuildCopilotArgsOmitsOptionalWhenEmpty(t *testing.T) {
 	t.Parallel()
 
-	args := buildCopilotArgs("hi", ExecOptions{}, slog.Default())
+	args := buildCopilotArgs(ExecOptions{}, slog.Default())
 	for _, a := range args {
 		if a == "--model" {
 			t.Fatalf("expected no --model flag when Model is empty, got args=%v", args)
@@ -1062,7 +1070,7 @@ func TestBuildCopilotArgsOmitsOptionalWhenEmpty(t *testing.T) {
 func TestBuildCopilotArgsPassesThroughCustomArgs(t *testing.T) {
 	t.Parallel()
 
-	args := buildCopilotArgs("hi", ExecOptions{
+	args := buildCopilotArgs(ExecOptions{
 		CustomArgs: []string{"--max-turns", "50"},
 	}, slog.Default())
 
@@ -1074,7 +1082,7 @@ func TestBuildCopilotArgsPassesThroughCustomArgs(t *testing.T) {
 func TestBuildCopilotArgsFiltersBlockedCustomArgs(t *testing.T) {
 	t.Parallel()
 
-	args := buildCopilotArgs("hi", ExecOptions{
+	args := buildCopilotArgs(ExecOptions{
 		CustomArgs: []string{"--output-format", "text", "--max-turns", "50"},
 	}, slog.Default())
 
@@ -1097,7 +1105,7 @@ func TestBuildCopilotArgsFiltersBlockedCustomArgs(t *testing.T) {
 func TestBuildCopilotArgsBlocksResumeAndACP(t *testing.T) {
 	t.Parallel()
 
-	args := buildCopilotArgs("hi", ExecOptions{
+	args := buildCopilotArgs(ExecOptions{
 		CustomArgs: []string{"--resume", "bad-session", "--acp", "--yolo"},
 	}, slog.Default())
 

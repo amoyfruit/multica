@@ -104,7 +104,7 @@ func startOwnedProcessTree(cmd *exec.Cmd, logger *slog.Logger) error {
 	cmd.SysProcAttr.CreationFlags |= createSuspended
 
 	if err := cmd.Start(); err != nil {
-		return err
+		return wrapArgvLimitError(err)
 	}
 
 	if err := ownProcessTree(cmd); err != nil && logger != nil {

@@ -311,6 +311,15 @@ func (b *antigravityBackend) Execute(ctx context.Context, prompt string, opts Ex
 		return nil, fmt.Errorf("agy executable not found at %q: %w", execPath, err)
 	}
 
+	// agy takes its prompt only as the `-p <prompt>` argv element — it has no
+	// verified stdin-prompt channel — so the Linux MAX_ARG_STRLEN ceiling
+	// cannot be designed around the way copilot's and opencode's was. Name the
+	// limit (and its remedy) before spawning rather than eating a raw E2BIG
+	// from a doomed fork/exec.
+	if err := inlinePromptArgvLimitError("antigravity", prompt); err != nil {
+		return nil, err
+	}
+
 	// Guard against agy's silent no-op on an unrecognised --model: it exits 0
 	// with empty output, which would otherwise surface as a "completed" but
 	// empty task. opts.Model is the single funnel for both agent.model and the
