@@ -70,7 +70,9 @@ func TestHermesCancelFakePeer(t *testing.T) {
 			}
 		case "session/prompt":
 			promptID = frame.ID
-			if mode == "normal" || mode == "drain" {
+			if mode == "permission_normal" {
+				sendHermesCancelPermission(send)
+			} else if mode == "normal" || mode == "drain" {
 				respond(map[string]any{"stopReason": "end_turn"})
 				// A notification follows the response so cancelling on this marker
 				// exercises post-response drain, not the active prompt.
@@ -85,8 +87,38 @@ func TestHermesCancelFakePeer(t *testing.T) {
 				time.Sleep(30 * time.Second)
 			}
 		case "session/cancel":
-			if mode != "ignore" {
+			if mode == "permission_cancel" {
+				// Ask only after the caller/timeout cancellation reached the wire,
+				// while the original prompt is still pending in the grace period.
+				time.Sleep(150 * time.Millisecond)
+				sendHermesCancelPermission(send)
+			} else if mode != "ignore" {
 				send(map[string]any{"jsonrpc": "2.0", "id": promptID, "result": map[string]any{"stopReason": "cancelled", "usage": map[string]any{"inputTokens": 7, "outputTokens": 3}}})
+			}
+		default:
+			if string(frame.ID) == "9001" {
+				var reply struct {
+					Result struct {
+						Outcome struct {
+							Outcome  string `json:"outcome"`
+							OptionID string `json:"optionId"`
+						} `json:"outcome"`
+					} `json:"result"`
+				}
+				if err := json.Unmarshal([]byte(line), &reply); err != nil {
+					t.Fatal(err)
+				}
+				outcome := reply.Result.Outcome
+				if outcome.Outcome == "selected" && (outcome.OptionID == "allow_once" || outcome.OptionID == "allow_always") {
+					if err := os.WriteFile(os.Getenv("HERMES_CANCEL_LOG")+".effect", []byte("permission granted"), 0o600); err != nil {
+						t.Fatal(err)
+					}
+				}
+				stopReason := "cancelled"
+				if mode == "permission_normal" {
+					stopReason = "end_turn"
+				}
+				send(map[string]any{"jsonrpc": "2.0", "id": promptID, "result": map[string]any{"stopReason": stopReason, "usage": map[string]any{"inputTokens": 7, "outputTokens": 3}}})
 			}
 		}
 	}

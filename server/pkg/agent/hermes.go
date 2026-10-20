@@ -575,6 +575,7 @@ func (b *hermesBackend) Execute(ctx context.Context, prompt string, opts ExecOpt
 	c := &hermesClient{
 		cfg:                        b.cfg,
 		stdin:                      stdin,
+		permissionCtx:              runCtx,
 		pending:                    make(map[int]*pendingRPC),
 		pendingTools:               make(map[string]*pendingToolCall),
 		toolStartCarriesFinalInput: b.cfg.BuiltinRuntime,
@@ -1171,6 +1172,10 @@ type hermesClient struct {
 	// fresh-human approvals that also happen to carry allow_once options.
 	// Nil preserves the shared ACP policy for existing backends.
 	selectPermission func(json.RawMessage) (optionID string, grant bool, ok bool)
+	// permissionCtx opts Hermes into cancellation-aware permission replies.
+	// It is the execution context, not the longer-lived transport context;
+	// nil preserves the permission behavior of other ACP backends.
+	permissionCtx context.Context
 	// onNotification observes vendor notifications that are not session/update.
 	// Existing backends leave it nil; the callback must do its own method and
 	// lifecycle filtering.
@@ -1449,6 +1454,12 @@ func (c *hermesClient) handleAgentRequest(raw map[string]json.RawMessage) {
 		}
 		resp = map[string]any{"jsonrpc": "2.0", "id": json.RawMessage(rawID), "result": result}
 	case "session/request_permission":
+		// Explicit execution cancellation is different from denying one action:
+		// the turn really is cancelled, even while its transport drains.
+		if c.permissionCtx != nil && c.permissionCtx.Err() != nil {
+			resp = cancelledACPPermissionResponse(rawID)
+			break
+		}
 		selector := c.selectPermission
 		if selector == nil {
 			selector = selectACPPermissionOption
@@ -1509,7 +1520,28 @@ func (c *hermesClient) handleAgentRequest(raw map[string]json.RawMessage) {
 	c.writeAgentRequestResponse(method, resp)
 }
 
+func cancelledACPPermissionResponse(id any) map[string]any {
+	return map[string]any{
+		"jsonrpc": "2.0", "id": id,
+		"result": map[string]any{"outcome": map[string]any{"outcome": "cancelled"}},
+	}
+}
+
 func (c *hermesClient) writeAgentRequestResponse(method string, resp map[string]any) {
+	write := c.writeLine
+	if method == "session/request_permission" && c.permissionCtx != nil {
+		c.writeMu.Lock()
+		defer c.writeMu.Unlock()
+		// Recheck after waiting for any earlier writer so a queued grant cannot
+		// outlive execution cancellation. Other ACP clients leave this opt-in nil.
+		if c.permissionCtx.Err() != nil {
+			resp = cancelledACPPermissionResponse(resp["id"])
+		}
+		write = func(data []byte) error {
+			_, err := c.stdin.Write(data)
+			return err
+		}
+	}
 	data, err := json.Marshal(resp)
 	if err != nil {
 		logger := c.cfg.Logger
@@ -1520,7 +1552,7 @@ func (c *hermesClient) writeAgentRequestResponse(method string, resp map[string]
 		return
 	}
 	data = append(data, '\n')
-	if err := c.writeLine(data); err != nil {
+	if err := write(data); err != nil {
 		logger := c.cfg.Logger
 		if logger == nil {
 			logger = slog.Default()
