@@ -806,6 +806,14 @@ Subscribers receive notifications about issue activity (new comments, status cha
 
 ### Execution History
 
+Before another manual attempt, `multica issue preflight <issue-id> --output json`
+checks runtime readiness and reports the last failed process separately from
+versioned QA comment evidence. `--rerun --purpose infrastructure_diagnostic`
+uses the guarded CLI path; plain preflight starts no agent. See
+[the preflight contract](docs/engineering/run-preflight.md) for required
+capabilities, MCP overlays, model catalog evidence, and the limits of this
+snapshot. Existing UI/API rerun paths retain their own admission checks.
+
 ```bash
 # List all execution runs for an issue
 multica issue runs <issue-id>
