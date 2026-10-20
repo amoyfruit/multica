@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -41,7 +42,7 @@ func TestSeedUserCodexSkillsLinksInsteadOfCopying(t *testing.T) {
 	sharedHome := t.TempDir()
 	t.Setenv("CODEX_HOME", sharedHome)
 	userSkill := filepath.Join(sharedHome, "skills", "alpha")
-	writeUserSkill(t, userSkill, "alpha v1")
+	writeUserSkill(t, userSkill, validUserSkillFixture("alpha v1"))
 
 	codexHome := t.TempDir()
 	if err := seedUserCodexSkills(codexHome, nil, testLogger()); err != nil {
@@ -55,7 +56,7 @@ func TestSeedUserCodexSkillsLinksInsteadOfCopying(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read seeded SKILL.md: %v", err)
 	}
-	if string(body) != "alpha v1" {
+	if string(body) != validUserSkillFixture("alpha v1") {
 		t.Errorf("seeded SKILL.md = %q, want %q", body, "alpha v1")
 	}
 
@@ -74,7 +75,7 @@ func TestSeedUserCodexSkillsResolvesInstallerSymlink(t *testing.T) {
 	// pointing into a shared ~/.agents/skills/<name>/.
 	agentsRoot := t.TempDir()
 	realSkill := filepath.Join(agentsRoot, "lark-base")
-	writeUserSkill(t, realSkill, "lark-base v1")
+	writeUserSkill(t, realSkill, validUserSkillFixture("lark-base v1"))
 
 	sharedHome := t.TempDir()
 	t.Setenv("CODEX_HOME", sharedHome)
@@ -97,7 +98,7 @@ func TestSeedUserCodexSkillsResolvesInstallerSymlink(t *testing.T) {
 	if err != nil {
 		t.Fatalf("symlink-installed skill unreadable through the per-task link: %v", err)
 	}
-	if string(body) != "lark-base v1" {
+	if string(body) != validUserSkillFixture("lark-base v1") {
 		t.Errorf("SKILL.md = %q, want %q", body, "lark-base v1")
 	}
 
@@ -161,7 +162,7 @@ func TestHydrateCodexSkillsWipeKeepsUserSkillContent(t *testing.T) {
 	sharedHome := t.TempDir()
 	t.Setenv("CODEX_HOME", sharedHome)
 	userSkill := filepath.Join(sharedHome, "skills", "alpha")
-	writeUserSkill(t, userSkill, "alpha v1")
+	writeUserSkill(t, userSkill, validUserSkillFixture("alpha v1"))
 	if err := os.WriteFile(filepath.Join(userSkill, "reference.md"), []byte("support"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -194,7 +195,7 @@ func TestHydrateCodexSkillsNeverWritesThroughAUserSkillLink(t *testing.T) {
 	sharedHome := t.TempDir()
 	t.Setenv("CODEX_HOME", sharedHome)
 	userSkill := filepath.Join(sharedHome, "skills", "alpha")
-	writeUserSkill(t, userSkill, "user version")
+	writeUserSkill(t, userSkill, validUserSkillFixture("user version"))
 
 	codexHome := t.TempDir()
 	skillsDir := filepath.Join(codexHome, "skills")
@@ -211,10 +212,86 @@ func TestHydrateCodexSkillsNeverWritesThroughAUserSkillLink(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read user skill: %v", err)
 	}
-	if string(body) != "user version" {
+	if string(body) != validUserSkillFixture("user version") {
 		t.Fatalf("workspace skill was written through the link into the user's skill dir: %q", body)
 	}
 	if _, err := os.Stat(filepath.Join(skillsDir, "alpha-multica", "SKILL.md")); err != nil {
 		t.Errorf("colliding workspace skill did not land in a sibling dir: %v", err)
+	}
+}
+
+func validUserSkillFixture(body string) string {
+	return "---\nname: user-skill\ndescription: Test instructions.\n---\n\n" + body
+}
+
+func TestSeedUserCodexSkillsNormalizesWithoutChangingSource(t *testing.T) {
+	sharedHome := t.TempDir()
+	t.Setenv("CODEX_HOME", sharedHome)
+	source := filepath.Join(sharedHome, "skills", "koc-publish-registration")
+	original := "# Publish\n\nPlain-text instructions.\n"
+	writeUserSkill(t, source, original)
+	if err := os.MkdirAll(filepath.Join(source, "references"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(source, "references", "guide.md"), []byte("before"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	home := t.TempDir()
+	for i := 0; i < 2; i++ {
+		if err := hydrateCodexSkills(home, nil, nil, testLogger()); err != nil {
+			t.Fatal(err)
+		}
+		dst := filepath.Join(home, "skills", "koc-publish-registration")
+		data, err := os.ReadFile(filepath.Join(dst, "SKILL.md"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		fm := parseFrontmatter(t, string(data))
+		if fm["name"] != "koc-publish-registration" || fm["description"] == "" || !strings.Contains(string(data), "Plain-text instructions.") {
+			t.Fatalf("not loadable: %s", data)
+		}
+		unchanged, err := os.ReadFile(filepath.Join(source, "SKILL.md"))
+		if err != nil || string(unchanged) != original {
+			t.Fatalf("shared source changed: %q, %v", unchanged, err)
+		}
+		if err := os.WriteFile(filepath.Join(source, "references", "guide.md"), []byte("after"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		guide, err := os.ReadFile(filepath.Join(dst, "references", "guide.md"))
+		if err != nil || string(guide) != "after" {
+			t.Fatalf("support tree was copied: %q, %v", guide, err)
+		}
+	}
+}
+
+func TestNormalizeUserCodexSkillContentRetainsPolicies(t *testing.T) {
+	original := "---\nname: alpha\ndisable-model-invocation: true\nallowed-tools: [Read]\n---\nbody\n"
+	normalized, err := normalizeUserCodexSkillContent(original, "alpha")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fm := parseFrontmatter(t, normalized)
+	if fm["disable-model-invocation"] != true || fm["description"] == "" {
+		t.Fatalf("policy lost: %#v", fm)
+	}
+	if _, ok := fm["allowed-tools"].([]interface{}); !ok {
+		t.Fatalf("tools lost: %#v", fm)
+	}
+}
+
+func TestSeedUserCodexSkillsSkipsMalformedSibling(t *testing.T) {
+	sharedHome := t.TempDir()
+	t.Setenv("CODEX_HOME", sharedHome)
+	writeUserSkill(t, filepath.Join(sharedHome, "skills", "broken"), "---\nname: broken\ndescription: [invalid\n---\nbody")
+	writeUserSkill(t, filepath.Join(sharedHome, "skills", "good"), validUserSkillFixture("working"))
+	home := t.TempDir()
+	if err := seedUserCodexSkills(home, nil, testLogger()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Lstat(filepath.Join(home, "skills", "broken")); !os.IsNotExist(err) {
+		t.Fatalf("malformed skill published: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(home, "skills", "good", "SKILL.md")); err != nil {
+		t.Fatal(err)
 	}
 }
