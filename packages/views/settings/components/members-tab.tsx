@@ -75,9 +75,8 @@ import {
 } from "@multica/core/billing";
 import { useWorkspaceId } from "@multica/core/hooks";
 import { useFeatureEnabled } from "@multica/core/config";
-import { BILLING_WORKSPACE_SUBSCRIPTIONS_FLAG } from "@multica/core/feature-flags";
+import { BILLING_WORKSPACE_SUBSCRIPTIONS_FLAG, BULK_MEMBER_PROVISIONING_FLAG } from "@multica/core/feature-flags";
 import { useCurrentWorkspace } from "@multica/core/paths";
-import { BULK_MEMBER_PROVISIONING_FLAG } from "@multica/core/feature-flags";
 import { BulkMemberProvisionDialog } from "./bulk-member-provision-dialog";
 import {
   invitationListOptions,
@@ -898,15 +897,15 @@ export function MembersTab() {
       actions={
         canManageWorkspace ? (
           <>
-          {bulkProvisioningEnabled && isOwner && (
-            <Button variant="outline" onClick={() => setProvisionOpen(true)}>
-              {t(($) => $.members.provision.open_button)}
+            {bulkProvisioningEnabled && isOwner && (
+              <Button variant="outline" onClick={() => setProvisionOpen(true)}>
+                {t(($) => $.members.provision.open_button)}
+              </Button>
+            )}
+            <Button onClick={() => setInviteOpen(true)}>
+              <Plus />
+              {t(($) => $.members.invite_title)}
             </Button>
-          )}
-          <Button onClick={() => setInviteOpen(true)}>
-            <Plus />
-            {t(($) => $.members.invite_title)}
-          </Button>
           </>
         ) : undefined
       }
