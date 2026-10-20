@@ -25,6 +25,9 @@ func TestNormalizeCopiedCodexUserSkill(t *testing.T) {
 	if !strings.HasPrefix(text, "---\n") || !strings.Contains(text, "name: broken-skill\n") {
 		t.Fatalf("normalized SKILL.md = %q", text)
 	}
+	if !strings.Contains(text, "description:") {
+		t.Fatalf("missing Codex description: %q", text)
+	}
 	if !strings.Contains(text, "plain body") {
 		t.Fatalf("normalization dropped skill body: %q", text)
 	}

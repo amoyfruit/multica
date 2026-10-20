@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"gopkg.in/yaml.v3"
 )
 
 // seedUserCodexSkills copies user-installed skill directories from the shared
@@ -99,7 +101,10 @@ func normalizeCopiedCodexUserSkill(skillDir, name string) error {
 	if err != nil {
 		return fmt.Errorf("read SKILL.md: %w", err)
 	}
-	normalized := ensureSkillFrontmatter(string(data), sanitizeSkillName(name), "")
+	normalized, err := normalizeUserCodexSkillContent(string(data), sanitizeSkillName(name))
+	if err != nil {
+		return err
+	}
 	if normalized == string(data) {
 		return nil
 	}
@@ -137,4 +142,38 @@ func copyDirTree(src, dst string) error {
 		}
 		return copyFile(path, target)
 	})
+}
+
+// normalizeUserCodexSkillContent fills Codex's required string fields while
+// retaining policy metadata. Unparseable YAML is skipped rather than dropping
+// author-supplied restrictions in a synthetic replacement.
+func normalizeUserCodexSkillContent(content, slug string) (string, error) {
+	fm, body, ok := frontmatterParts(content)
+	description := "Instructions for the " + slug + " skill."
+	if !ok {
+		if strings.HasPrefix(content, "---") {
+			return "", fmt.Errorf("unterminated skill frontmatter")
+		}
+		return synthesizeFrontmatter(content, slug, description), nil
+	}
+	var metadata map[string]any
+	if err := yaml.Unmarshal([]byte(fm), &metadata); err != nil || metadata == nil {
+		return "", fmt.Errorf("invalid skill frontmatter")
+	}
+	name, _ := metadata["name"].(string)
+	desc, _ := metadata["description"].(string)
+	if strings.TrimSpace(name) != "" && strings.TrimSpace(desc) != "" {
+		return content, nil
+	}
+	if strings.TrimSpace(name) == "" {
+		metadata["name"] = slug
+	}
+	if strings.TrimSpace(desc) == "" {
+		metadata["description"] = description
+	}
+	encoded, err := yaml.Marshal(metadata)
+	if err != nil {
+		return "", err
+	}
+	return "---\n" + string(encoded) + "---\n" + body, nil
 }
