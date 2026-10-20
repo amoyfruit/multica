@@ -4,7 +4,7 @@ import { workspaceKeys } from "./workspace/queries";
 import type { Workspace } from "./types";
 
 export function createQueryClient(): QueryClient {
-  const client = new QueryClient({
+  return new QueryClient({
     defaultOptions: {
       queries: {
         staleTime: Infinity,
@@ -18,14 +18,19 @@ export function createQueryClient(): QueryClient {
       },
     },
   });
-  // Never share account state between server-rendered requests. Reading the
-  // cache directly covers fetches, hydration, mutations and logout/clear.
-  if (typeof window !== "undefined") {
-    setWorkspaceSlugLookup((slug) =>
+}
+
+/**
+ * Point path resolution at `client`'s workspace list. Reading the cache on
+ * every lookup covers fetches, hydration, mutations and logout/clear. Owned by
+ * the mounted provider rather than the constructor: StrictMode builds and
+ * discards an extra client, which must never become the bound one.
+ */
+export function bindWorkspaceSlugLookup(client: QueryClient): () => void {
+  return setWorkspaceSlugLookup(
+    (slug) =>
       client
         .getQueryData<Workspace[]>(workspaceKeys.list())
         ?.some((workspace) => workspace.slug === slug) ?? false,
-    );
-  }
-  return client;
+  );
 }

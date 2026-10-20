@@ -1,6 +1,9 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { act, render } from "@testing-library/react";
-import { createQueryClient } from "@multica/core/query-client";
+import {
+  bindWorkspaceSlugLookup,
+  createQueryClient,
+} from "@multica/core/query-client";
 import { workspaceKeys } from "@multica/core/workspace/queries";
 import { useEffect } from "react";
 
@@ -33,8 +36,19 @@ import { DesktopNavigationProvider, routeContentLinkPath } from "./navigation";
 import { currentPath, useNavigation } from "@multica/views/navigation";
 import { useTabStore, getActiveTab } from "@/stores/tab-store";
 
+let unbindWorkspaces: () => void = () => {};
+
+/** Give the current account membership of `slugs`, as the mounted provider would. */
+function withWorkspaces(slugs: string[]) {
+  const client = createQueryClient();
+  unbindWorkspaces = bindWorkspaceSlugLookup(client);
+  client.setQueryData(workspaceKeys.list(), slugs.map((slug) => ({ slug })));
+  return client;
+}
+
+afterEach(() => unbindWorkspaces());
+
 beforeEach(() => {
-  createQueryClient();
   overlay.open.mockReset();
   overlay.close.mockReset();
   overlay.overlay = null;
@@ -359,31 +373,30 @@ describe("routeContentLinkPath (links inside content — MUL-5208)", () => {
   });
 });
 
-
 describe("existing reserved workspace navigation", () => {
-  it.each(["push", "replace", "openInNewTab", "content"])("routes %s through the workspace switch flow", (action) => {
-    const client = createQueryClient();
-    client.setQueryData(workspaceKeys.list(), [{ slug: "dingtalk" }]);
+  it.each(["push", "replace", "openInNewTab", "content"])(
+    "routes %s through the workspace switch flow",
+    (action) => {
+      withWorkspaces(["dingtalk"]);
+      const adapter = renderProvider();
+      act(() => {
+        if (action === "content") routeContentLinkPath("/dingtalk/issues/ISS-1", "background-tab");
+        else if (action === "openInNewTab") adapter().openInNewTab!("/dingtalk/issues/ISS-1");
+        else if (action === "replace") adapter().replace("/dingtalk/issues/ISS-1");
+        else adapter().push("/dingtalk/issues");
+      });
+      expect(useTabStore.getState().activeWorkspaceSlug).toBe("dingtalk");
+      expect(getActiveTab(useTabStore.getState())?.url).toBe(
+        action === "push" ? "/dingtalk/issues" : "/dingtalk/issues/ISS-1",
+      );
+    },
+  );
+
+  it("does not send a known invite workspace entity route to the invite overlay", () => {
+    withWorkspaces(["invite"]);
     const adapter = renderProvider();
-    act(() => {
-      if (action === "content") routeContentLinkPath("/dingtalk/issues/ISS-1", "background-tab");
-      else if (action === "openInNewTab") adapter().openInNewTab!("/dingtalk/issues/ISS-1");
-      else if (action === "replace") adapter().replace("/dingtalk/issues/ISS-1");
-      else adapter().push("/dingtalk/issues");
-    });
-    expect(useTabStore.getState().activeWorkspaceSlug).toBe("dingtalk");
-    expect(getActiveTab(useTabStore.getState())?.url).toBe(action === "push" ? "/dingtalk/issues" : "/dingtalk/issues/ISS-1");
-    client.clear();
+    act(() => adapter().push("/invite/issues/MUL-123"));
+    expect(overlay.open).not.toHaveBeenCalled();
+    expect(getActiveTab(useTabStore.getState())?.url).toBe("/invite/issues/MUL-123");
   });
-});
-
-
-it("does not send a known invite workspace entity route to the invite overlay", () => {
-  const client = createQueryClient();
-  client.setQueryData(workspaceKeys.list(), [{ slug: "invite" }]);
-  const adapter = renderProvider();
-  act(() => adapter().push("/invite/issues/MUL-123"));
-  expect(overlay.open).not.toHaveBeenCalled();
-  expect(getActiveTab(useTabStore.getState())?.url).toBe("/invite/issues/MUL-123");
-  client.clear();
 });

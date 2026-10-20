@@ -1577,7 +1577,6 @@ describe("mergePersistedTabs (rehydration, MUL-4370)", () => {
   });
 });
 
-
 describe("reserved workspace restoration", () => {
   it("preserves matching saved tabs before the membership list loads", () => {
     useTabStore.getState().switchWorkspace("acme");

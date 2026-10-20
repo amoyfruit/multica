@@ -5,7 +5,11 @@
  * (react-markdown link component), and link-hover-card (Open button).
  */
 
-import { isGlobalPath, workspaceSlugForPath } from "@multica/core/paths";
+import {
+  isGlobalPath,
+  isKnownWorkspacePath,
+  workspaceSlugForPath,
+} from "@multica/core/paths";
 import { isIssueIdentifier } from "@multica/ui/markdown";
 import type { LinkClickIntent } from "../../navigation/click-intent";
 
@@ -242,8 +246,14 @@ export function openLink(
     let path = internalPath;
     if (currentSlug && !isGlobalPath(path)) {
       const firstSegment = path.split("/")[1];
-      if (firstSegment && WORKSPACE_ROUTE_SEGMENTS.has(firstSegment) && !workspaceSlugForPath(path)) {
-        // Path looks like /issues/abc (no slug) — prepend current slug.
+      if (
+        firstSegment &&
+        WORKSPACE_ROUTE_SEGMENTS.has(firstSegment) &&
+        !isKnownWorkspacePath(path)
+      ) {
+        // Path looks like /issues/abc (no slug) — prepend current slug. A
+        // member workspace whose slug happens to be a route name
+        // (/issues/issues/MUL-1) is already scoped and is left as is.
         path = `/${currentSlug}${path}`;
       }
       // Otherwise the first segment is either already a slug (e.g. "acme" in
