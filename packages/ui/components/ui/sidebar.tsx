@@ -31,7 +31,7 @@ const SIDEBAR_WIDTH_MIN = 200
 const SIDEBAR_WIDTH_MAX = 360
 const SIDEBAR_WIDTH_STORAGE_KEY = "sidebar_width"
 const SIDEBAR_WIDTH_MOBILE = "18rem"
-const SIDEBAR_WIDTH_ICON = "3rem"
+const SIDEBAR_WIDTH_ICON = "3.5rem"
 const SIDEBAR_DRAG_THRESHOLD = 2
 // Tailwind `lg`–`xl`: wide enough to keep a two-pane list/detail surface, too
 // narrow to also spend 256px on the nav. The nav starts collapsed here and the
@@ -54,8 +54,8 @@ const SIDEBAR_AUTO_COLLAPSE_QUERY = "(min-width: 1024px) and (max-width: 1279px)
  */
 const SIDEBAR_WRAPPER_FILL_CLASS = "bg-(--sidebar-wrapper-fill)"
 
-function clampSidebarWidth(width: number) {
-  return Math.max(SIDEBAR_WIDTH_MIN, Math.min(SIDEBAR_WIDTH_MAX, width))
+function clampWidth(width: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, width))
 }
 
 type SidebarContextProps = {
@@ -86,6 +86,7 @@ type SidebarContextProps = {
 
 type SidebarResizeContextProps = {
   commitWidth: (width: number) => void
+  clampWidth: (width: number) => number
 }
 
 const SidebarContext = React.createContext<SidebarContextProps | null>(null)
@@ -121,6 +122,10 @@ function SidebarProvider({
   open: openProp,
   onOpenChange: setOpenProp,
   hasExternalTrigger = false,
+  defaultWidth = SIDEBAR_WIDTH_DEFAULT,
+  minWidth = SIDEBAR_WIDTH_MIN,
+  maxWidth = SIDEBAR_WIDTH_MAX,
+  widthStorageKey = SIDEBAR_WIDTH_STORAGE_KEY,
   className,
   style,
   children,
@@ -129,6 +134,16 @@ function SidebarProvider({
   defaultOpen?: boolean
   open?: boolean
   onOpenChange?: (open: boolean) => void
+  /**
+   * Width bounds for the expanded, resizable sidebar — or, under
+   * `collapsible="rail"`, for the panel the shell sizes from `--sidebar-width`.
+   * Such a shell needs its own storage key so a width saved for the old
+   * full sidebar is not read back as a panel width.
+   */
+  defaultWidth?: number
+  minWidth?: number
+  maxWidth?: number
+  widthStorageKey?: string
   /**
    * Declare that this shell keeps its own always-reachable `SidebarTrigger`
    * outside the page chrome. See `SidebarContextProps.hasExternalTrigger`.
@@ -142,21 +157,28 @@ function SidebarProvider({
   const isCompact = useIsCompact()
   const [openMobile, setOpenMobile] = React.useState(false)
 
-  const [width, _setWidth] = React.useState(SIDEBAR_WIDTH_DEFAULT)
+  const clampSidebarWidth = React.useCallback(
+    (w: number) => clampWidth(w, minWidth, maxWidth),
+    [minWidth, maxWidth]
+  )
+  const [width, _setWidth] = React.useState(defaultWidth)
   React.useEffect(() => {
-    const stored = localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY)
+    const stored = localStorage.getItem(widthStorageKey)
     if (stored) {
       const storedWidth = Number(stored)
       if (Number.isFinite(storedWidth)) {
         _setWidth(clampSidebarWidth(storedWidth))
       }
     }
-  }, [])
-  const commitWidth = React.useCallback((w: number) => {
-    const clamped = clampSidebarWidth(w)
-    _setWidth(clamped)
-    localStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY, String(clamped))
-  }, [])
+  }, [widthStorageKey, clampSidebarWidth])
+  const commitWidth = React.useCallback(
+    (w: number) => {
+      const clamped = clampSidebarWidth(w)
+      _setWidth(clamped)
+      localStorage.setItem(widthStorageKey, String(clamped))
+    },
+    [widthStorageKey, clampSidebarWidth]
+  )
 
   // This is the internal state of the sidebar.
   // We use openProp and setOpenProp for control from outside the component.
@@ -249,8 +271,9 @@ function SidebarProvider({
   const resizeContextValue = React.useMemo<SidebarResizeContextProps>(
     () => ({
       commitWidth,
+      clampWidth: clampSidebarWidth,
     }),
-    [commitWidth]
+    [commitWidth, clampSidebarWidth]
   )
 
   return (
@@ -296,7 +319,12 @@ function Sidebar({
 }: React.ComponentProps<"div"> & {
   side?: "left" | "right"
   variant?: "sidebar" | "floating" | "inset"
-  collapsible?: "offcanvas" | "icon" | "none"
+  /**
+   * `rail` keeps the sidebar at its icon width on desktop whatever the open
+   * state, and still opens as a sheet when compact. The provider's open state
+   * and width then belong to a panel the shell renders elsewhere.
+   */
+  collapsible?: "offcanvas" | "icon" | "rail" | "none"
 }) {
   const { isCompact, state, openMobile, setOpenMobile } = useSidebar()
 
@@ -345,11 +373,12 @@ function Sidebar({
   // that chose the in-flow branch over the sheet above. While they disagreed,
   // every load between the two breakpoints painted a 256px sidebar for one
   // frame before the hook resolved and collapsed it into a sheet.
+  const isRail = collapsible === "rail"
   return (
     <div
       className="group peer hidden text-sidebar-foreground lg:block"
-      data-state={state}
-      data-collapsible={state === "collapsed" ? collapsible : ""}
+      data-state={isRail ? "expanded" : state}
+      data-collapsible={isRail ? "icon" : state === "collapsed" ? collapsible : ""}
       data-variant={variant}
       data-side={side}
       data-slot="sidebar"
@@ -421,7 +450,7 @@ function SidebarTrigger({
 
 function SidebarRail({ className, ...props }: React.ComponentProps<"button">) {
   const { toggleSidebar } = useSidebar()
-  const { commitWidth } = useSidebarResize()
+  const { commitWidth, clampWidth: clampSidebarWidth } = useSidebarResize()
   const { t } = useTranslation("ui")
   const toggleLabel = t(($) => $.toggle_sidebar)
   const didDragRef = React.useRef(false)
@@ -443,11 +472,14 @@ function SidebarRail({ className, ...props }: React.ComponentProps<"button">) {
   const onPointerDown = React.useCallback(
     (e: React.PointerEvent<HTMLButtonElement>) => {
       if (e.button !== 0 || e.isPrimary === false) return
-      e.preventDefault()
-      cancelActiveDragRef.current?.()
       didDragRef.current = false
       const railEl = e.currentTarget
       const sidebarEl = railEl.closest<HTMLElement>("[data-slot='sidebar']")
+      // A sidebar collapsed to its icon strip has no width to drag; the
+      // handle only toggles it back open on click.
+      if (sidebarEl?.dataset.collapsible === "icon") return
+      e.preventDefault()
+      cancelActiveDragRef.current?.()
       const wrapperEl = railEl.closest<HTMLElement>("[data-slot='sidebar-wrapper']")
       const gapEl = sidebarEl?.querySelector<HTMLElement>("[data-slot='sidebar-gap']")
       const containerEl = sidebarEl?.querySelector<HTMLElement>("[data-slot='sidebar-container']")
@@ -552,7 +584,7 @@ function SidebarRail({ className, ...props }: React.ComponentProps<"button">) {
       cancelActiveDragRef.current = () => finishDrag("cancel")
       railEl.setPointerCapture?.(e.pointerId)
     },
-    [commitWidth]
+    [commitWidth, clampSidebarWidth]
   )
 
   const handleClick = React.useCallback(() => {
@@ -574,6 +606,99 @@ function SidebarRail({ className, ...props }: React.ComponentProps<"button">) {
         "group-data-[collapsible=offcanvas]:translate-x-0 group-data-[collapsible=offcanvas]:after:left-full hover:group-data-[collapsible=offcanvas]:bg-sidebar",
         "[[data-side=left][data-collapsible=offcanvas]_&]:-right-2",
         "[[data-side=right][data-collapsible=offcanvas]_&]:-left-2",
+        className
+      )}
+      {...props}
+    />
+  )
+}
+
+/**
+ * Drag handle on the trailing edge of a panel sized by `--sidebar-width`
+ * (the shell's panel under `collapsible="rail"`). Place it inside the element
+ * marked `data-sidebar-panel`; the preview is written to that element alone
+ * and committed through the provider on release.
+ */
+function SidebarPanelResizeHandle({ className, ...props }: React.ComponentProps<"div">) {
+  const { commitWidth, clampWidth: clampSidebarWidth } = useSidebarResize()
+  const cancelActiveDragRef = React.useRef<(() => void) | null>(null)
+
+  React.useEffect(() => () => cancelActiveDragRef.current?.(), [])
+
+  const onPointerDown = React.useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      if (e.button !== 0 || e.isPrimary === false) return
+      const handleEl = e.currentTarget
+      const panelEl = handleEl.closest<HTMLElement>("[data-sidebar-panel]")
+      const wrapperEl = handleEl.closest<HTMLElement>("[data-slot='sidebar-wrapper']")
+      if (!panelEl || !wrapperEl) return
+      e.preventDefault()
+      cancelActiveDragRef.current?.()
+
+      const pointerId = e.pointerId
+      const startX = e.clientX
+      const startWidth = clampSidebarWidth(panelEl.getBoundingClientRect().width)
+      let latestWidth = startWidth
+      let didDrag = false
+      wrapperEl.setAttribute("data-sidebar-resizing", "true")
+      document.documentElement.setAttribute("data-sidebar-resizing", "true")
+
+      let finished = false
+      const finishDrag = (mode: "commit" | "cancel") => {
+        if (finished) return
+        finished = true
+        document.removeEventListener("pointermove", onPointerMove)
+        document.removeEventListener("pointerup", onPointerUp)
+        document.removeEventListener("pointercancel", onPointerCancel)
+        window.removeEventListener("blur", onWindowBlur)
+        if (mode === "commit" && didDrag) {
+          wrapperEl.style.setProperty("--sidebar-width", `${latestWidth}px`)
+          commitWidth(latestWidth)
+        }
+        panelEl.style.removeProperty("--sidebar-width")
+        wrapperEl.removeAttribute("data-sidebar-resizing")
+        document.documentElement.removeAttribute("data-sidebar-resizing")
+        cancelActiveDragRef.current = null
+        if (handleEl.hasPointerCapture?.(pointerId)) {
+          handleEl.releasePointerCapture?.(pointerId)
+        }
+      }
+      const onPointerMove = (event: PointerEvent) => {
+        if (event.pointerId !== pointerId) return
+        const delta = event.clientX - startX
+        if (!didDrag && Math.abs(delta) < SIDEBAR_DRAG_THRESHOLD) return
+        didDrag = true
+        const nextWidth = clampSidebarWidth(startWidth + delta)
+        if (nextWidth === latestWidth) return
+        latestWidth = nextWidth
+        panelEl.style.setProperty("--sidebar-width", `${nextWidth}px`)
+      }
+      const onPointerUp = (event: PointerEvent) => {
+        if (event.pointerId === pointerId) finishDrag("commit")
+      }
+      const onPointerCancel = (event: PointerEvent) => {
+        if (event.pointerId === pointerId) finishDrag("cancel")
+      }
+      const onWindowBlur = () => finishDrag("cancel")
+
+      document.addEventListener("pointermove", onPointerMove)
+      document.addEventListener("pointerup", onPointerUp)
+      document.addEventListener("pointercancel", onPointerCancel)
+      window.addEventListener("blur", onWindowBlur)
+      cancelActiveDragRef.current = () => finishDrag("cancel")
+      handleEl.setPointerCapture?.(pointerId)
+    },
+    [commitWidth, clampSidebarWidth]
+  )
+
+  return (
+    <div
+      aria-hidden
+      data-slot="sidebar-panel-resize-handle"
+      onPointerDown={onPointerDown}
+      className={cn(
+        "absolute inset-y-0 right-0 z-20 hidden w-2 touch-none cursor-ew-resize after:absolute after:inset-y-0 after:right-0 after:w-0.5 after:transition-colors hover:after:bg-sidebar-border sm:block",
+        "[[data-sidebar-resizing=true]_&]:after:bg-sidebar-border",
         className
       )}
       {...props}
@@ -995,6 +1120,7 @@ export {
   SidebarMenuSub,
   SidebarMenuSubButton,
   SidebarMenuSubItem,
+  SidebarPanelResizeHandle,
   SidebarProvider,
   SidebarRail,
   SidebarSeparator,

@@ -417,6 +417,7 @@
     "groups": {
       "personal": "Personal",
       "workspace": "Workspace",
+      "capabilities": "Capabilities",
       "issues": "Issues & workflow",
       "connections": "Connections & extensions",
       "device": "This device"

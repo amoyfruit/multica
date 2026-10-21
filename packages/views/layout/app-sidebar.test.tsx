@@ -7,11 +7,22 @@ vi.mock("@multica/core/issue-statuses/hooks", () => ({
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "@multica/core/api";
 import { renderWithI18n } from "../test/i18n";
-import { AppSidebar } from "./app-sidebar";
+import { AppSidebar, AppSidebarPanel } from "./app-sidebar";
+import { AppSidebarProvider } from "./sidebar-module-state";
 
-const { appForeground, chatSessions, chatStore, detail, deletePin, invitationApi, navigation, pins, sidebarState, summary, workspaces } = vi.hoisted(() => ({
+function Shell() {
+  return (
+    <AppSidebarProvider>
+      <AppSidebar />
+      <AppSidebarPanel />
+    </AppSidebarProvider>
+  );
+}
+
+const { agents, appForeground, chatSessions, chatStore, detail, deletePin, invitationApi, navigation, pins, presence, sidebarState, summary, workspaces } = vi.hoisted(() => ({
   appForeground: { current: true },
-  sidebarState: { setOpenMobile: vi.fn() },
+  sidebarState: { setOpenMobile: vi.fn(), setOpen: vi.fn(), open: true, isCompact: false },
+  presence: { current: new Map<string, { workload: string }>() },
   chatSessions: { current: [] as { id?: string; unread_count?: number }[] },
   chatStore: { current: { activeSessionId: null as string | null, isOpen: false } },
   detail: { current: { isPending: false, isError: false, data: null as unknown, error: null as unknown } },
@@ -25,6 +36,7 @@ const { appForeground, chatSessions, chatStore, detail, deletePin, invitationApi
     mutations: [] as Array<Record<string, unknown>>,
   },
   navigation: { current: { pathname: "/acme/issues" } },
+  agents: { current: [] as { id: string; name: string; avatar_url: string | null; archived_at: string | null }[] },
   summary: { current: [] as { workspace_id: string; count: number }[] },
   workspaces: {
     current: [] as { id: string; name: string; slug: string; avatar_url: string | null }[],
@@ -62,6 +74,7 @@ vi.mock("@multica/ui/components/ui/sidebar", () => ({
   SidebarContent: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   SidebarFooter: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   SidebarGroup: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  SidebarGroupAction: () => null,
   SidebarGroupContent: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   SidebarGroupLabel: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   SidebarHeader: ({ children }: { children: React.ReactNode }) => <>{children}</>,
@@ -81,8 +94,12 @@ vi.mock("@multica/ui/components/ui/sidebar", () => ({
     </button>
   ),
   SidebarMenuItem: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-  SidebarRail: () => null,
-  useSidebar: () => ({ setOpenMobile: sidebarState.setOpenMobile }),
+  SidebarMenuAction: () => null,
+  SidebarMenuSub: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  SidebarMenuSubItem: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  SidebarMenuSubButton: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  SidebarPanelResizeHandle: () => <div data-slot="sidebar-panel-resize-handle" />,
+  useSidebar: () => sidebarState,
 }));
 vi.mock("@multica/ui/components/ui/dropdown-menu", () => ({
   DropdownMenu: ({ children }: { children: React.ReactNode }) => <>{children}</>,
@@ -98,20 +115,50 @@ vi.mock("@multica/ui/components/ui/collapsible", () => ({
   CollapsibleContent: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   CollapsibleTrigger: () => <button type="button" />,
 }));
-vi.mock("@multica/ui/components/ui/tooltip", () => ({
+vi.mock("@multica/ui/components/ui/tooltip", async () => {
+  const React = await import("react");
+  return {
   Tooltip: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   TooltipContent: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-  TooltipTrigger: ({ children }: { children: React.ReactNode }) => <button type="button">{children}</button>,
-}));
+  TooltipTrigger: ({
+    children,
+    render,
+    ...props
+  }: { children?: React.ReactNode; render?: React.ReactElement<{ children?: React.ReactNode }> }) =>
+    render ? React.cloneElement(render, props, children ?? render.props.children) : <button type="button">{children}</button>,
+  };
+});
 vi.mock("../common/use-app-foreground", () => ({
   useAppForeground: () => appForeground.current,
 }));
 vi.mock("./help-launcher", () => ({ HelpLauncher: () => null }));
+vi.mock("../settings/components/settings-nav", () => ({
+  SettingsPanel: () => <div data-testid="settings-panel" />,
+}));
+vi.mock("../inbox/components/inbox-list-item", () => ({ useTimeAgo: () => () => "1m" }));
+vi.mock("@multica/core/workspace/hooks", () => ({
+  useActorName: () => ({ getActorName: () => "Someone" }),
+}));
 vi.mock("../auth", () => ({ useLogout: () => vi.fn() }));
 vi.mock("../issues/components/status-icon", () => ({ StatusIcon: () => <span /> }));
 vi.mock("../navigation", () => ({
-  AppLink: ({ children, href }: { children: React.ReactNode; href: string }) => <a href={href}>{children}</a>,
-  useNavigation: () => ({ pathname: navigation.current.pathname, push: vi.fn() }),
+  AppLink: ({
+    children,
+    href,
+    newTabTitle: _newTabTitle,
+    ...props
+  }: { children: React.ReactNode; href: string; newTabTitle?: string } & React.AnchorHTMLAttributes<HTMLAnchorElement>) => (
+    <a href={href} {...props}>{children}</a>
+  ),
+  useNavigation: () => ({
+    pathname: navigation.current.pathname,
+    searchParams: new URLSearchParams(),
+    push: vi.fn(),
+  }),
+}));
+vi.mock("../common/actor-avatar", () => ({ ActorAvatar: () => <span /> }));
+vi.mock("@multica/core/agents", () => ({
+  useWorkspacePresenceMap: () => ({ byAgent: presence.current, loading: false }),
 }));
 vi.mock("../projects/components/project-icon", () => ({ ProjectIcon: () => <span /> }));
 vi.mock("../workspace/workspace-avatar", () => ({ WorkspaceAvatar: () => <span /> }));
@@ -148,8 +195,13 @@ vi.mock("@multica/core/paths", async (importOriginal) => ({
     runtimes: () => "/acme/runtimes",
     skills: () => "/acme/skills",
     settings: () => "/acme/settings",
+    newAgent: () => "/acme/agents/new",
     issueDetail: (id: string) => `/acme/issues/${id}`,
     projectDetail: (id: string) => `/acme/projects/${id}`,
+    autopilotDetail: (id: string) => `/acme/autopilots/${id}`,
+    agentDetail: (id: string) => `/acme/agents/${id}`,
+    squadDetail: (id: string) => `/acme/squads/${id}`,
+    memberDetail: (id: string) => `/acme/members/${id}`,
   }),
 }));
 vi.mock("@multica/core/api", async (importOriginal) => {
@@ -165,6 +217,7 @@ vi.mock("@multica/core/api", async (importOriginal) => {
   };
 });
 vi.mock("@multica/core/inbox/queries", () => ({
+  inboxListOptions: () => ({ queryKey: ["inbox", "ws-1", "list"] }),
   inboxUnreadSummaryOptions: () => ({ queryKey: ["inbox", "unread-summary"] }),
   // The nav badge and the switcher dot read the SAME cross-workspace summary,
   // so the fixture that drives one drives the other.
@@ -177,7 +230,10 @@ vi.mock("@multica/core/inbox/queries", () => ({
   unreadWorkspaceIds: (entries: { workspace_id: string; count: number }[]) =>
     new Set(entries.filter((s) => s.count > 0).map((s) => s.workspace_id)),
 }));
-vi.mock("@multica/core/issues/queries", () => ({ issueDetailOptions: () => ({ queryKey: ["issue"] }) }));
+vi.mock("@multica/core/issues/queries", () => ({
+  issueDetailOptions: () => ({ queryKey: ["issue"] }),
+  issueKeys: { tableAll: (wsId: string) => ["issues", wsId, "table-query"] },
+}));
 vi.mock("@multica/core/issues/stores/create-mode-store", () => ({
   useCreateModeStore: { getState: () => ({ lastMode: "agent" }) },
   openCreateIssueWithPreference: vi.fn(),
@@ -186,8 +242,14 @@ vi.mock("@multica/core/issues/stores/draft-store", () => ({ useIssueDraftStore: 
 vi.mock("@multica/core/modals", () => ({ useModalStore: { getState: () => ({ modal: null, open: vi.fn() }) } }));
 vi.mock("@multica/core/pins/mutations", () => ({ useDeletePin: () => ({ mutate: deletePin }), useReorderPins: () => ({ mutate: vi.fn() }) }));
 vi.mock("@multica/core/pins/queries", () => ({ pinListOptions: () => ({ queryKey: ["pins"] }) }));
-vi.mock("@multica/core/projects/queries", () => ({ projectDetailOptions: () => ({ queryKey: ["project"] }) }));
+vi.mock("@multica/core/projects/queries", () => ({
+  projectDetailOptions: () => ({ queryKey: ["project"] }),
+  projectListOptions: () => ({ queryKey: ["projects"] }),
+}));
 vi.mock("@multica/core/workspace/queries", () => ({
+  agentListOptions: () => ({ queryKey: ["agents"] }),
+  memberListOptions: () => ({ queryKey: ["members"] }),
+  squadListOptions: () => ({ queryKey: ["squads"] }),
   myInvitationListOptions: () => ({ queryKey: ["invitations"] }),
   workspaceKeys: { myInvitations: () => ["invitations"] },
   workspaceListOptions: () => ({ queryKey: ["workspaces"] }),
@@ -204,6 +266,8 @@ vi.mock("@tanstack/react-query", async (importOriginal) => ({
     if (queryKey[0] === "inbox" && queryKey[1] === "unread-summary") return { data: summary.current };
     if (queryKey[0] === "workspaces") return { data: workspaces.current };
     if (queryKey[0] === "chat" && queryKey[2] === "sessions") return { data: chatSessions.current };
+    if (queryKey[0] === "agents") return { data: agents.current };
+    if (queryKey[2] === "table-query") return { data: undefined, isPending: false };
     return { data: [] };
   },
   useQueryClient: () => ({ fetchQuery: vi.fn(), invalidateQueries: invitationApi.invalidateQueries }),
@@ -220,19 +284,19 @@ describe("PinRow", () => {
 
   it("unpins missing details", async () => {
     detail.current = { isPending: false, isError: true, data: null, error: new ApiError("missing", 404, "Not Found") };
-    render(<AppSidebar />);
+    render(<Shell />);
     await waitFor(() => expect(deletePin).toHaveBeenCalledTimes(1));
   });
 
   it("ignores non-404 errors", async () => {
     detail.current = { isPending: false, isError: true, data: null, error: new ApiError("error", 500, "Server Error") };
-    render(<AppSidebar />);
+    render(<Shell />);
     await waitFor(() => expect(deletePin).not.toHaveBeenCalled());
   });
 
   it("renders loaded details", async () => {
     detail.current = { isPending: false, isError: false, data: { identifier: "MUL-123", title: "Keep this pin", status: "todo" }, error: null };
-    render(<AppSidebar />);
+    render(<Shell />);
     expect(await screen.findByText("Keep this pin")).toBeInTheDocument();
     expect(screen.queryByText("MUL-123 Keep this pin")).not.toBeInTheDocument();
   });
@@ -246,7 +310,7 @@ describe("PinRow", () => {
       error: null,
     };
 
-    const { container } = render(<AppSidebar />);
+    const { container } = render(<Shell />);
 
     expect((await screen.findByText("Keep this pin")).closest("button")).toHaveAttribute(
       "data-active",
@@ -272,7 +336,7 @@ describe("PinRow", () => {
     };
 
     try {
-      const { container } = renderWithI18n(<AppSidebar />);
+      const { container } = renderWithI18n(<Shell />);
       const parent = () => container.querySelector('button[data-href="/acme/issues"]');
       const lastPin = () => container.querySelector('button[data-href="/acme/issues/issue-6"]');
 
@@ -301,11 +365,11 @@ describe("mobile sheet dismissal", () => {
   });
 
   it("dismisses the sheet once the route changes", () => {
-    const { rerender } = render(<AppSidebar />);
+    const { rerender } = render(<Shell />);
     sidebarState.setOpenMobile.mockClear();
 
     navigation.current = { pathname: "/acme/inbox" };
-    rerender(<AppSidebar />);
+    rerender(<Shell />);
 
     expect(sidebarState.setOpenMobile).toHaveBeenCalledWith(false);
   });
@@ -313,10 +377,10 @@ describe("mobile sheet dismissal", () => {
   // Closing on `pathname` rather than per-link keeps every route out of the
   // sidebar covered at once — nav groups, pins, and the switcher's own push.
   it("does not re-dismiss while the route holds still", () => {
-    const { rerender } = render(<AppSidebar />);
+    const { rerender } = render(<Shell />);
     sidebarState.setOpenMobile.mockClear();
 
-    rerender(<AppSidebar />);
+    rerender(<Shell />);
 
     expect(sidebarState.setOpenMobile).not.toHaveBeenCalled();
   });
@@ -329,25 +393,27 @@ describe("workspace-switcher unread dot", () => {
   });
 
   // The aggregate switcher dot is the only `.ring-sidebar` span in the tree
-  // (DraftDot is null when there's no draft, and there are no invitations).
-  const dot = (container: HTMLElement) => container.querySelector("span.bg-brand.ring-sidebar");
+  // besides the rail's count badges (DraftDot is null when there's no draft,
+  // and there are no invitations).
+  const dot = (container: HTMLElement) =>
+    container.querySelector("span.bg-brand.ring-sidebar:not([data-slot='rail-badge'])");
 
   it("shows a dot when another workspace has unread inbox items", () => {
     summary.current = [{ workspace_id: "ws-2", count: 3 }];
-    const { container } = render(<AppSidebar />);
+    const { container } = render(<Shell />);
     expect(dot(container)).not.toBeNull();
   });
 
   it("does not show a dot when only the active workspace has unread", () => {
     // Active workspace is ws-1 (see useCurrentWorkspace mock).
     summary.current = [{ workspace_id: "ws-1", count: 3 }];
-    const { container } = render(<AppSidebar />);
+    const { container } = render(<Shell />);
     expect(dot(container)).toBeNull();
   });
 
   it("does not show a dot when no workspace has unread", () => {
     summary.current = [];
-    const { container } = render(<AppSidebar />);
+    const { container } = render(<Shell />);
     expect(dot(container)).toBeNull();
   });
 });
@@ -368,7 +434,7 @@ describe("workspace-switcher dropdown per-workspace dot", () => {
 
   it("dots the specific other workspace that has unread", () => {
     summary.current = [{ workspace_id: "ws-2", count: 3 }];
-    const { container } = render(<AppSidebar />);
+    const { container } = render(<Shell />);
     // Exactly one row dot, sitting right after the "Other WS" name; the active
     // row shows the check, not a dot.
     expect(rowDots(container)).toHaveLength(1);
@@ -378,35 +444,167 @@ describe("workspace-switcher dropdown per-workspace dot", () => {
 
   it("does not dot a workspace whose unread count is zero", () => {
     summary.current = [{ workspace_id: "ws-2", count: 0 }];
-    const { container } = render(<AppSidebar />);
+    const { container } = render(<Shell />);
     expect(rowDots(container)).toHaveLength(0);
   });
 
   it("never dots the active workspace even when it has unread", () => {
     summary.current = [{ workspace_id: "ws-1", count: 5 }];
-    const { container } = render(<AppSidebar />);
+    const { container } = render(<Shell />);
     expect(rowDots(container)).toHaveLength(0);
   });
 });
 
-describe("navigation item presentation", () => {
-  it("keeps Analytics and Settings styled like the other nav items", () => {
-    const { container } = render(<AppSidebar />);
-    const referenceClassName = container.querySelector(
-      'button[data-href="/acme/issues"]',
-    )?.className;
+describe("rail and module panel", () => {
+  beforeEach(() => {
+    navigation.current = { pathname: "/acme/issues" };
+    sidebarState.open = true;
+    sidebarState.isCompact = false;
+    sidebarState.setOpen.mockClear();
+    presence.current = new Map();
+    agents.current = [];
+  });
 
-    expect(referenceClassName).toBeTruthy();
+  const railLink = (container: HTMLElement, module: string) =>
+    container.querySelector<HTMLElement>(`a[data-module="${module}"]`);
+  const panel = (container: HTMLElement) =>
+    container.querySelector<HTMLElement>('[data-slot="sidebar-module-panel"]');
 
-    for (const href of ["/acme/usage", "/acme/settings"]) {
-      expect(container.querySelector(`button[data-href="${href}"]`)?.className).toBe(
-        referenceClassName,
-      );
-    }
+  it("lights the module the route belongs to and shows its panel", () => {
+    navigation.current = { pathname: "/acme/agents" };
+    const { container } = renderWithI18n(<Shell />);
+
+    expect(railLink(container, "team")).toHaveAttribute("data-active");
+    expect(railLink(container, "work")).not.toHaveAttribute("data-active");
+    expect(panel(container)).toHaveAttribute("data-module", "team");
+    expect(screen.queryByText("Running")).not.toBeInTheDocument();
+  });
+
+  it("labels each rail entry under its icon", () => {
+    const { container } = renderWithI18n(<Shell />);
+    expect(railLink(container, "mine")).toHaveTextContent("Mine");
+    expect(railLink(container, "work")).toHaveTextContent("Work");
+    expect(railLink(container, "settings")).toHaveTextContent("Settings");
+  });
+
+  it("keeps the panel an issue was opened from", () => {
+    navigation.current = { pathname: "/acme/agents" };
+    const { container, rerender } = render(<Shell />);
+    expect(panel(container)).toHaveAttribute("data-module", "team");
+
+    navigation.current = { pathname: "/acme/issues/issue-9" };
+    rerender(<Shell />);
+    expect(panel(container)).toHaveAttribute("data-module", "team");
+  });
+
+  it("folds the panel when the active module's icon is clicked", () => {
+    navigation.current = { pathname: "/acme/my-issues" };
+    const { container } = render(<Shell />);
+
+    fireEvent.click(railLink(container, "mine")!);
+    expect(sidebarState.setOpen).toHaveBeenCalledWith(false);
+  });
+
+  it("reopens the folded panel when a module icon is clicked", () => {
+    sidebarState.open = false;
+    const { container } = render(<Shell />);
+
+    fireEvent.click(railLink(container, "team")!);
+    expect(sidebarState.setOpen).toHaveBeenCalledWith(true);
+  });
+
+  it("reopens each module at the route it was left on", () => {
+    navigation.current = { pathname: "/acme/projects/p-1" };
+    const { container, rerender } = render(<Shell />);
+
+    navigation.current = { pathname: "/acme/inbox" };
+    rerender(<Shell />);
+
+    expect(railLink(container, "work")).toHaveAttribute("href", "/acme/projects/p-1");
+    expect(railLink(container, "team")).toHaveAttribute("href", "/acme/agents");
+    expect(railLink(container, "mine")).toHaveAttribute("href", "/acme/inbox");
+  });
+
+  it("hands Mine's panel to the Inbox list on the activity route only", () => {
+    navigation.current = { pathname: "/acme/inbox" };
+    const { container, rerender } = renderWithI18n(<Shell />);
+    expect(panel(container)?.querySelector('[data-slot="sidebar-list-slot"]')).not.toBeNull();
+
+    navigation.current = { pathname: "/acme/my-issues" };
+    rerender(<Shell />);
+    expect(panel(container)).toHaveAttribute("data-module", "mine");
+    expect(panel(container)?.querySelector('[data-slot="sidebar-list-slot"]')).toBeNull();
+    expect(screen.getByText("You're all caught up")).toBeInTheDocument();
+  });
+
+  it("shows the settings navigation on the capability routes it absorbed", () => {
+    navigation.current = { pathname: "/acme/skills" };
+    const { container } = render(<Shell />);
+    expect(railLink(container, "settings")).toHaveAttribute("data-active");
+    expect(panel(container)).toHaveAttribute("data-module", "settings");
+    expect(screen.getByTestId("settings-panel")).toBeInTheDocument();
+  });
+
+  it("keeps a folded panel mounted at zero width, list slot included", () => {
+    navigation.current = { pathname: "/acme/inbox" };
+    sidebarState.open = false;
+    const { container } = render(<Shell />);
+
+    const folded = panel(container)!;
+    expect(folded).toHaveAttribute("data-state", "collapsed");
+    expect(folded).toHaveAttribute("inert");
+    expect(folded.style.width).toBe("0px");
+    expect(folded.querySelector('[data-slot="sidebar-list-slot"]')).not.toBeNull();
+    expect(folded.querySelector('[data-slot="sidebar-panel-resize-handle"]')).toBeNull();
+  });
+
+  it("sizes the open panel from the sidebar width and offers a resize handle", () => {
+    const { container } = render(<Shell />);
+
+    const open = panel(container)!;
+    expect(open).toHaveAttribute("data-state", "expanded");
+    expect(open).not.toHaveAttribute("inert");
+    expect(open.style.width).toBe("var(--sidebar-width)");
+    expect(open.querySelector('[data-slot="sidebar-panel-resize-handle"]')).not.toBeNull();
+  });
+
+  it("moves the panel into the compact sheet, where the page shows its own list", () => {
+    navigation.current = { pathname: "/acme/chat" };
+    sidebarState.isCompact = true;
+    const { container } = render(<Shell />);
+
+    expect(panel(container)).toBeNull();
+    expect(container.querySelector('[data-slot="sidebar-list-slot"]')).toBeNull();
+    expect(container.querySelector('[data-slot="sidebar-sheet-panel"]')).toHaveAttribute(
+      "data-module",
+      "work",
+    );
+    expect(railLink(container, "chat")).toHaveAttribute("data-active");
+  });
+
+  it("marks Team and lists agents with a task running first", () => {
+    navigation.current = { pathname: "/acme/agents" };
+    agents.current = [
+      { id: "a-1", name: "Builder", avatar_url: null, archived_at: null },
+      { id: "a-2", name: "Idle", avatar_url: null, archived_at: null },
+    ];
+    presence.current = new Map([
+      ["a-1", { workload: "working" }],
+      ["a-2", { workload: "idle" }],
+    ]);
+    const { container } = render(<Shell />);
+
+    expect(railLink(container, "team")?.querySelector('[data-slot="rail-running-dot"]')).not.toBeNull();
+    expect(screen.getByText("Builder")).toBeInTheDocument();
+    expect(screen.getByText("Idle")).toBeInTheDocument();
+    expect(
+      screen.getByText("Builder").compareDocumentPosition(screen.getByText("Idle")) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
   });
 });
 
-describe("personal nav — Chat", () => {
+describe("rail — Chat badge", () => {
   beforeEach(() => {
     chatSessions.current = [];
     summary.current = [];
@@ -415,19 +613,17 @@ describe("personal nav — Chat", () => {
     appForeground.current = true;
   });
 
-  // The mocked SidebarMenuButton exposes the AppLink target as `data-href`
-  // and renders the label + badge as its children.
   const chatNav = (container: HTMLElement) =>
-    container.querySelector<HTMLElement>('button[data-href="/acme/chat"]');
+    container.querySelector<HTMLElement>('a[data-module="chat"]');
   const chatBadge = (container: HTMLElement) =>
     chatNav(container)?.querySelector("number-flow-react") ?? null;
 
   it("keeps persistent Inbox and Chat counters static", () => {
     summary.current = [{ workspace_id: "ws-1", count: 1 }];
     chatSessions.current = [{ id: "chat-1", unread_count: 2 }];
-    const { container } = render(<AppSidebar />);
+    const { container } = render(<Shell />);
     const inboxBadge = container
-      .querySelector<HTMLElement>('button[data-href="/acme/inbox"]')
+      .querySelector<HTMLElement>('a[data-module="mine"]')
       ?.querySelector("number-flow-react") as (HTMLElement & { animated?: boolean }) | null;
     const currentChatBadge = chatBadge(container) as (HTMLElement & { animated?: boolean }) | null;
 
@@ -435,20 +631,20 @@ describe("personal nav — Chat", () => {
     expect(currentChatBadge?.animated).toBe(false);
   });
 
-  it("renders a Chat nav link to the workspace chat route", () => {
-    const { container } = render(<AppSidebar />);
-    expect(chatNav(container)).not.toBeNull();
+  it("renders a Chat rail link to the workspace chat route", () => {
+    const { container } = render(<Shell />);
+    expect(chatNav(container)).toHaveAttribute("href", "/acme/chat");
   });
 
   it("badges the Chat nav with the summed unread_count of chat sessions", () => {
     chatSessions.current = [{ id: "a", unread_count: 3 }, { id: "b", unread_count: 2 }, { id: "c", unread_count: 0 }];
-    const { container } = render(<AppSidebar />);
+    const { container } = render(<Shell />);
     expect(chatBadge(container)).toHaveAttribute("aria-label", "5");
   });
 
   it("shows no Chat unread badge when every session is read", () => {
     chatSessions.current = [{ id: "a", unread_count: 0 }, { id: "b" }];
-    const { container } = render(<AppSidebar />);
+    const { container } = render(<Shell />);
     expect(chatBadge(container)).toBeNull();
   });
 
@@ -459,7 +655,7 @@ describe("personal nav — Chat", () => {
     chatSessions.current = [{ id: "a", unread_count: 2 }, { id: "b", unread_count: 3 }];
     navigation.current = { pathname: "/acme/chat" };
     chatStore.current = { activeSessionId: "a", isOpen: false };
-    const { container } = render(<AppSidebar />);
+    const { container } = render(<Shell />);
     expect(chatBadge(container)).toHaveAttribute("aria-label", "3");
   });
 
@@ -467,7 +663,7 @@ describe("personal nav — Chat", () => {
     chatSessions.current = [{ id: "a", unread_count: 2 }, { id: "b", unread_count: 3 }];
     navigation.current = { pathname: "/acme/issues" };
     chatStore.current = { activeSessionId: "a", isOpen: true };
-    const { container } = render(<AppSidebar />);
+    const { container } = render(<Shell />);
     expect(chatBadge(container)).toHaveAttribute("aria-label", "3");
   });
 
@@ -477,7 +673,7 @@ describe("personal nav — Chat", () => {
     chatSessions.current = [{ id: "a", unread_count: 2 }, { id: "b", unread_count: 3 }];
     navigation.current = { pathname: "/acme/issues" };
     chatStore.current = { activeSessionId: "a", isOpen: false };
-    const { container } = render(<AppSidebar />);
+    const { container } = render(<Shell />);
     expect(chatBadge(container)).toHaveAttribute("aria-label", "5");
   });
 
@@ -489,7 +685,7 @@ describe("personal nav — Chat", () => {
     navigation.current = { pathname: "/acme/issues" };
     chatStore.current = { activeSessionId: "a", isOpen: true };
     appForeground.current = false;
-    const { container } = render(<AppSidebar />);
+    const { container } = render(<Shell />);
     expect(chatBadge(container)).toHaveAttribute("aria-label", "5");
   });
 
@@ -498,7 +694,7 @@ describe("personal nav — Chat", () => {
     navigation.current = { pathname: "/acme/chat" };
     chatStore.current = { activeSessionId: "a", isOpen: false };
     appForeground.current = false;
-    const { container } = render(<AppSidebar />);
+    const { container } = render(<Shell />);
     expect(chatBadge(container)).toHaveAttribute("aria-label", "5");
   });
 });
@@ -519,10 +715,13 @@ describe("Pending invitation self-heal", () => {
   // another surface. Both mutations must invalidate the pending list on
   // failure so the stale row drops instead of surviving until restart.
   it("invalidates the pending-invitations list when accept or decline fails", async () => {
-    render(<AppSidebar />);
-    expect(invitationApi.mutations).toHaveLength(2);
+    render(<Shell />);
+    // The mock records every render's options; the latest render's accept and
+    // decline pair is what the menu is wired to.
+    const latest = invitationApi.mutations.slice(-2);
+    expect(latest).toHaveLength(2);
 
-    for (const options of invitationApi.mutations as Array<{
+    for (const options of latest as Array<{
       mutationFn: (id: string) => Promise<unknown>;
       onError?: (...args: unknown[]) => unknown;
       onSettled?: (...args: unknown[]) => unknown;

@@ -8,6 +8,7 @@ import {
   useMemo,
   useRef,
 } from "react";
+import { createPortal } from "react-dom";
 import { useDefaultLayout } from "react-resizable-panels";
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useWorkspaceId } from "@multica/core/hooks";
@@ -88,6 +89,8 @@ import {
 import { useIsCompact } from "@multica/ui/hooks/use-mobile";
 import { cn } from "@multica/ui/lib/utils";
 import { PAGE_GUTTER, PageHeader } from "../../layout/page-header";
+import { useSidebarListSlot } from "../../layout/sidebar-list-slot";
+import { MinePanelHeader } from "../../layout/sidebar-panels";
 import { useTimeAgo } from "./inbox-list-item";
 import { InboxList } from "./inbox-list";
 import { InboxFilterMenu } from "./inbox-filter-menu";
@@ -115,7 +118,7 @@ export function InboxPage() {
   const showAutopilotQuotaRecoveryPrompt = useIssueLimitUpgradePrompt(
     "autopilot_quota",
   );
-  const { searchParams, replace } = useNavigation();
+  const { pathname, searchParams, replace } = useNavigation();
   const urlIssue = searchParams.get("issue") ?? "";
   const urlView: InboxView =
     searchParams.get("view") === ARCHIVED_VIEW_PARAM ? "archived" : "inbox";
@@ -322,6 +325,9 @@ export function InboxPage() {
   });
 
   const isCompact = useIsCompact();
+  // With the sidebar open on Mine, the list lives in its panel under Mine's
+  // header and this page renders only the detail.
+  const listSlot = useSidebarListSlot(!isCompact && pathname === wsPaths.inbox());
   const unreadCount = useInboxUnreadCount(wsId);
 
   const markReadMutation = useMarkInboxRead();
@@ -577,20 +583,18 @@ export function InboxPage() {
 
   // -- Shared sub-components --------------------------------------------------
 
-  const listHeader = (
-    <PageHeader>
-      <div className="flex flex-1 items-center gap-2">
-        <h1 className="text-body font-semibold">{t(($) => $.page.title)}</h1>
-        {unreadCount > 0 && (
-          <NumberFlow
-            value={unreadCount}
-            animated={false}
-            format={{ maximumFractionDigits: 0 }}
-            aria-label={String(unreadCount)}
-            className="text-caption text-muted-foreground"
-          />
-        )}
-      </div>
+  const unreadCountLabel = unreadCount > 0 && (
+    <NumberFlow
+      value={unreadCount}
+      animated={false}
+      format={{ maximumFractionDigits: 0 }}
+      aria-label={String(unreadCount)}
+      className="text-caption font-normal text-muted-foreground"
+    />
+  );
+
+  const listActions = (
+    <>
       <InboxFilterMenu
         wsId={wsId}
         items={viewItems}
@@ -635,6 +639,20 @@ export function InboxPage() {
         </DropdownMenuContent>
       </DropdownMenu>
       )}
+    </>
+  );
+
+  const listHeader = listSlot ? (
+    <MinePanelHeader wsId={wsId} active="activity">
+      {listActions}
+    </MinePanelHeader>
+  ) : (
+    <PageHeader>
+      <div className="flex flex-1 items-center gap-2">
+        <h1 className="text-body font-semibold">{t(($) => $.page.title)}</h1>
+        {unreadCountLabel}
+      </div>
+      {listActions}
     </PageHeader>
   );
 
@@ -957,8 +975,67 @@ export function InboxPage() {
     return <div className="flex flex-1 flex-col min-h-0">{listPanel}</div>;
   }
 
-  // -- Desktop layout: resizable two-panel -----------------------------------
+  // -- Desktop layout ----------------------------------------------------------
 
+  const listSkeletonRows = (
+    <div className="flex-1 min-h-0 overflow-y-auto space-y-1 p-2">
+      {Array.from({ length: 5 }).map((_, i) => (
+        <div key={i} className="flex items-center gap-3 px-2 py-2.5">
+          <Skeleton className="h-7 w-7 shrink-0 rounded-full" />
+          <div className="flex-1 space-y-2">
+            <Skeleton className="h-4 w-3/4" />
+            <Skeleton className="h-3 w-1/2" />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+  const detailSkeleton = (
+    <div className="p-6">
+      <Skeleton className="h-6 w-48" />
+      <Skeleton className="mt-4 h-4 w-32" />
+    </div>
+  );
+  const detailPane = (
+    <div className="flex flex-col min-h-0 h-full">
+      {detailContent ?? (
+        <div className="flex h-full flex-col items-center justify-center text-muted-foreground">
+          <Inbox className="mb-3 h-10 w-10 text-faint-foreground" />
+          <p className="text-body">
+            {visibleItems.length === 0
+              ? t(($) => $.detail.empty)
+              : t(($) => $.detail.select_prompt)}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+
+  // The sidebar panel holds the list; the page is the detail alone.
+  if (listSlot) {
+    return (
+      <>
+        {createPortal(
+          viewLoading ? (
+            <>
+              <div className="flex h-12 shrink-0 items-center pl-4">
+                <Skeleton className="h-5 w-16" />
+              </div>
+              {listSkeletonRows}
+            </>
+          ) : (
+            listPanel
+          ),
+          listSlot,
+        )}
+        <div className="flex flex-1 min-h-0 flex-col">
+          {viewLoading ? detailSkeleton : detailPane}
+        </div>
+      </>
+    );
+  }
+
+  // Resizable two-panel.
   if (viewLoading) {
     return (
       <ResizablePanelGroup orientation="horizontal" className="flex-1 min-h-0" defaultLayout={defaultLayout} onLayoutChanged={onLayoutChanged}>
@@ -973,25 +1050,12 @@ export function InboxPage() {
             <div className={cn("flex h-12 shrink-0 items-center border-b", PAGE_GUTTER)}>
               <Skeleton className="h-5 w-16" />
             </div>
-            <div className="flex-1 min-h-0 overflow-y-auto space-y-1 p-2">
-              {Array.from({ length: 5 }).map((_, i) => (
-                <div key={i} className="flex items-center gap-3 px-2 py-2.5">
-                  <Skeleton className="h-7 w-7 shrink-0 rounded-full" />
-                  <div className="flex-1 space-y-2">
-                    <Skeleton className="h-4 w-3/4" />
-                    <Skeleton className="h-3 w-1/2" />
-                  </div>
-                </div>
-              ))}
-            </div>
+            {listSkeletonRows}
           </div>
         </ResizablePanel>
         <ResizableHandle />
         <ResizablePanel id="detail" minSize="40%">
-          <div className="p-6">
-            <Skeleton className="h-6 w-48" />
-            <Skeleton className="mt-4 h-4 w-32" />
-          </div>
+          {detailSkeleton}
         </ResizablePanel>
       </ResizablePanelGroup>
     );
@@ -1012,18 +1076,7 @@ export function InboxPage() {
       </ResizablePanel>
       <ResizableHandle />
       <ResizablePanel id="detail" minSize="40%">
-      <div className="flex flex-col min-h-0 h-full">
-        {detailContent ?? (
-          <div className="flex h-full flex-col items-center justify-center text-muted-foreground">
-            <Inbox className="mb-3 h-10 w-10 text-faint-foreground" />
-            <p className="text-body">
-              {visibleItems.length === 0
-                ? t(($) => $.detail.empty)
-                : t(($) => $.detail.select_prompt)}
-            </p>
-          </div>
-        )}
-      </div>
+        {detailPane}
       </ResizablePanel>
     </ResizablePanelGroup>
   );
