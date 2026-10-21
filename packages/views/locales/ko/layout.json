@@ -41,6 +41,7 @@
     "loading_named_prefix": "로딩 중"
   },
   "sidebar": {
+    "unavailable_pin": "사용할 수 없는 항목",
     "unpin_tooltip": "고정 해제",
     "workspaces_label": "워크스페이스",
     "create_workspace": "워크스페이스 만들기",
