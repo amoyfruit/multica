@@ -254,5 +254,15 @@
     "toast_failed": "Không đánh dấu trùng lặp được",
     "error_target_is_duplicate": "{{identifier}} tự nó cũng là bản trùng lặp. Hãy chọn công việc gốc của nó.",
     "error_has_duplicates": "Có các công việc khác đang được đánh dấu trùng lặp với công việc này. Hãy gỡ các đánh dấu đó trước."
+  },
+  "rename_issue": {
+    "title": "Đổi tên công việc",
+    "placeholder": "Tiêu đề công việc",
+    "input_aria_label": "Đổi tên {{identifier}}",
+    "submit": "Lưu",
+    "saving": "Đang lưu...",
+    "title_required": "Hãy nhập tiêu đề",
+    "toast_renamed": "Đã đổi tên công việc",
+    "toast_failed": "Đổi tên công việc thất bại"
   }
 }

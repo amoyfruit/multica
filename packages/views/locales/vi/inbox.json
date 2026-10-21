@@ -18,7 +18,8 @@
     "unread_only": "Chỉ chưa đọc",
     "notification_count_other": "{{count}} thông báo",
     "clear": "Xóa bộ lọc",
-    "empty": "Không có thông báo nào khớp với bộ lọc của bạn"
+    "empty": "Không có thông báo nào khớp với bộ lọc của bạn",
+    "no_agents_working": "Không có agent nào đang làm việc"
   },
   "context_menu": {
     "mark_read": "Đánh dấu là đã đọc",

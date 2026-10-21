@@ -936,7 +936,8 @@
       "agent_error": "Lỗi thực thi agent",
       "codex_semantic_inactivity": "Codex quá thời gian do không hoạt động",
       "manual": "Bị người dùng hủy",
-      "user_cancelled": "Bị người dùng hủy"
+      "user_cancelled": "Bị người dùng hủy",
+      "runtime_access_revoked": "Quyền truy cập runtime đã bị thu hồi"
     }
   },
   "last_active": {

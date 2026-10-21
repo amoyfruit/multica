@@ -178,7 +178,19 @@
     "toast_deleted": "Đã xóa runtime",
     "toast_delete_failed": "Không xóa được runtime",
     "running_chip_other": "· {{count}} đang chạy",
-    "queued_chip_other": "· {{count}} đang chờ"
+    "queued_chip_other": "· {{count}} đang chờ",
+    "visibility_revoke_dialog": {
+      "title": "Đặt Runtime này thành riêng tư?",
+      "description": "Đặt \"{{name}}\" thành riêng tư sẽ gỡ gắn kết {{count}} agent của đồng đội, hủy {{taskCount}} lượt chạy đang hoạt động trên máy này và tạm dừng các autopilot đang gán cho những agent đó. Agent và lượt chạy của chính bạn không bị ảnh hưởng.",
+      "warning": "Quyền truy cập bị thu hồi ngay lập tức trên máy chủ. Các daemon đang kết nối sẽ dừng qua cơ chế kiểm tra hủy thông thường. Máy đang ngoại tuyến sẽ không nhận được yêu cầu dừng cho tới khi kết nối lại; tiến trình cục bộ của nó có thể vẫn tiếp tục trong lúc đó.",
+      "plan_changed": "Kế hoạch truy cập đã thay đổi trong lúc hộp thoại này đang mở. Hãy xem lại và xác nhận lần nữa.",
+      "checkbox": "Tôi hiểu rằng các agent của đồng đội trong danh sách sẽ bị gỡ gắn kết, các lượt chạy đang hoạt động của chúng sẽ bị hủy, và các autopilot đang bật của chúng sẽ bị tạm dừng.",
+      "cancel": "Hủy",
+      "confirm": "Đặt Runtime thành riêng tư",
+      "submitting": "Đang thu hồi quyền truy cập...",
+      "toast_success": "Runtime giờ đã riêng tư và quyền truy cập của đồng đội đã bị thu hồi",
+      "toast_failed": "Thu hồi quyền truy cập runtime thất bại"
+    }
   },
   "detail_page": {
     "not_found_title": "Không tìm thấy runtime",
