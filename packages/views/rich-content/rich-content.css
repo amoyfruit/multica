@@ -35,3 +35,40 @@
   margin-top: 0.5rem;
   margin-bottom: 0.5rem;
 }
+
+/*
+ * Readonly tables (chat replies, issue and comment bodies).
+ *
+ * Auto table layout sizes each column from its cells' min-content. An issue or
+ * project chip has a non-wrapping title, and its `max-w-[min(18rem,100%)]` cap
+ * is a percentage, which is dropped while the table is being measured. The
+ * column therefore grows to the full title width, the table overflows its
+ * wrapper, and the horizontal scrollbar lands at the bottom of a tall table.
+ *
+ * Fixed layout takes column widths from the header row instead. Chips shrink to
+ * their cell, the title truncates first, and the identifier stays whole. Every
+ * column after the first is at least 180px, so an identifier and part of its
+ * title always show. A table wider than the message column scrolls inside its
+ * own wrapper. Hover cards still show the full title.
+ */
+[data-rich-content] table {
+  table-layout: fixed;
+}
+
+[data-rich-content] thead th:first-child {
+  width: 6rem;
+}
+
+[data-rich-content] thead th:not(:first-child) {
+  width: 180px;
+}
+
+[data-rich-content] :is(th, td) {
+  overflow-wrap: anywhere;
+}
+
+[data-rich-content] :is(th, td) span.issue-mention,
+[data-rich-content] :is(th, td) span.project-chip {
+  max-width: 100%;
+  overflow: hidden;
+}
