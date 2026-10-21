@@ -69,6 +69,13 @@ func opencodeUsesV2Contract(cfg Config) bool {
 	return version.Major >= 2
 }
 
+// OpenCodeManagedMCPUnsupported exposes the built-in adapter's compatibility
+// rule to admission tools without probing an executable or inspecting secrets.
+// Custom runtime profiles must establish their own protocol contract.
+func OpenCodeManagedMCPUnsupported(version string, managedMCP bool) bool {
+	return managedMCP && opencodeUsesV2Contract(Config{BuiltinRuntime: true, CLIVersion: version})
+}
+
 // opencodeModelArg folds a thinking level into the model string for the 2.x
 // contract, which has no `--variant` flag and instead reads the variant off the
 // model as `provider/model#variant`.
