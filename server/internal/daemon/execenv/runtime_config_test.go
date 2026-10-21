@@ -1649,12 +1649,52 @@ func TestInjectThenCleanupRoundTripByteExactBoundaries(t *testing.T) {
 	}
 }
 
-// Idempotency across the byte-exact boundaries: when a second Inject runs
-// against a file that already carries a marker block (the "replace in
-// place" branch), the surrounding bytes must stay untouched and the
-// subsequent Cleanup must still restore the user's original file
-// byte-exactly. This guards against a regression where the replace path
-// would re-normalise pre/post bytes the way the old cleanup did.
+func TestCleanupRuntimeConfigAfterFormatting(t *testing.T) {
+	t.Parallel()
+	for _, seed := range []string{"rules", "rules\n", "rules\n\n", "rules\r\n", ""} {
+		t.Run(fmt.Sprintf("seed=%q", seed), func(t *testing.T) {
+			t.Parallel()
+			dir := t.TempDir()
+			path := filepath.Join(dir, "CLAUDE.md")
+			if err := os.WriteFile(path, []byte(seed), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := InjectRuntimeConfig(dir, "claude", TaskContextForEnv{}); err != nil {
+				t.Fatal(err)
+			}
+			injected, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			start, _, found := locateMarkerBlock(string(injected))
+			if !found {
+				t.Fatal("injected brief has no marker")
+			}
+			// Markdown formatters collapse blank lines before an HTML block.
+			prefix := strings.TrimRight(string(injected[:start]), "\r\n")
+			if prefix != "" {
+				prefix += "\n\n"
+			}
+			if err := os.WriteFile(path, []byte(prefix+string(injected[start:])), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := InjectRuntimeConfig(dir, "claude", TaskContextForEnv{}); err != nil {
+				t.Fatal(err)
+			}
+			if err := CleanupRuntimeConfig(dir, "claude"); err != nil {
+				t.Fatal(err)
+			}
+			got, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(got) != seed {
+				t.Fatalf("cleanup changed user content after formatting: got %q, want %q", got, seed)
+			}
+		})
+	}
+}
+
 func TestInjectReplaceThenCleanupRestoresByteExact(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
@@ -1698,6 +1738,62 @@ func TestInjectReplaceThenCleanupRestoresByteExact(t *testing.T) {
 				t.Errorf("file must be byte-identical to seed after replace+cleanup\n got:  %q\n want: %q", string(got), tc.seedContent)
 			}
 		})
+	}
+}
+
+func TestCleanupRuntimeConfigPreservesEditsAfterFormatting(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name, prefix, suffix, want string
+	}{
+		{"edited body", "updated rules\n\n", "", "updated rules\n"},
+		{"added suffix", "rules\n\n", "\nnew section\n", "rules\n\nnew section\n"},
+		{"edited boundary", "rules\n\n\n\n", "", "rules\n\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			dir := t.TempDir()
+			path := filepath.Join(dir, "CLAUDE.md")
+			if err := os.WriteFile(path, []byte("rules\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if err := writeRuntimeConfigFile(path, "brief"); err != nil {
+				t.Fatal(err)
+			}
+			data, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			start, end, found := locateMarkerBlock(string(data))
+			if !found {
+				t.Fatal("missing block")
+			}
+			if err := os.WriteFile(path, []byte(tc.prefix+string(data[start:end])+tc.suffix), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if err := CleanupRuntimeConfig(dir, "claude"); err != nil {
+				t.Fatal(err)
+			}
+			got, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(got) != tc.want {
+				t.Fatalf("got %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestRuntimeOriginalBoundaryRejectsInvalidMetadata(t *testing.T) {
+	t.Parallel()
+	for _, metadata := range []string{`"text" -->`, `"\n"`, `invalid -->`, `"\n" -->\n`} {
+		block := runtimeMarkerBegin + "\n" + runtimeBoundaryPrefix + metadata
+		_, ok := runtimeOriginalBoundary(block)
+		want := metadata == `"\n" -->\n`
+		if ok != want {
+			t.Errorf("metadata %q: got valid=%v, want %v", metadata, ok, want)
+		}
 	}
 }
 

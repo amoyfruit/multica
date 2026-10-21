@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 
 	"github.com/multica-ai/multica/server/pkg/agent"
@@ -257,6 +258,9 @@ func writeRuntimeConfigFile(path, brief string) error {
 
 	existingStr := string(existing)
 	if start, end, ok := locateMarkerBlock(existingStr); ok {
+		if boundary, ok := runtimeOriginalBoundary(existingStr[start:end]); ok {
+			block = runtimeBlockWithBoundary(block, boundary)
+		}
 		// Replace the existing block in place. locateMarkerBlock already
 		// consumes the trailing newline that closed the previous block, so
 		// successive runs don't accumulate blank lines around the block.
@@ -271,7 +275,30 @@ func writeRuntimeConfigFile(path, brief string) error {
 	// that already end in two or more newlines — so the byte boundary
 	// between user content and the managed region is deterministic, which
 	// is what lets Cleanup roll back to the user's exact original bytes.
+	boundary := existingStr[len(strings.TrimRight(existingStr, "\r\n")):]
+	block = runtimeBlockWithBoundary(block, boundary)
 	return os.WriteFile(path, []byte(existingStr+runtimeManagedSeparator+block), 0o644)
+}
+
+const runtimeBoundaryPrefix = "<!-- MULTICA-RUNTIME original-boundary: "
+
+func runtimeBlockWithBoundary(block, boundary string) string {
+	return strings.Replace(block, runtimeMarkerBegin+"\n", runtimeMarkerBegin+"\n"+runtimeBoundaryPrefix+strconv.Quote(boundary)+" -->\n", 1)
+}
+
+// Keep the original boundary inside the managed block: Markdown formatters
+// normalize the separator outside it, including removing it for empty files.
+func runtimeOriginalBoundary(block string) (string, bool) {
+	line := strings.TrimLeft(strings.TrimPrefix(block, runtimeMarkerBegin), "\r\n")
+	if !strings.HasPrefix(line, runtimeBoundaryPrefix) {
+		return "", false
+	}
+	value, _, ok := strings.Cut(strings.TrimPrefix(line, runtimeBoundaryPrefix), " -->")
+	if !ok {
+		return "", false
+	}
+	boundary, err := strconv.Unquote(value)
+	return boundary, err == nil && strings.Trim(boundary, "\r\n") == ""
 }
 
 // locateMarkerBlock finds the [start, end) byte range of the Multica marker
@@ -366,18 +393,21 @@ func CleanupRuntimeConfig(workDir, provider string) error {
 	pre := existingStr[:start]
 	post := existingStr[end:]
 
-	// Detect — and strip — the fixed managed separator that Inject puts
-	// immediately before the block whenever it appended to a file that
-	// pre-existed. The absence of the separator is the marker that says
-	// "Inject created this file from scratch", which is the only case
-	// where Cleanup is allowed to delete the file.
+	// Restore a formatter-normalized boundary from metadata when available.
+	// Otherwise retain the fixed-separator behavior for legacy blocks and
+	// nonstandard boundary edits. Metadata also identifies existing empty files.
 	hadManagedSeparator := strings.HasSuffix(pre, runtimeManagedSeparator)
-	if hadManagedSeparator {
+	originalBoundary, hadOriginalBoundary := runtimeOriginalBoundary(existingStr[start:end])
+	trimmedPre := strings.TrimRight(pre, "\r\n")
+	boundary := pre[len(trimmedPre):]
+	if hadOriginalBoundary && (boundary == "\n\n" || pre == "") {
+		pre = trimmedPre + originalBoundary
+	} else if hadManagedSeparator {
 		pre = pre[:len(pre)-len(runtimeManagedSeparator)]
 	}
 	remainder := pre + post
 
-	if !hadManagedSeparator && remainder == "" {
+	if !hadManagedSeparator && !hadOriginalBoundary && remainder == "" {
 		// Inject created the file (no managed separator → block was the
 		// only content). Restore the missing-file state.
 		if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
