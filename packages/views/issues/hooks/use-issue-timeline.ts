@@ -414,9 +414,9 @@ export function useIssueTimeline(issueId: string, userId?: string) {
   );
 
   const deleteComment = useCallback(
-    async (commentId: string) => {
+    async (commentId: string, opts?: { thread?: boolean }) => {
       try {
-        await deleteCommentAsync(commentId);
+        await deleteCommentAsync({ commentId, thread: opts?.thread });
       } catch (err) {
         toast.error(
           err instanceof Error && err.message

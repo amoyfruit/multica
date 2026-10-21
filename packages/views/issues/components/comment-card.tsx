@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, memo, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { CheckCircle2, ChevronRight, CornerUpLeft, ListChevronsDownUp, Copy, Link2, Loader2, MessageSquarePlus, MoreHorizontal, Pencil, RotateCcw, Trash2 } from "lucide-react";
+import { CheckCircle2, ChevronRight, CornerUpLeft, ListChevronsDownUp, Copy, Link2, Loader2, MessageSquarePlus, MessageSquareX, MoreHorizontal, Pencil, RotateCcw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Card } from "@multica/ui/components/ui/card";
 import { Button, buttonVariants } from "@multica/ui/components/ui/button";
@@ -132,7 +132,8 @@ interface CommentCardProps {
   onReply: (parentId: string, content: string, attachmentIds?: string[], suppressAgentIds?: string[], steerTaskIds?: string[]) => Promise<string | boolean>;
   onReplyAccepted?: (commentId: string) => void;
   onEdit: (commentId: string, content: string, attachmentIds: string[], suppressAgentIds?: string[], contentBase?: string) => Promise<void>;
-  onDelete: (commentId: string) => void;
+  /** `thread` deletes the root together with every reply, whoever wrote them. */
+  onDelete: (commentId: string, opts?: { thread?: boolean }) => void;
   onToggleReaction: (commentId: string, emoji: string) => void;
   onCreateSubIssue?: (commentId: string) => void;
   /** Resolve/unresolve any comment in this thread (commentId = the target row). */
@@ -165,11 +166,18 @@ function DeleteCommentDialog({
   onOpenChange,
   onConfirm,
   hasReplies,
+  thread,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onConfirm: () => void;
   hasReplies?: boolean;
+  /** Confirms deleting the whole thread rather than the comment alone. */
+  thread?: {
+    replyCount: number;
+    /** True when someone other than the viewer wrote any comment in the thread. */
+    includesOthers: boolean;
+  };
 }) {
   const { t } = useT("issues");
   // Only a server that declares it keeps the replies (#8296); an older one
@@ -179,19 +187,25 @@ function DeleteCommentDialog({
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>{t(($) => $.comment.delete_title)}</AlertDialogTitle>
+          <AlertDialogTitle>
+            {thread ? t(($) => $.comment.delete_thread_action) : t(($) => $.comment.delete_title)}
+          </AlertDialogTitle>
           <AlertDialogDescription>
-            {!hasReplies
-              ? t(($) => $.comment.delete_desc)
-              : keepsReplies
-                ? t(($) => $.comment.delete_desc_replies_kept)
-                : t(($) => $.comment.delete_desc_with_replies)}
+            {thread
+              ? thread.includesOthers
+                ? t(($) => $.comment.delete_thread_desc_others, { count: thread.replyCount })
+                : t(($) => $.comment.delete_thread_desc, { count: thread.replyCount })
+              : !hasReplies
+                ? t(($) => $.comment.delete_desc)
+                : keepsReplies
+                  ? t(($) => $.comment.delete_desc_replies_kept)
+                  : t(($) => $.comment.delete_desc_with_replies)}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel>{t(($) => $.comment.cancel_action)}</AlertDialogCancel>
           <AlertDialogAction variant="destructive" onClick={onConfirm}>
-            {t(($) => $.comment.delete_action)}
+            {thread ? t(($) => $.comment.delete_thread_action) : t(($) => $.comment.delete_action)}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
@@ -1052,6 +1066,7 @@ function CommentCardImpl({
   const canEditEntry = receipts.length === 0 && (isOwn || (canModerate && entry.actor_type === "member"));
   const canDeleteEntry = !receipts.some(isSupplementInFlight) && (isOwn || canModerate);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirmDeleteThread, setConfirmDeleteThread] = useState(false);
   // A reply here goes into the running turn of a run that belongs to this
   // thread by default; another thread's turn is only reached by choice.
   const steerThreadRunByDefault = useCallback(
@@ -1119,6 +1134,8 @@ function CommentCardImpl({
   );
 
   const replyCount = visibleReplies.length;
+  // The only action a deleted root keeps, so the replies it kept can still go.
+  const canDeleteThread = canDeleteEntry && replyCount > 0;
   const repliedToIds = new Set(allNestedReplies.map((reply) => reply.parent_id));
   const deleted = isDeletedComment(entry);
   const contentPreview = (entry.content ?? "").replace(/\n/g, " ").slice(0, 80);
@@ -1258,8 +1275,8 @@ function CommentCardImpl({
                 >
                   <ChevronRight aria-hidden className={cn("h-3.5 w-3.5 transition-transform motion-reduce:transition-none", open && "rotate-90")} />
                 </Button>
-                {open && !deleted && <>
-                  {!edit.editing && <QuickEmojiPicker
+                {open && (!deleted || canDeleteThread) && <>
+                  {!deleted && !edit.editing && <QuickEmojiPicker
                     onSelect={(emoji) => onToggleReaction(entry.id, emoji)}
                     ariaLabel={t(($) => $.comment.add_reaction)}
                     align="end"
@@ -1280,56 +1297,62 @@ function CommentCardImpl({
                     />
                     <DropdownMenuContent align="end">
                       {/* Groups: act on it (edit, resolve), take it elsewhere, then delete alone. */}
-                      {canEditEntry && (
-                        <DropdownMenuItem onClick={edit.startEdit}>
-                          <Pencil className="h-3.5 w-3.5" />
-                          {t(($) => $.comment.edit_action)}
-                        </DropdownMenuItem>
-                      )}
-                      {onResolveToggle && (
-                        <DropdownMenuItem onClick={() => onResolveToggle(entry.id, !entry.resolved_at)}>
-                          {entry.resolved_at ? (
-                            <>
-                              <RotateCcw className="h-3.5 w-3.5" />
-                              {t(($) => $.comment.resolve.unresolve_thread_action)}
-                            </>
-                          ) : (
-                            <>
-                              <CheckCircle2 className="h-3.5 w-3.5" />
-                              {t(($) => $.comment.resolve.resolve_thread_action)}
-                            </>
-                          )}
-                        </DropdownMenuItem>
-                      )}
-                      {(canEditEntry || onResolveToggle) && <DropdownMenuSeparator />}
-                      <DropdownMenuItem onClick={() => {
-                        void copyText(entry.content ?? "").then((ok) => {
-                          if (ok) toast.success(t(($) => $.comment.copied_toast));
-                        });
-                      }}>
-                        <Copy className="h-3.5 w-3.5" />
-                        {t(($) => $.comment.copy_action)}
-                      </DropdownMenuItem>
-                      {onCopyLink && (
-                        <DropdownMenuItem onClick={() => onCopyLink(entry.id)}>
-                          <Link2 className="h-3.5 w-3.5" />
-                          {t(($) => $.comment.copy_link_action)}
-                        </DropdownMenuItem>
-                      )}
-                      {onCreateSubIssue && entry.comment_type === "comment" && (
-                        <DropdownMenuItem onClick={() => onCreateSubIssue(entry.id)}>
-                          <MessageSquarePlus className="h-3.5 w-3.5" aria-hidden />
-                          {t(($) => $.source_context.create_action)}
-                        </DropdownMenuItem>
-                      )}
-                      {canDeleteEntry && (
-                        <>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem onClick={() => setConfirmDelete(true)} variant="destructive">
-                            <Trash2 className="h-3.5 w-3.5" />
-                            {t(($) => $.comment.delete_action)}
+                      {!deleted && <>
+                        {canEditEntry && (
+                          <DropdownMenuItem onClick={edit.startEdit}>
+                            <Pencil className="h-3.5 w-3.5" />
+                            {t(($) => $.comment.edit_action)}
                           </DropdownMenuItem>
-                        </>
+                        )}
+                        {onResolveToggle && (
+                          <DropdownMenuItem onClick={() => onResolveToggle(entry.id, !entry.resolved_at)}>
+                            {entry.resolved_at ? (
+                              <>
+                                <RotateCcw className="h-3.5 w-3.5" />
+                                {t(($) => $.comment.resolve.unresolve_thread_action)}
+                              </>
+                            ) : (
+                              <>
+                                <CheckCircle2 className="h-3.5 w-3.5" />
+                                {t(($) => $.comment.resolve.resolve_thread_action)}
+                              </>
+                            )}
+                          </DropdownMenuItem>
+                        )}
+                        {(canEditEntry || onResolveToggle) && <DropdownMenuSeparator />}
+                        <DropdownMenuItem onClick={() => {
+                          void copyText(entry.content ?? "").then((ok) => {
+                            if (ok) toast.success(t(($) => $.comment.copied_toast));
+                          });
+                        }}>
+                          <Copy className="h-3.5 w-3.5" />
+                          {t(($) => $.comment.copy_action)}
+                        </DropdownMenuItem>
+                        {onCopyLink && (
+                          <DropdownMenuItem onClick={() => onCopyLink(entry.id)}>
+                            <Link2 className="h-3.5 w-3.5" />
+                            {t(($) => $.comment.copy_link_action)}
+                          </DropdownMenuItem>
+                        )}
+                        {onCreateSubIssue && entry.comment_type === "comment" && (
+                          <DropdownMenuItem onClick={() => onCreateSubIssue(entry.id)}>
+                            <MessageSquarePlus className="h-3.5 w-3.5" aria-hidden />
+                            {t(($) => $.source_context.create_action)}
+                          </DropdownMenuItem>
+                        )}
+                      </>}
+                      {canDeleteEntry && !deleted && <>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem onClick={() => setConfirmDelete(true)} variant="destructive">
+                          <Trash2 className="h-3.5 w-3.5" />
+                          {t(($) => $.comment.delete_action)}
+                        </DropdownMenuItem>
+                      </>}
+                      {canDeleteThread && (
+                        <DropdownMenuItem onClick={() => setConfirmDeleteThread(true)} variant="destructive">
+                          <MessageSquareX className="h-3.5 w-3.5" aria-hidden />
+                          {t(($) => $.comment.delete_thread_action)}
+                        </DropdownMenuItem>
                       )}
                     </DropdownMenuContent>
                   </DropdownMenu>
@@ -1338,6 +1361,17 @@ function CommentCardImpl({
                     onOpenChange={setConfirmDelete}
                     onConfirm={() => onDelete(entry.id)}
                     hasReplies={replyCount > 0}
+                  />
+                  <DeleteCommentDialog
+                    open={confirmDeleteThread}
+                    onOpenChange={setConfirmDeleteThread}
+                    onConfirm={() => onDelete(entry.id, { thread: true })}
+                    thread={{
+                      replyCount,
+                      includesOthers: [entry, ...visibleReplies].some(
+                        (e) => !(e.actor_type === "member" && e.actor_id === currentUserId),
+                      ),
+                    }}
                   />
                 </>}
               </div>
