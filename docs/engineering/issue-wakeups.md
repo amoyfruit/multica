@@ -78,7 +78,18 @@ on a source lock while holding the issue lock. The server returns the stable
 once after 250ms. Other conflicts and ambiguous network failures are not retried.
 Broad
 agent filters observe future facts, without replaying history or following retry
-chains. `--parent COMMENT` preserves the original result-delivery thread.
+chains. `--parent COMMENT` supplies the original delivery context, not a
+permanent pin to an old message. Continuations read current comments and reply
+to the latest relevant user message or designated progress thread. An explicit
+user-selected thread pin in the wakeup instruction takes precedence; unrelated
+newer messages do not redirect the update.
+
+Comment and run trigger labels use the rule snapshot persisted with that run,
+so rescheduling or deleting a rule never rewrites historical trigger times,
+including after reload. Current schedule controls and the issue header still
+show the live rule. Older runs use their recorded trigger activity when it has
+a snapshot; otherwise they show a generic wakeup label rather than borrowing a
+later schedule.
 
 `update ISSUE WAKEUP` accepts the complete create configuration, replaces it,
 increments its revision, withdraws old unclaimed inputs, and explicitly enables

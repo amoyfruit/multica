@@ -88,6 +88,11 @@ function previewOf(stored: StoredPreview, getActorName: ActorName): WakeupPrevie
   };
 }
 
+export function wakeupActivityPreview(entry: TimelineEntry, getActorName: ActorName): WakeupPreview | undefined {
+  const stored = detailsOf(entry).wakeup;
+  return stored ? previewOf(stored, getActorName) : undefined;
+}
+
 export function formatWakeupActivity(
   entry: TimelineEntry,
   t: IssuesT,
@@ -95,7 +100,7 @@ export function formatWakeupActivity(
   getActorName: ActorName,
 ): string {
   const details = detailsOf(entry);
-  const preview = details.wakeup ? previewOf(details.wakeup, getActorName) : null;
+  const preview = wakeupActivityPreview(entry, getActorName);
   const condition = preview ? text.trigger(preview) : "";
   const agent = preview?.agent_name ?? "";
   switch (entry.action) {
