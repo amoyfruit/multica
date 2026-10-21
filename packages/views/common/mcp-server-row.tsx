@@ -121,10 +121,12 @@ export function McpServerRow({
   transport,
   status,
   meta,
+  details,
   canManage,
   actionsDisabled = false,
   rename,
   labels,
+  extraAction,
   onRenameStart,
   onConfigure,
   onRemove,
@@ -134,10 +136,13 @@ export function McpServerRow({
   status?: ReactNode;
   /** Extra context after the transport, e.g. how many agents use it. */
   meta?: ReactNode;
+  details?: ReactNode;
   canManage: boolean;
   actionsDisabled?: boolean;
   rename?: McpServerRenameState;
   labels: McpServerRowLabels;
+  /** Optional control rendered before rename, such as Test connection. */
+  extraAction?: ReactNode;
   onRenameStart: () => void;
   onConfigure: () => void;
   onRemove: () => void;
@@ -145,10 +150,10 @@ export function McpServerRow({
   const errorId = `${useId()}-rename-error`;
 
   return (
-    <li className="group flex min-h-16 items-center gap-3 px-4 py-3 transition-colors hover:bg-muted/30">
+    <li className="group flex min-h-16 flex-wrap items-center gap-3 px-4 py-3 transition-colors hover:bg-muted/30">
       <McpTransportIcon transport={transport} />
 
-      <div className="min-w-0 flex-1 has-[form]:space-y-2">
+      <div className="min-w-40 flex-1 has-[form]:space-y-2">
         <div className="flex min-w-0 items-center gap-2">
           {rename ? (
             <form
@@ -220,10 +225,12 @@ export function McpServerRow({
           {mcpTransportLabel(transport)}
           {meta ? <> · {meta}</> : null}
         </p>
+        {details}
       </div>
 
       {canManage && !rename ? (
-        <div className="flex shrink-0 items-center gap-0.5 text-muted-foreground">
+        <div className="ml-auto flex shrink-0 items-center gap-0.5 text-muted-foreground">
+          {extraAction}
           <Tooltip>
             <TooltipTrigger
               render={
