@@ -85,4 +85,53 @@ describe("DynamicBlock", () => {
     renderBlock();
     expect(screen.queryByRole("button", { name: "Fullscreen" })).toBeNull();
   });
+
+  // Regression: a reported bodyHeight must decide the collapse in the same
+  // render it arrives. The clamp used to come from a measure-after-paint
+  // observer, so a tall document painted unclamped for a frame and then
+  // folded back — the height shock virtualized timelines render as flicker.
+  it("decides the collapse from a reported bodyHeight in the same render", () => {
+    const { container } = render(
+      <DynamicBlock
+        kind="html"
+        title="Latency"
+        source="<p>chart</p>"
+        bodyHeight={3000}
+        preview={({ collapsed }) => (
+          <div data-testid="content" style={{ height: collapsed ? 480 : 3000 }}>
+            chart
+          </div>
+        )}
+      />,
+    );
+
+    const body = container.querySelector<HTMLElement>("[data-collapsed]");
+    expect(body).not.toBeNull();
+    expect(body!.style.maxHeight).toBe("480px");
+    // The preview laid out at the clamp, not at the full height.
+    expect(screen.getByTestId("content").style.height).toBe("480px");
+  });
+
+  // The enlarged surface reuses the inline iframe (#9121) and shows the
+  // whole document; a mechanical clamp there would box it into 480px.
+  it("keeps the enlarged surface unclamped while fullscreen", () => {
+    const { container } = render(
+      <DynamicBlock
+        kind="html"
+        title="Latency"
+        source="<p>chart</p>"
+        fullscreen
+        bodyHeight={3000}
+        preview={({ collapsed }) => (
+          <div data-testid="content" style={{ height: collapsed ? 480 : 3000 }}>
+            chart
+          </div>
+        )}
+      />,
+    );
+
+    expect(container.querySelector("[data-collapsed]")).toBeNull();
+    expect(screen.getByTestId("content").style.height).toBe("3000px");
+    expect(screen.queryByRole("button", { name: "Show all" })).toBeNull();
+  });
 });

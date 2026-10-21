@@ -9,6 +9,13 @@
  * charts floating in blank space. An uncaught script error replaces the
  * preview with an explanation; fullscreen still shows whatever did render.
  *
+ * The laid-out height is also handed up to the frame (`onBodyHeightChange`),
+ * so the collapse clip decision lands in the same paint the height arrives: a
+ * tall document is clipped at the collapse point immediately instead of
+ * painting unclamped for a frame and then folding back — that total-height
+ * shock wave is what virtualized timelines render as flicker when a scroll
+ * jump lands on the block.
+ *
  * Reached through RichFenceBlock (rich-content/rich-code-block.tsx) for closed
  * fences only. NOT used in the editable Tiptap NodeView — that path must keep
  * `<NodeViewContent as="code" />` so the user can continue typing.
@@ -105,6 +112,10 @@ export function HtmlBlockPreview({ html, title }: HtmlBlockPreviewProps) {
   const [srcDoc, setSrcDoc] = useState<string | null>(null);
   const [error, setError] = useState<DynamicBlockError | null>(null);
   const [fullscreen, setFullscreen] = useState(false);
+  // The body's laid-out height, reported by HtmlBlockBody below. The frame
+  // turns it into the collapse decision in the same paint the height lands
+  // (see the flicker note in the file header).
+  const [bodyHeight, setBodyHeight] = useState<number | null>(null);
   const frameTitle = t(($) => $.code_block.html_preview);
 
   // Built after mount: the theme tokens come from the host's computed style.
@@ -126,7 +137,11 @@ export function HtmlBlockPreview({ html, title }: HtmlBlockPreviewProps) {
         error={error}
         fullscreen={fullscreen}
         onFullscreen={() => setFullscreen(true)}
+        bodyHeight={bodyHeight}
         preview={({ active }) => (
+          // Keyed by the content: a re-authored block restarts measurement
+          // from scratch — a stale `frozen`/`loaded` from the previous
+          // document must never pin or reveal the new one.
           <HtmlBlockBody
             key={html}
             html={html}
@@ -135,6 +150,7 @@ export function HtmlBlockPreview({ html, title }: HtmlBlockPreviewProps) {
             active={active}
             fullscreen={fullscreen}
             onFullscreenChange={setFullscreen}
+            onBodyHeightChange={setBodyHeight}
             onError={setError}
           />
         )}
@@ -150,6 +166,7 @@ function HtmlBlockBody({
   active,
   fullscreen,
   onFullscreenChange,
+  onBodyHeightChange,
   onError,
 }: {
   html: string;
@@ -158,6 +175,7 @@ function HtmlBlockBody({
   active: boolean;
   fullscreen: boolean;
   onFullscreenChange: (open: boolean) => void;
+  onBodyHeightChange: (height: number) => void;
   onError: (error: DynamicBlockError) => void;
 }) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -223,6 +241,17 @@ function HtmlBlockBody({
   const bodyHeight = bodyHeightPx(
     height ?? (timedOut ? UNMEASURED_HEIGHT_PX : (cachedHeight ?? DYNAMIC_BLOCK_MIN_BODY_PX)),
   );
+
+  // Hand the laid-out height up to the frame so its collapse clip applies in
+  // the same paint the height lands — a layout effect keeps any intermediate
+  // (unclipped) frame from painting. See the flicker note in the file header.
+  const onBodyHeightChangeRef = useRef(onBodyHeightChange);
+  useLayoutEffect(() => {
+    onBodyHeightChangeRef.current = onBodyHeightChange;
+  });
+  useLayoutEffect(() => {
+    onBodyHeightChangeRef.current(bodyHeight);
+  }, [bodyHeight]);
 
   return (
     <HtmlPreviewSurface
