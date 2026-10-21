@@ -158,7 +158,8 @@ import { useIssueTimeline } from "../hooks/use-issue-timeline";
 import { useIssueReactions } from "../hooks/use-issue-reactions";
 import { useIssueSubscribers } from "../hooks/use-issue-subscribers";
 import { ReactionBar } from "@multica/ui/components/common/reaction-bar";
-import { useLocale, useTimeAgo } from "../../i18n";
+import { useLocale } from "../../i18n";
+import { RelativeTime } from "./relative-time";
 import {
   useRestoredScrollOffset,
   useRestoredScrollRef,
@@ -649,7 +650,6 @@ function ActivityBlock({
   resolveStatusColor,
   resolveStatusIcon,
   t,
-  timeAgo,
   locale,
 }: {
   entries: TimelineEntry[];
@@ -668,7 +668,6 @@ function ActivityBlock({
   resolveStatusColor: (statusKey: string) => string | null;
   resolveStatusIcon: (statusKey: string) => string | null;
   t: ActivityT;
-  timeAgo: (dateStr: string) => string;
   locale: string;
 }) {
   const wakeupText = useWakeupText();
@@ -801,7 +800,7 @@ function ActivityBlock({
                 <Tooltip>
                   <TooltipTrigger render={
                     <span className={cn("shrink-0 cursor-default", !chip && "ml-auto")}>
-                      {timeAgo(entry.created_at)}
+                      <RelativeTime dateTime={entry.created_at} />
                     </span>
                   } />
                   <TooltipContent side="top">{new Date(entry.created_at).toLocaleString(locale)}</TooltipContent>
@@ -1290,7 +1289,6 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
   const isPeek = variant === "peek";
   const { t } = useT("issues");
   const locale = useLocale();
-  const timeAgo = useTimeAgo();
   const id = issueId;
   const user = useAuthStore((s) => s.user);
   const paths = useWorkspacePaths();
@@ -3084,7 +3082,6 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
         resolveStatusColor={resolveStatusColor}
         resolveStatusIcon={resolveStatusIcon}
         t={t}
-        timeAgo={timeAgo}
         locale={locale}
       />
     );
